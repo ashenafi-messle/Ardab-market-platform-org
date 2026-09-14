@@ -1,0 +1,164 @@
+// ==============================================================================
+// Ardab Market - Prisma Schema
+// ==============================================================================
+// Source of truth for database models.
+// Compatible with PostgreSQL hosted on Neon.
+// Supports both connection pooling (DATABASE_URL) and direct migration (DIRECT_URL).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------------------------------------------------------
+// Enums
+// ------------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  SUB_ADMIN
+  OPERATIONS_MANAGER
+  DISPATCHER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum OtpPurpose {
+  LOGIN_VERIFICATION
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
+  SECURITY_VERIFICATION
+}
+
+// ------------------------------------------------------------------------------
+// Admin Authentication & Identity
+// ------------------------------------------------------------------------------
+
+model AdminUser {
+  id             String     @id @default(uuid())
+  name           String
+  email          String     @unique
+  passwordHash   String
+  role           UserRole   @default(SUPER_ADMIN)
+  status         UserStatus @default(ACTIVE)
+  avatar         String?
+  phone          String?
+  assignedCities String[]   @default(["All Cities"])
+  lastLogin      DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  sessions            AdminSession[]
+  passwordResetTokens PasswordResetToken[]
+  otps                AdminOtp[]
+  auditLogs           AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@map("admin_users")
+}
+
+// ------------------------------------------------------------------------------
+// Admin Active Sessions & Revocation
+// ------------------------------------------------------------------------------
+
+model AdminSession {
+  id        String        @id @default(uuid())
+  adminId   String
+  tokenHash String        @unique
+  ipAddress String?
+  userAgent String?
+  status    SessionStatus @default(ACTIVE)
+  expiresAt DateTime
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("admin_sessions")
+}
+
+// ------------------------------------------------------------------------------
+// Password Reset Tokens
+// ------------------------------------------------------------------------------
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  adminId   String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ------------------------------------------------------------------------------
+// One-Time Passwords (OTP) & Verification
+// ------------------------------------------------------------------------------
+
+model AdminOtp {
+  id        String     @id @default(uuid())
+  adminId   String
+  codeHash  String
+  purpose   OtpPurpose
+  expiresAt DateTime
+  attempts  Int        @default(0)
+  usedAt    DateTime?
+  createdAt DateTime   @default(now())
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+  @@index([purpose])
+  @@map("admin_otps")
+}
+
+// ------------------------------------------------------------------------------
+// Security & Governance Audit Logging
+// ------------------------------------------------------------------------------
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  adminId        String?
+  adminEmail     String
+  action         String
+  entity         String
+  entityId       String?
+  ipAddress      String?
+  changesSummary String?
+  status         String   @default("SUCCESS")
+  timestamp      DateTime @default(now())
+
+  admin AdminUser? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminEmail])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_logs")
+}

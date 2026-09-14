@@ -1,0 +1,105 @@
+// ==============================================================================
+// Ardab Market - Admin Permissions & RBAC Matrix
+// ==============================================================================
+// Directly aligns with frontend permission matrix in superadmin/lib/permissions.ts
+
+import { ADMIN_ROLES } from './adminRoles.js';
+
+export const ADMIN_PERMISSIONS = {
+  // Commercial Marketplace Permissions (Super Admin Domain)
+  PRODUCTS_CREATE: 'products:create',
+  PRODUCTS_EDIT: 'products:edit',
+  PRODUCTS_DELETE: 'products:delete',
+  PRODUCTS_BULK_STATUS: 'products:bulk_status',
+
+  SUPPLIERS_CREATE: 'suppliers:create',
+  SUPPLIERS_EDIT: 'suppliers:edit',
+  SUPPLIERS_VERIFY: 'suppliers:verify',
+  SUPPLIERS_DELETE: 'suppliers:delete',
+
+  CUSTOMERS_VIEW: 'customers:view',
+  CUSTOMERS_SUSPEND: 'customers:suspend',
+  CUSTOMERS_BULK_STATUS: 'customers:bulk_status',
+
+  ORDERS_MANAGE: 'orders:manage',
+  ORDERS_UPDATE_STATUS: 'orders:update_status',
+  ORDERS_BULK_STATUS: 'orders:bulk_status',
+  ORDERS_CANCEL: 'orders:cancel',
+
+  DELIVERIES_VIEW: 'deliveries:view',
+  DELIVERIES_ASSIGN: 'deliveries:assign',
+  DELIVERIES_UPDATE_STATUS: 'deliveries:update_status',
+
+  // Support, Maintenance & Security Governance (Sub Admin Domain)
+  SUPPORT_MANAGE: 'support:manage',
+  SUPPORT_ASSIGN: 'support:assign',
+  SUPPORT_RESOLVE: 'support:resolve',
+
+  SECURITY_VIEW: 'security:view',
+  SECURITY_MANAGE_ADMINS: 'security:manage_admins',
+  SECURITY_AUDIT_LOGS: 'security:audit_logs',
+  SECURITY_SESSIONS: 'security:sessions',
+
+  MAINTENANCE_MANAGE: 'maintenance:manage',
+  MAINTENANCE_SCHEDULE: 'maintenance:schedule',
+
+  FEEDBACK_VIEW: 'feedback:view',
+  FEEDBACK_RESPOND: 'feedback:respond',
+};
+
+export const ROLE_PERMISSIONS = {
+  [ADMIN_ROLES.SUPER_ADMIN]: [
+    ADMIN_PERMISSIONS.PRODUCTS_CREATE,
+    ADMIN_PERMISSIONS.PRODUCTS_EDIT,
+    ADMIN_PERMISSIONS.PRODUCTS_DELETE,
+    ADMIN_PERMISSIONS.PRODUCTS_BULK_STATUS,
+    ADMIN_PERMISSIONS.SUPPLIERS_CREATE,
+    ADMIN_PERMISSIONS.SUPPLIERS_EDIT,
+    ADMIN_PERMISSIONS.SUPPLIERS_VERIFY,
+    ADMIN_PERMISSIONS.SUPPLIERS_DELETE,
+    ADMIN_PERMISSIONS.CUSTOMERS_VIEW,
+    ADMIN_PERMISSIONS.CUSTOMERS_SUSPEND,
+    ADMIN_PERMISSIONS.CUSTOMERS_BULK_STATUS,
+    ADMIN_PERMISSIONS.ORDERS_MANAGE,
+    ADMIN_PERMISSIONS.ORDERS_UPDATE_STATUS,
+    ADMIN_PERMISSIONS.ORDERS_BULK_STATUS,
+    ADMIN_PERMISSIONS.ORDERS_CANCEL,
+    ADMIN_PERMISSIONS.DELIVERIES_VIEW,
+    ADMIN_PERMISSIONS.DELIVERIES_ASSIGN,
+    ADMIN_PERMISSIONS.DELIVERIES_UPDATE_STATUS,
+  ],
+  [ADMIN_ROLES.SUB_ADMIN]: [
+    ADMIN_PERMISSIONS.SUPPORT_MANAGE,
+    ADMIN_PERMISSIONS.SUPPORT_ASSIGN,
+    ADMIN_PERMISSIONS.SUPPORT_RESOLVE,
+    ADMIN_PERMISSIONS.SECURITY_VIEW,
+    ADMIN_PERMISSIONS.SECURITY_MANAGE_ADMINS,
+    ADMIN_PERMISSIONS.SECURITY_AUDIT_LOGS,
+    ADMIN_PERMISSIONS.SECURITY_SESSIONS,
+    ADMIN_PERMISSIONS.MAINTENANCE_MANAGE,
+    ADMIN_PERMISSIONS.MAINTENANCE_SCHEDULE,
+    ADMIN_PERMISSIONS.FEEDBACK_VIEW,
+    ADMIN_PERMISSIONS.FEEDBACK_RESPOND,
+  ],
+  [ADMIN_ROLES.OPERATIONS_MANAGER]: [
+    ADMIN_PERMISSIONS.ORDERS_MANAGE,
+    ADMIN_PERMISSIONS.ORDERS_UPDATE_STATUS,
+    ADMIN_PERMISSIONS.DELIVERIES_VIEW,
+    ADMIN_PERMISSIONS.DELIVERIES_ASSIGN,
+    ADMIN_PERMISSIONS.DELIVERIES_UPDATE_STATUS,
+  ],
+  [ADMIN_ROLES.DISPATCHER]: [
+    ADMIN_PERMISSIONS.DELIVERIES_VIEW,
+    ADMIN_PERMISSIONS.DELIVERIES_UPDATE_STATUS,
+  ],
+};
+
+/**
+ * Validates if an admin role has a specific permission action
+ */
+export function hasPermission(role, permission) {
+  if (!role) return false;
+  const permissions = ROLE_PERMISSIONS[role];
+  if (!permissions) return false;
+  return permissions.includes(permission);
+}
