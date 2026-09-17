@@ -7,7 +7,27 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
 
+const FRONTEND_ORIGIN = process.env.CORS_ORIGIN?.split(',')[0].trim() || 'http://localhost:3000';
+
 const app = createApp();
+
+test('CORS preflight allows configured frontend auth requests', async () => {
+  for (const [path, method] of [['/api/auth/login', 'POST'], ['/api/auth/me', 'GET']]) {
+    const response = await request(app)
+      .options(path)
+      .set('Origin', FRONTEND_ORIGIN)
+      .set('Access-Control-Request-Method', method)
+      .set('Access-Control-Request-Headers', 'Authorization, Content-Type');
+
+    assert.equal(response.statusCode, 204);
+    assert.equal(response.headers['access-control-allow-origin'], FRONTEND_ORIGIN);
+    assert.equal(response.headers['access-control-allow-credentials'], 'true');
+    assert.match(response.headers['access-control-allow-methods'], new RegExp(method));
+    assert.match(response.headers['access-control-allow-methods'], /OPTIONS/);
+    assert.match(response.headers['access-control-allow-headers'], /Authorization/i);
+    assert.match(response.headers['access-control-allow-headers'], /Content-Type/i);
+  }
+});
 
 test('Health Endpoints', async (t) => {
   await t.test('GET /api/health returns structured health response', async () => {

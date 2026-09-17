@@ -144,7 +144,7 @@ backend/
 | `DIRECT_URL` | Neon direct connection string (for migrations) | `postgresql://user:pass@ep.neon.tech/db?sslmode=require` |
 | `JWT_SECRET` | Secret key for signing admin tokens | Min 32 random characters |
 | `JWT_EXPIRES_IN` | Token lifespan | `1d` |
-| `CORS_ORIGINS` | Comma-separated allowed frontend origins | `http://localhost:3000,http://localhost:3001` |
+| `CORS_ORIGIN` | Comma-separated allowed frontend origins | `http://localhost:3000,http://localhost:3001` |
 | `RATE_LIMIT_WINDOW_MS` | Rate limiting window in milliseconds | `900000` (15 minutes) |
 | `RATE_LIMIT_MAX` | Max general API requests per window | `100` |
 | `AUTH_RATE_LIMIT_MAX` | Max authentication attempts per window | `10` |

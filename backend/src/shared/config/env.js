@@ -21,8 +21,12 @@ const DIRECT_URL = process.env.DIRECT_URL || DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_jwt_key_ardab_market_replace_in_prod';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
 
-// Parse allowed CORS origins from comma-separated string
-const rawCors = process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001';
+// Parse allowed CORS origins from comma-separated string. CORS_ORIGIN is the
+// deployment variable; retain CORS_ORIGINS as a compatibility fallback.
+const rawCors =
+  process.env.CORS_ORIGIN ||
+  process.env.CORS_ORIGINS ||
+  'http://localhost:3000,http://localhost:3001';
 const CORS_ORIGINS = rawCors
   .split(',')
   .map((origin) => origin.trim())
