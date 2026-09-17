@@ -19,7 +19,7 @@ import { Product } from '@/types/product';
 import { Supplier } from '@/types/supplier';
 
 export default function DashboardPage() {
-  const { selectedCity } = useAuth();
+  const { user, isLoading: authLoading, selectedCity } = useAuth();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   useEffect(() => {
+    if (authLoading || !user) return;
     let isMounted = true;
     Promise.all([
       ordersApi.getAll(selectedCity),
@@ -50,7 +51,24 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedCity]);
+  }, [selectedCity, authLoading, user]);
+
+  if (authLoading || !user) {
+    return (
+      <AdminLayout>
+        <PageContainer
+          title="Super Admin Command Center"
+          subtitle="Authenticating and preparing operational overview..."
+        >
+          <div className="d-flex justify-content-center align-items-center py-5">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        </PageContainer>
+      </AdminLayout>
+    );
+  }
 
   const pendingOrders = orders.filter((o) => o.orderStatus === 'PENDING');
   const activeTrips = trips.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'LOADING');

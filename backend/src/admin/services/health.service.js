@@ -18,7 +18,7 @@ export async function checkSystemHealth() {
     // Ping database with lightweight query and safe 3s timeout
     const pingPromise = prisma.$queryRaw`SELECT 1`;
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Database ping timed out (3000ms)')), 3000)
+      setTimeout(() => reject(new Error('Database ping timed out (6000ms)')), 6000)
     );
 
     await Promise.race([pingPromise, timeoutPromise]);

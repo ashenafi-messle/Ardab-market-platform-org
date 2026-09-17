@@ -22,6 +22,16 @@ import { asyncHandler } from './shared/utils/asyncHandler.js';
 // Routers & Controllers
 import adminRouter from './admin/routes/index.js';
 import authRoutes from './admin/routes/auth.routes.js';
+import supplierRoutes from './admin/routes/supplier.routes.js';
+import paymentMethodRoutes from './admin/routes/paymentMethod.routes.js';
+import productRoutes from './admin/routes/product.routes.js';
+import categoryRoutes from './admin/routes/category.routes.js';
+import sellerCategoryRoutes from './admin/routes/sellerCategory.routes.js';
+import customerRoutes from './admin/routes/customer.routes.js';
+import orderRoutes from './admin/routes/order.routes.js';
+import deliveryRoutes from './admin/routes/delivery.routes.js';
+import notificationRoutes from './admin/routes/notification.routes.js';
+import customerRouter from './customer/routes/index.js';
 import { getHealth, getLive, getReady } from './admin/controllers/health.controller.js';
 
 export function createApp() {
@@ -81,8 +91,31 @@ export function createApp() {
   app.use('/api/auth', authRoutes);
   app.use('/api/v1/auth', authRoutes);
 
-  // Future Role Routers (prepared for customer, seller, delivery)
-  // app.use('/api/customer', customerRouter);
+  // Commercial Marketplace Aliases for Super Admin Frontend
+  app.use('/api/products', productRoutes);
+  app.use('/api/v1/products', productRoutes);
+  app.use('/api/categories', categoryRoutes);
+  app.use('/api/v1/categories', categoryRoutes);
+  app.use('/api/sellers', sellerCategoryRoutes);
+  app.use('/api/v1/sellers', sellerCategoryRoutes);
+  app.use('/api/suppliers', sellerCategoryRoutes);
+  app.use('/api/v1/suppliers', sellerCategoryRoutes);
+  app.use('/api/suppliers', supplierRoutes);
+  app.use('/api/v1/suppliers', supplierRoutes);
+  app.use('/api/payment-methods', paymentMethodRoutes);
+  app.use('/api/v1/payment-methods', paymentMethodRoutes);
+  app.use('/api/customers', customerRoutes);
+  app.use('/api/v1/customers', customerRoutes);
+  app.use('/api/orders', orderRoutes);
+  app.use('/api/v1/orders', orderRoutes);
+  app.use('/api/deliveries', deliveryRoutes);
+  app.use('/api/v1/deliveries', deliveryRoutes);
+  app.use('/api/notifications', notificationRoutes);
+  app.use('/api/v1/notifications', notificationRoutes);
+
+  // Customer Mobile App Routes
+  app.use('/api/customer', customerRouter);
+  app.use('/api/v1/customer', customerRouter);
   // app.use('/api/seller', sellerRouter);
   // app.use('/api/delivery', deliveryRouter);
 

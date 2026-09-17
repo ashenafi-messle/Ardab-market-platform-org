@@ -16,8 +16,14 @@ export async function adminAuthMiddleware(req, res, next) {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.split(' ')[1];
   } else if (req.cookies?.token) {
-    // 2. Fallback to HttpOnly cookie
+    // 2. Fallback to parsed cookie
     token = req.cookies.token;
+  } else if (req.headers.cookie) {
+    // 3. Fallback to raw Cookie header parsing
+    const match = req.headers.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+    if (match) {
+      token = decodeURIComponent(match[1]);
+    }
   }
 
   if (!token) {

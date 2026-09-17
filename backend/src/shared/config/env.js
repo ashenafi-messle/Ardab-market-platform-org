@@ -41,6 +41,12 @@ const BREVO_API_BASE_URL = process.env.BREVO_API_BASE_URL || 'https://api.brevo.
 // Frontend URL for password reset links
 const ADMIN_FRONTEND_URL = process.env.ADMIN_FRONTEND_URL || 'http://localhost:3000';
 
+// Cloudinary Image Storage Configuration
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || '';
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '';
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || '';
+const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || 'ardab-market/products';
+
 // Warning if in production with insecure defaults
 if (NODE_ENV === 'production') {
   if (!DATABASE_URL) {
@@ -52,13 +58,19 @@ if (NODE_ENV === 'production') {
   if (!BREVO_API_KEY) {
     console.warn('[CONFIG WARNING] BREVO_API_KEY is not configured in production environment.');
   }
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    console.warn('[CONFIG WARNING] Cloudinary credentials are not fully configured in production.');
+  }
 }
 
 export const env = {
   NODE_ENV,
   IS_PRODUCTION: NODE_ENV === 'production',
   IS_DEVELOPMENT: NODE_ENV === 'development',
-  IS_TEST: NODE_ENV === 'test',
+  IS_TEST:
+    NODE_ENV === 'test' ||
+    process.argv.includes('--test') ||
+    process.argv.some((arg) => typeof arg === 'string' && arg.includes('.test.js')),
   PORT,
   DATABASE_URL,
   DIRECT_URL,
@@ -73,5 +85,10 @@ export const env = {
   BREVO_SENDER_NAME,
   BREVO_API_BASE_URL,
   ADMIN_FRONTEND_URL,
+  CLOUDINARY_CLOUD_NAME,
+  CLOUDINARY_API_KEY,
+  CLOUDINARY_API_SECRET,
+  CLOUDINARY_FOLDER,
 };
+
 

@@ -6,10 +6,12 @@ export type PermissionAction =
   | 'products:edit'
   | 'products:delete'
   | 'products:bulk_status'
+  | 'suppliers:view'
   | 'suppliers:create'
   | 'suppliers:edit'
   | 'suppliers:verify'
   | 'suppliers:delete'
+  | 'payment_methods:manage'
   | 'customers:view'
   | 'customers:suspend'
   | 'customers:bulk_status'
@@ -39,10 +41,12 @@ const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
     'products:edit',
     'products:delete',
     'products:bulk_status',
+    'suppliers:view',
     'suppliers:create',
     'suppliers:edit',
     'suppliers:verify',
     'suppliers:delete',
+    'payment_methods:manage',
     'customers:view',
     'customers:suspend',
     'customers:bulk_status',

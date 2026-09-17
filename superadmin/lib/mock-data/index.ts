@@ -1,6 +1,7 @@
 import { SuperAdminUser } from '@/types/auth';
 import { Product, Category } from '@/types/product';
 import { Supplier } from '@/types/supplier';
+import { PaymentMethod } from '@/types/paymentMethod';
 import { Customer } from '@/types/customer';
 import { Order } from '@/types/order';
 import { Vehicle } from '@/types/vehicle';
@@ -103,6 +104,50 @@ export const mockCategories: Category[] = [
   },
 ];
 
+// Payment Methods
+export const mockPaymentMethods: PaymentMethod[] = [
+  {
+    id: 'pm-cbe-01',
+    name: 'Commercial Bank of Ethiopia (CBE)',
+    provider: 'BANK_TRANSFER',
+    accountName: 'Ardab Market Settlement',
+    description: 'Main Ethiopian commercial settlement channel',
+    isActive: true,
+  },
+  {
+    id: 'pm-dashen-02',
+    name: 'Dashen Bank / Amole',
+    provider: 'BANK_TRANSFER',
+    accountName: 'Ardab Market Agro Settlements',
+    description: 'Direct settlement via Dashen Amole network',
+    isActive: true,
+  },
+  {
+    id: 'pm-awash-03',
+    name: 'Awash Bank',
+    provider: 'BANK_TRANSFER',
+    accountName: 'Ardab Operations Escrow',
+    description: 'Awash commercial settlement account',
+    isActive: true,
+  },
+  {
+    id: 'pm-telebirr-04',
+    name: 'Telebirr SuperApp',
+    provider: 'TELEBIRR',
+    accountName: 'Ardab Market Enterprise Merchant',
+    description: 'Ethio Telecom mobile money merchant gateway',
+    isActive: true,
+  },
+  {
+    id: 'pm-cbe-birr-05',
+    name: 'CBE Birr',
+    provider: 'CBE_BIRR',
+    accountName: 'Ardab Market Cooperative Escrow',
+    description: 'CBE Birr mobile banking settlement gateway',
+    isActive: true,
+  },
+];
+
 // Suppliers
 export const mockSuppliers: Supplier[] = [
   {
@@ -118,10 +163,20 @@ export const mockSuppliers: Supplier[] = [
     status: 'ACTIVE',
     productCount: 14,
     registeredAt: '2025-01-10',
-    bankAccount: {
-      bankName: 'Commercial Bank of Ethiopia',
-      accountNumber: '1000293848123',
-    },
+    paymentMethods: [
+      {
+        id: 'spm-01',
+        paymentMethod: 'Commercial Bank of Ethiopia (CBE)',
+        accountNumber: '1000293848123',
+        isPrimary: true,
+      },
+      {
+        id: 'spm-02',
+        paymentMethod: 'Telebirr',
+        accountNumber: '0918761122',
+        isPrimary: false,
+      },
+    ],
   },
   {
     id: 'SUP-002',
@@ -136,10 +191,14 @@ export const mockSuppliers: Supplier[] = [
     status: 'ACTIVE',
     productCount: 8,
     registeredAt: '2025-01-15',
-    bankAccount: {
-      bankName: 'Dashen Bank',
-      accountNumber: '500291823901',
-    },
+    paymentMethods: [
+      {
+        id: 'spm-03',
+        paymentMethod: 'Dashen Bank / Amole',
+        accountNumber: '500291823901',
+        isPrimary: true,
+      },
+    ],
   },
   {
     id: 'SUP-003',
@@ -154,10 +213,20 @@ export const mockSuppliers: Supplier[] = [
     status: 'ACTIVE',
     productCount: 6,
     registeredAt: '2025-01-20',
-    bankAccount: {
-      bankName: 'Awash Bank',
-      accountNumber: '0132049182012',
-    },
+    paymentMethods: [
+      {
+        id: 'spm-04',
+        paymentMethod: 'Awash Bank',
+        accountNumber: '0132049182012',
+        isPrimary: true,
+      },
+      {
+        id: 'spm-05',
+        paymentMethod: 'Commercial Bank of Ethiopia (CBE)',
+        accountNumber: '1000445566778',
+        isPrimary: false,
+      },
+    ],
   },
   {
     id: 'SUP-004',
@@ -172,10 +241,14 @@ export const mockSuppliers: Supplier[] = [
     status: 'ACTIVE',
     productCount: 5,
     registeredAt: '2025-02-01',
-    bankAccount: {
-      bankName: 'Commercial Bank of Ethiopia',
-      accountNumber: '1000882716253',
-    },
+    paymentMethods: [
+      {
+        id: 'spm-06',
+        paymentMethod: 'Commercial Bank of Ethiopia (CBE)',
+        accountNumber: '1000882716253',
+        isPrimary: true,
+      },
+    ],
   },
   {
     id: 'SUP-005',
@@ -190,10 +263,14 @@ export const mockSuppliers: Supplier[] = [
     status: 'ACTIVE',
     productCount: 9,
     registeredAt: '2025-02-10',
-    bankAccount: {
-      bankName: 'Bank of Abyssinia',
-      accountNumber: '88291029381',
-    },
+    paymentMethods: [
+      {
+        id: 'spm-07',
+        paymentMethod: 'CBE Birr',
+        accountNumber: '0934558899',
+        isPrimary: true,
+      },
+    ],
   },
 ];
 

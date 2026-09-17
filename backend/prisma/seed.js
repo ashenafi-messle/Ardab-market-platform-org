@@ -60,7 +60,81 @@ async function main() {
       assignedCities: ['Gondar', 'Bahir Dar'],
     },
   });
-  console.log(`[SEED] Sub Admin seeded: ${subAdmin.email} (${subAdmin.id})`);
+  // 3. Marketplace Categories
+  const categoriesData = [
+    {
+      name: 'Grains & Cereals',
+      slug: 'grains-cereals',
+      icon: 'bi-boxes',
+      description: 'Teff, wheat, barley, maize, and indigenous cereal crops',
+    },
+    {
+      name: 'Coffee & Spices',
+      slug: 'coffee-spices',
+      icon: 'bi-cup-hot',
+      description: 'Yirgacheffe, Sidama, Harar specialty coffees and authentic Ethiopian spices',
+    },
+    {
+      name: 'Honey & Natural Sweeteners',
+      slug: 'honey-sweeteners',
+      icon: 'bi-droplet',
+      description: 'Pure organic highland honey, white honey, and bee products',
+    },
+    {
+      name: 'Edible Oils & Seeds',
+      slug: 'edible-oils-seeds',
+      icon: 'bi-moisture',
+      description: 'Nug oil, sesame seeds, sunflower seeds, and flaxseed',
+    },
+    {
+      name: 'Pulses & Legumes',
+      slug: 'pulses-legumes',
+      icon: 'bi-circle-square',
+      description: 'Chickpeas, red lentils, faba beans, and field peas',
+    },
+    {
+      name: 'Fresh Dairy & Butter',
+      slug: 'fresh-dairy-butter',
+      icon: 'bi-egg',
+      description: 'Traditional spiced butter (kibe), artisanal cheeses, and fresh dairy products',
+    },
+  ];
+
+  const seededCategories = [];
+  for (const cat of categoriesData) {
+    const category = await prisma.marketplaceCategory.upsert({
+      where: { slug: cat.slug },
+      update: { name: cat.name, icon: cat.icon, description: cat.description, isActive: true },
+      create: { name: cat.name, slug: cat.slug, icon: cat.icon, description: cat.description, isActive: true },
+    });
+    seededCategories.push(category);
+    console.log(`[SEED] Marketplace Category seeded: ${category.name} (${category.slug})`);
+  }
+
+  // 4. Assign categories to existing active suppliers
+  const suppliers = await prisma.supplier.findMany({
+    where: { status: 'ACTIVE' },
+    select: { id: true, companyName: true },
+  });
+
+  for (const supplier of suppliers) {
+    for (const cat of seededCategories) {
+      await prisma.sellerMarketplaceCategory.upsert({
+        where: {
+          sellerId_categoryId: {
+            sellerId: supplier.id,
+            categoryId: cat.id,
+          },
+        },
+        update: {},
+        create: {
+          sellerId: supplier.id,
+          categoryId: cat.id,
+        },
+      });
+    }
+    console.log(`[SEED] Assigned ${seededCategories.length} categories to supplier: ${supplier.companyName}`);
+  }
 
   console.log('[SEED] Seeding completed successfully.');
 }

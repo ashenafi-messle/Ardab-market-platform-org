@@ -15,7 +15,6 @@ test('Database Integration: CRUD & Transaction Suite', async (t) => {
     if (createdUserId) {
       await prisma.adminUser.deleteMany({ where: { email: testEmail } });
     }
-    await disconnectPrisma();
   });
 
   await t.test('1. CREATE: Insert test admin record into Neon PostgreSQL', async () => {

@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import { useAuth } from '@/context/AuthContext';
 import { productsApi, categoriesApi, suppliersApi } from '@/lib/api';
-import { Product, Category } from '@/types/product';
+import { Product, Category, ProductStatus, ProductImageItem } from '@/types/product';
 import { Supplier } from '@/types/supplier';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import Pagination from '@/components/common/Pagination';
@@ -16,10 +16,17 @@ import { formatCurrency, formatWeight } from '@/lib/formatters';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants';
 import { hasPermission } from '@/lib/permissions';
 
+export interface StagedFile {
+  id: string;
+  file: File;
+  preview: string;
+  isPrimary: boolean;
+}
+
 export default function ProductsPage() {
-  const { user, selectedCity } = useAuth();
+  const { user, isLoading: authLoading, selectedCity } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -27,7 +34,8 @@ export default function ProductsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 300);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedStatus, setSelectedStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+  const [selectedSeller, setSelectedSeller] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -61,84 +69,132 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
 
-  // Form State with Seller / Owner & Discount
+  // Image Upload and Gallery State
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
+  const [existingImages, setExistingImages] = useState<ProductImageItem[]>([]);
+  const [isDeletingImageId, setIsDeletingImageId] = useState<string | null>(null);
+  const [isSettingPrimaryId, setIsSettingPrimaryId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeDetailImageIndex, setActiveDetailImageIndex] = useState(0);
+
+  // Cascading categories for modal
+  const [sellerCategories, setSellerCategories] = useState<Category[]>([]);
+  const [isLoadingSellerCategories, setIsLoadingSellerCategories] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Form State with Seller / Owner FIRST, sequential itemCode read-only, and packagingUnit removed
   const [formData, setFormData] = useState({
     name: '',
-    sku: '',
-    categoryId: 'CAT-01',
-    sellerId: 'SUP-001',
-    sellerName: 'Gondar Farmers Union Cooperative',
+    itemCode: '',
+    sellerId: '',
+    sellerName: '',
+    categoryId: '',
     description: '',
+    costPrice: 0,
+    sellingPrice: 5000,
     originalPrice: 5000,
     discountPercent: 0,
-    sellingPrice: 5000,
-    weightKg: 25,
+    weight: 25,
     unit: 'bag',
-    availability: 'IN_STOCK' as 'IN_STOCK' | 'OUT_OF_STOCK' | 'LIMITED',
-    cityAvailability: ['Gondar', 'Bahir Dar', 'Addis Ababa'],
-    status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
+    cityAvailability: ['All Cities'],
+    status: 'ACTIVE' as ProductStatus,
   });
 
   const canEdit = hasPermission(user?.role, 'products:edit');
 
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [prodRes, catRes, supRes] = await Promise.all([
-        productsApi.getAll(selectedCity, selectedCategory),
+        productsApi.getAll(selectedCity, selectedCategory !== 'all' ? selectedCategory : undefined),
         categoriesApi.getAll(),
         suppliersApi.getAll(),
       ]);
       setProducts(prodRes);
-      setCategories(catRes);
+      setAllCategories(catRes);
       setSuppliers(supRes);
     } catch (e) {
       console.error('Failed to load products:', e);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedCity, selectedCategory]);
 
   useEffect(() => {
+    if (authLoading || !user) return;
     let isMounted = true;
-    Promise.all([
-      productsApi.getAll(selectedCity, selectedCategory),
-      categoriesApi.getAll(),
-      suppliersApi.getAll(),
-    ])
-      .then(([prodRes, catRes, supRes]) => {
+    const fetchInitialData = async () => {
+      try {
+        const [prodRes, catRes, supRes] = await Promise.all([
+          productsApi.getAll(selectedCity, selectedCategory !== 'all' ? selectedCategory : undefined),
+          categoriesApi.getAll(),
+          suppliersApi.getAll(),
+        ]);
         if (isMounted) {
           setProducts(prodRes);
-          setCategories(catRes);
+          setAllCategories(catRes);
           setSuppliers(supRes);
+          setIsLoading(false);
         }
-      })
-      .catch((e) => {
+      } catch (e) {
         console.error('Failed to load products:', e);
-      })
-      .finally(() => {
         if (isMounted) setIsLoading(false);
-      });
-
+      }
+    };
+    fetchInitialData();
     return () => {
       isMounted = false;
     };
-  }, [selectedCity, selectedCategory]);
+  }, [selectedCity, selectedCategory, authLoading, user]);
+
+  // Load seller-assigned categories when seller is selected in modal
+  const loadSellerCategories = async (sellerId: string, preselectedCategoryId?: string) => {
+    if (!sellerId) {
+      setSellerCategories([]);
+      return;
+    }
+    setIsLoadingSellerCategories(true);
+    try {
+      const cats = await categoriesApi.getBySeller(sellerId);
+      setSellerCategories(cats);
+      // If previous category not in new seller's categories, reset or use preselected
+      if (preselectedCategoryId && cats.some((c) => c.id === preselectedCategoryId)) {
+        setFormData((prev) => ({ ...prev, categoryId: preselectedCategoryId }));
+      } else if (cats.length > 0) {
+        setFormData((prev) => ({ ...prev, categoryId: cats[0].id }));
+      } else {
+        setFormData((prev) => ({ ...prev, categoryId: '' }));
+      }
+    } catch (err) {
+      console.error('Failed to load categories for seller:', err);
+      setSellerCategories([]);
+    } finally {
+      setIsLoadingSellerCategories(false);
+    }
+  };
 
   // Filtered in-memory records
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       const q = debouncedSearch.toLowerCase().trim();
+      const code = p.itemCode || p.sku || '';
+      const catName = typeof p.category === 'string' ? p.category : p.category?.name || '';
       const matchesSearch =
         !q ||
         p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
+        code.toLowerCase().includes(q) ||
+        catName.toLowerCase().includes(q) ||
         (p.sellerName && p.sellerName.toLowerCase().includes(q));
+
       const matchesStatus = selectedStatus === 'ALL' || p.status === selectedStatus;
-      return matchesSearch && matchesStatus;
+      const matchesSeller = selectedSeller === 'all' || p.sellerId === selectedSeller;
+      const matchesCategory = selectedCategory === 'all' || p.marketplaceCategoryId === selectedCategory;
+
+      return matchesSearch && matchesStatus && matchesSeller && matchesCategory;
     });
-  }, [products, debouncedSearch, selectedStatus]);
+  }, [products, debouncedSearch, selectedStatus, selectedSeller, selectedCategory]);
 
   // Paginated records
   const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
@@ -176,15 +232,32 @@ export default function ProductsPage() {
       isOpen: true,
       title: isActivating ? 'Activate Marketplace Product' : 'Deactivate Marketplace Product',
       message: isActivating
-        ? `Are you sure you want to activate "${product.name}"? It will become visible and orderable in the consumer marketplace across ${product.cityAvailability.join(', ')}.`
-        : `Are you sure you want to deactivate "${product.name}"? It will be immediately hidden from customer storefronts and active shopping carts.`,
+        ? `Are you sure you want to activate "${product.name}" [${product.itemCode}]? It will become visible and orderable in the consumer marketplace.`
+        : `Are you sure you want to deactivate "${product.name}" [${product.itemCode}]? It will be hidden from customer storefronts.`,
       variant: isActivating ? 'success' : 'warning',
       confirmLabel: isActivating ? 'Activate' : 'Deactivate',
       affectedCount: 1,
-      affectedNames: [product.name],
+      affectedNames: [`${product.name} [${product.itemCode}]`],
       action: async () => {
         const updated = await productsApi.toggleStatus(product.id);
         setProducts((prev) => prev.map((p) => (p.id === product.id ? updated : p)));
+      },
+    });
+  };
+
+  const promptArchiveProduct = (product: Product) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Archive Marketplace Product',
+      message: `Are you sure you want to archive product "${product.name}" [${product.itemCode}]? This will remove it from active catalog views.`,
+      variant: 'danger',
+      confirmLabel: 'Archive Product',
+      affectedCount: 1,
+      affectedNames: [`${product.name} [${product.itemCode}]`],
+      isIrreversible: true,
+      action: async () => {
+        await productsApi.delete(product.id);
+        setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, status: 'ARCHIVED' } : p)));
       },
     });
   };
@@ -193,7 +266,7 @@ export default function ProductsPage() {
     const count = selectedIds.length;
     const names = products
       .filter((p) => selectedIds.includes(p.id))
-      .map((p) => `${p.name} (${p.sku})`);
+      .map((p) => `${p.name} (${p.itemCode})`);
 
     const isActivating = newStatus === 'ACTIVE';
 
@@ -201,8 +274,8 @@ export default function ProductsPage() {
       isOpen: true,
       title: isActivating ? 'Bulk Activate Products' : 'Bulk Deactivate Products',
       message: isActivating
-        ? `You are about to activate ${count} marketplace product(s). They will be live and purchasable by buyers across assigned Ethiopian hub cities.`
-        : `You are about to deactivate ${count} marketplace product(s). They will immediately be delisted from all active customer search results.`,
+        ? `You are about to activate ${count} marketplace product(s). They will be live and purchasable by buyers.`
+        : `You are about to deactivate ${count} marketplace product(s). They will immediately be delisted from active customer searches.`,
       variant: isActivating ? 'success' : 'danger',
       confirmLabel: isActivating ? 'Activate Selected' : 'Deactivate Selected',
       affectedCount: count,
@@ -229,47 +302,202 @@ export default function ProductsPage() {
     }
   };
 
+  // File validation and staging for image uploads
+  const validateAndAddFiles = (files: FileList | File[]) => {
+    setFormError(null);
+    const ALLOWED_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
+    const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB limit
+    const MAX_TOTAL = 10;
+
+    const currentCount = stagedFiles.length + existingImages.length;
+    if (currentCount + files.length > MAX_TOTAL) {
+      setFormError(`You can upload a maximum of ${MAX_TOTAL} images per product.`);
+      return;
+    }
+
+    const newStaged: StagedFile[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      const validExt = ALLOWED_EXTS.includes(ext);
+      const validType = ALLOWED_MIMES.includes(file.type);
+
+      if (!validExt || !validType) {
+        setFormError(`"${file.name}" has an unsupported format. Allowed formats: JPG, JPEG, PNG, WEBP.`);
+        return;
+      }
+
+      if (file.size > MAX_SIZE) {
+        setFormError(`"${file.name}" exceeds the 5MB size limit (${(file.size / (1024 * 1024)).toFixed(1)}MB).`);
+        return;
+      }
+
+      const isFirst =
+        stagedFiles.length === 0 &&
+        newStaged.length === 0 &&
+        !existingImages.some((img) => img.isPrimary);
+
+      newStaged.push({
+        id: `staged_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        file,
+        preview: URL.createObjectURL(file),
+        isPrimary: isFirst,
+      });
+    }
+
+    setStagedFiles((prev) => [...prev, ...newStaged]);
+  };
+
+  const handleRemoveStaged = (id: string) => {
+    setStagedFiles((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target) URL.revokeObjectURL(target.preview);
+      const filtered = prev.filter((item) => item.id !== id);
+      if (target?.isPrimary && filtered.length > 0 && !existingImages.some((img) => img.isPrimary)) {
+        filtered[0].isPrimary = true;
+      }
+      return filtered;
+    });
+  };
+
+  const handleSetPrimaryStaged = (id: string) => {
+    setExistingImages((prev) => prev.map((img) => ({ ...img, isPrimary: false })));
+    setStagedFiles((prev) =>
+      prev.map((item) => ({
+        ...item,
+        isPrimary: item.id === id,
+      }))
+    );
+  };
+
+  const handleSetPrimaryExisting = async (imageId: string) => {
+    if (!editingProduct) return;
+    setIsSettingPrimaryId(imageId);
+    try {
+      await productsApi.setPrimaryImage(editingProduct.id, imageId);
+      setExistingImages((prev) =>
+        prev.map((img) => ({
+          ...img,
+          isPrimary: img.id === imageId,
+        }))
+      );
+      setStagedFiles((prev) => prev.map((item) => ({ ...item, isPrimary: false })));
+      refreshData();
+    } catch (err) {
+      console.error('Failed to set primary image:', err);
+      setFormError('Failed to set primary image. Please try again.');
+    } finally {
+      setIsSettingPrimaryId(null);
+    }
+  };
+
+  const handleDeleteExistingImage = async (imageId: string) => {
+    if (!editingProduct) return;
+    setIsDeletingImageId(imageId);
+    try {
+      await productsApi.deleteImage(editingProduct.id, imageId);
+      setExistingImages((prev) => {
+        const remaining = prev.filter((img) => img.id !== imageId);
+        if (remaining.length > 0 && !remaining.some((img) => img.isPrimary) && stagedFiles.length === 0) {
+          remaining[0].isPrimary = true;
+        }
+        return remaining;
+      });
+      refreshData();
+    } catch (err) {
+      console.error('Failed to delete image:', err);
+      setFormError('Failed to delete image from Cloudinary storage.');
+    } finally {
+      setIsDeletingImageId(null);
+    }
+  };
+
+  const handleCloseModal = () => {
+    stagedFiles.forEach((f) => URL.revokeObjectURL(f.preview));
+    setStagedFiles([]);
+    setExistingImages([]);
+    setIsModalOpen(false);
+  };
+
   const handleOpenAdd = () => {
+    stagedFiles.forEach((f) => URL.revokeObjectURL(f.preview));
+    setStagedFiles([]);
+    setExistingImages([]);
     setEditingProduct(null);
-    const defaultSup = suppliers[0] || { id: 'SUP-001', companyName: 'Gondar Farmers Union Cooperative' };
+    setFormError(null);
+    const activeSuppliers = suppliers.filter((s) => s.status === 'ACTIVE');
+    const defaultSup = activeSuppliers[0] || suppliers[0];
+    const initialSellerId = defaultSup ? defaultSup.id : '';
+
     setFormData({
       name: '',
-      sku: `PRD-${Math.floor(100 + Math.random() * 900)}`,
-      categoryId: categories[0]?.id || 'CAT-01',
-      sellerId: defaultSup.id,
-      sellerName: defaultSup.companyName,
+      itemCode: '', // Generated server-side automatically
+      sellerId: initialSellerId,
+      sellerName: defaultSup ? defaultSup.companyName : '',
+      categoryId: '',
       description: '',
-      originalPrice: 5000,
+      costPrice: 0,
+      sellingPrice: 1000,
+      originalPrice: 1000,
       discountPercent: 0,
-      sellingPrice: 5000,
-      weightKg: 25,
-      unit: 'bag',
-      availability: 'IN_STOCK',
-      cityAvailability: ['Gondar', 'Bahir Dar', 'Addis Ababa'],
+      weight: 25,
+      unit: 'kg',
+      cityAvailability: ['All Cities'],
       status: 'ACTIVE',
     });
+
+    if (initialSellerId) {
+      loadSellerCategories(initialSellerId);
+    } else {
+      setSellerCategories([]);
+    }
+
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (product: Product) => {
+    stagedFiles.forEach((f) => URL.revokeObjectURL(f.preview));
+    setStagedFiles([]);
+    setExistingImages(product.productImages || []);
     setEditingProduct(product);
+    setFormError(null);
+    const sellerId = product.sellerId || (product.seller ? product.seller.id : '');
+    const categoryId = product.marketplaceCategoryId || product.categoryId || '';
+
     setFormData({
       name: product.name,
-      sku: product.sku,
-      categoryId: product.categoryId,
-      sellerId: product.sellerId || suppliers[0]?.id || 'SUP-001',
-      sellerName: product.sellerName || suppliers[0]?.companyName || 'Registered Seller',
-      description: product.description,
+      itemCode: product.itemCode || product.sku || '',
+      sellerId,
+      sellerName: product.sellerName || (product.seller ? product.seller.companyName : ''),
+      categoryId,
+      description: product.description || '',
+      costPrice: product.costPrice || 0,
+      sellingPrice: product.sellingPrice,
       originalPrice: product.originalPrice || product.sellingPrice,
       discountPercent: product.discountPercent || 0,
-      sellingPrice: product.sellingPrice,
-      weightKg: product.weightKg,
-      unit: product.unit,
-      availability: product.availability,
-      cityAvailability: product.cityAvailability,
+      weight: product.weight || product.weightKg || 25,
+      unit: product.unit || 'kg',
+      cityAvailability: product.cityAvailability || ['All Cities'],
       status: product.status,
     });
+
+    if (sellerId) {
+      loadSellerCategories(sellerId, categoryId);
+    }
+
     setIsModalOpen(true);
+  };
+
+  const handleSellerChange = (newSellerId: string) => {
+    const selected = suppliers.find((s) => s.id === newSellerId);
+    setFormData((prev) => ({
+      ...prev,
+      sellerId: newSellerId,
+      sellerName: selected ? selected.companyName : '',
+      categoryId: '', // Reset category when seller changes
+    }));
+    loadSellerCategories(newSellerId);
   };
 
   const handlePriceChange = (orig: number, disc: number) => {
@@ -284,47 +512,125 @@ export default function ProductsPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    const categoryName = categories.find((c) => c.id === formData.categoryId)?.name || 'General';
-    const sellerObj = suppliers.find((s) => s.id === formData.sellerId);
-    const sellerName = sellerObj ? sellerObj.companyName : formData.sellerName;
+    setFormError(null);
 
-    const calculatedPrice =
-      formData.discountPercent > 0
-        ? Math.round(formData.originalPrice * (1 - formData.discountPercent / 100))
-        : formData.originalPrice;
-
-    if (editingProduct) {
-      await productsApi.update(editingProduct.id, {
-        ...formData,
-        category: categoryName,
-        sellerName,
-        sellingPrice: calculatedPrice,
-        discountPrice: formData.discountPercent > 0 ? calculatedPrice : undefined,
-      });
-    } else {
-      await productsApi.create({
-        ...formData,
-        category: categoryName,
-        sellerName,
-        sellingPrice: calculatedPrice,
-        discountPrice: formData.discountPercent > 0 ? calculatedPrice : undefined,
-      });
+    if (!formData.sellerId) {
+      setFormError('Please select a Product Owner / Seller first.');
+      return;
     }
-    setIsModalOpen(false);
-    refreshData();
+
+    if (!formData.categoryId) {
+      setFormError('Please select a valid Marketplace Category assigned to this seller.');
+      return;
+    }
+
+    if (!formData.unit || formData.unit.trim().length === 0) {
+      setFormError('Commodity unit is required (e.g. kg, bag, quintal).');
+      return;
+    }
+
+    if (formData.weight <= 0) {
+      setFormError('Unit weight in KG must be greater than 0.');
+      return;
+    }
+
+    if (formData.sellingPrice <= 0) {
+      setFormError('Marketplace selling price must be greater than 0.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      if (editingProduct) {
+        // Update product (strictly omit itemCode and packagingUnit)
+        await productsApi.update(editingProduct.id, {
+          name: formData.name.trim(),
+          description: formData.description.trim() || null,
+          sellerId: formData.sellerId,
+          marketplaceCategoryId: formData.categoryId,
+          unit: formData.unit.trim(),
+          weight: Number(formData.weight),
+          costPrice: formData.costPrice > 0 ? Number(formData.costPrice) : null,
+          sellingPrice: Number(formData.sellingPrice),
+          cityAvailability: formData.cityAvailability,
+          status: formData.status,
+        });
+
+        // Upload any staged images for the existing product
+        if (stagedFiles.length > 0) {
+          for (const item of stagedFiles) {
+            await productsApi.uploadImage(editingProduct.id, item.file, item.isPrimary);
+          }
+        }
+      } else {
+        // Create new product with multipart/form-data for image streaming
+        const formPayload = new FormData();
+        formPayload.append('name', formData.name.trim());
+        if (formData.description.trim()) {
+          formPayload.append('description', formData.description.trim());
+        }
+        formPayload.append('sellerId', formData.sellerId);
+        formPayload.append('marketplaceCategoryId', formData.categoryId);
+        formPayload.append('unit', formData.unit.trim());
+        formPayload.append('weight', String(formData.weight));
+        if (formData.costPrice > 0) {
+          formPayload.append('costPrice', String(formData.costPrice));
+        }
+        formPayload.append('sellingPrice', String(formData.sellingPrice));
+        formPayload.append('status', formData.status);
+        formData.cityAvailability.forEach((city) => {
+          formPayload.append('cityAvailability', city);
+        });
+
+        const sortedFiles = [...stagedFiles].sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0));
+        sortedFiles.forEach((item) => {
+          formPayload.append('images', item.file);
+        });
+
+        await productsApi.create(formPayload);
+      }
+
+      stagedFiles.forEach((f) => URL.revokeObjectURL(f.preview));
+      setStagedFiles([]);
+      setExistingImages([]);
+      setIsModalOpen(false);
+      refreshData();
+    } catch (err: unknown) {
+      console.error('Failed to save product:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to save product. Please verify seller category assignment.';
+      setFormError(msg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleResetFilters = () => {
     setSearchTerm('');
     setSelectedCategory('all');
+    setSelectedSeller('all');
     setSelectedStatus('ALL');
+  };
+
+  const renderStatusBadge = (status: ProductStatus | string) => {
+    switch (status) {
+      case 'ACTIVE':
+        return <span className="ardab-badge badge-success-soft">ACTIVE</span>;
+      case 'DRAFT':
+        return <span className="ardab-badge badge-warning-soft">DRAFT</span>;
+      case 'OUT_OF_STOCK':
+        return <span className="ardab-badge badge-danger-soft">OUT OF STOCK</span>;
+      case 'ARCHIVED':
+        return <span className="ardab-badge bg-secondary text-white">ARCHIVED</span>;
+      default:
+        return <span className="ardab-badge badge-neutral-soft">{status || 'INACTIVE'}</span>;
+    }
   };
 
   return (
     <AdminLayout>
       <PageContainer
         title="Product Catalog & Pricing"
-        subtitle="Post products with full specifications, owner / seller attribution, regular prices, and active promotional discounts"
+        subtitle="Manage platform commodities with sequential server-generated Item Codes, seller category binding, and live pricing"
         breadcrumbs={[{ label: 'Marketplace' }, { label: 'Products' }]}
         actions={
           canEdit ? (
@@ -342,35 +648,44 @@ export default function ProductsPage() {
         {/* Filter Controls Bar */}
         <div className="ardab-card p-3 mb-4">
           <div className="row g-3 align-items-center">
-            <div className="col-12 col-md-5">
+            <div className="col-12 col-md-4">
               <div className="position-relative">
                 <i className="bi bi-search position-absolute start-0 top-50 translate-middle-y ms-3 text-muted"></i>
                 <input
                   type="text"
                   className="form-control ps-5"
-                  placeholder="Search by product, seller / owner, SKU, category..."
+                  placeholder="Search by product name, item code, seller..."
                   value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  aria-label="Search products"
+                  onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
             </div>
 
-            <div className="col-6 col-md-4">
+            {/* Seller Filter */}
+            <div className="col-6 col-md-3">
+              <select
+                className="form-select"
+                value={selectedSeller}
+                onChange={(e) => setSelectedSeller(e.target.value)}
+              >
+                <option value="all">All Product Owners / Sellers</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.companyName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Category Filter */}
+            <div className="col-6 col-md-2">
               <select
                 className="form-select"
                 value={selectedCategory}
-                onChange={(e) => {
-                  setSelectedCategory(e.target.value);
-                  setCurrentPage(1);
-                }}
-                aria-label="Filter by category"
+                onChange={(e) => setSelectedCategory(e.target.value)}
               >
                 <option value="all">All Categories</option>
-                {categories.map((c) => (
+                {allCategories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -378,72 +693,67 @@ export default function ProductsPage() {
               </select>
             </div>
 
-            <div className="col-6 col-md-3">
+            {/* Status Filter */}
+            <div className="col-6 col-md-2">
               <select
                 className="form-select"
                 value={selectedStatus}
-                onChange={(e) => {
-                  setSelectedStatus(e.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE');
-                  setCurrentPage(1);
-                }}
-                aria-label="Filter by status"
+                onChange={(e) => setSelectedStatus(e.target.value)}
               >
                 <option value="ALL">All Statuses</option>
-                <option value="ACTIVE">Active Only</option>
-                <option value="INACTIVE">Inactive Only</option>
+                <option value="ACTIVE">Active</option>
+                <option value="DRAFT">Draft</option>
+                <option value="INACTIVE">Inactive</option>
+                <option value="OUT_OF_STOCK">Out of Stock</option>
+                <option value="ARCHIVED">Archived</option>
               </select>
             </div>
-          </div>
-        </div>
 
-        {/* Bulk Action Bar */}
-        {selectedIds.length > 0 && (
-          <div className="alert alert-primary d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-3 py-2 px-3 shadow-sm rounded-3">
-            <div className="d-flex align-items-center gap-2 fw-semibold small">
-              <i className="bi bi-check2-square fs-6 text-primary"></i>
-              <span>{selectedIds.length} product(s) selected</span>
-            </div>
-            <div className="d-flex align-items-center gap-2 flex-wrap">
+            <div className="col-6 col-md-1 d-flex justify-content-end">
               <button
                 type="button"
-                className="btn btn-sm btn-success px-3 d-flex align-items-center gap-1"
-                onClick={() => promptBulkStatus('ACTIVE')}
+                className="btn btn-light border w-100"
+                title="Reset Filters"
+                onClick={handleResetFilters}
               >
-                <i className="bi bi-play-circle"></i> Activate Selected
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-danger px-3 d-flex align-items-center gap-1 bg-white"
-                onClick={() => promptBulkStatus('INACTIVE')}
-              >
-                <i className="bi bi-pause-circle"></i> Deactivate Selected
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-link text-secondary text-decoration-none"
-                onClick={() => setSelectedIds([])}
-              >
-                Deselect All
+                <i className="bi bi-arrow-counterclockwise"></i>
               </button>
             </div>
           </div>
-        )}
 
-        {/* Product Count Metric */}
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <span className="text-muted small">
-            Found <strong className="text-dark">{filteredProducts.length}</strong> marketplace products
-          </span>
-          <span className="badge badge-success-soft">Seller / Owner Linked</span>
+          {/* Bulk Action Bar */}
+          {selectedIds.length > 0 && canEdit && (
+            <div className="mt-3 pt-3 border-top d-flex align-items-center justify-content-between flex-wrap gap-2">
+              <span className="small text-muted">
+                <strong>{selectedIds.length}</strong> product(s) selected
+              </span>
+              <div className="d-flex align-items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-success"
+                  onClick={() => promptBulkStatus('ACTIVE')}
+                >
+                  <i className="bi bi-check-circle me-1"></i> Bulk Activate
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger"
+                  onClick={() => promptBulkStatus('INACTIVE')}
+                >
+                  <i className="bi bi-x-circle me-1"></i> Bulk Deactivate
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Product Table (Desktop) */}
-        <div className="ardab-card p-0 mb-4 d-none d-lg-block overflow-hidden">
-          <div className="ardab-table-wrapper">
-            <table className="ardab-table">
+        <div className="ardab-card d-none d-lg-block mb-4">
+          <div className="table-responsive">
+            <table className="table ardab-table align-middle mb-0">
               <thead>
                 <tr>
-                  <th style={{ width: '40px' }}>
+                  <th style={{ width: 40 }}>
                     <input
                       type="checkbox"
                       className="form-check-input"
@@ -452,10 +762,10 @@ export default function ProductsPage() {
                       aria-label="Select all on current page"
                     />
                   </th>
-                  <th>Product / SKU</th>
+                  <th>Product & Item Code</th>
                   <th>Product Owner (Seller)</th>
                   <th>Category</th>
-                  <th>Pricing & Discount</th>
+                  <th>Selling Price</th>
                   <th>Unit Weight</th>
                   <th>City Scope</th>
                   <th>Status</th>
@@ -466,131 +776,161 @@ export default function ProductsPage() {
                 <TableSkeleton rows={5} columns={9} />
               ) : paginatedProducts.length > 0 ? (
                 <tbody>
-                  {paginatedProducts.map((p) => (
-                    <tr key={p.id} className={selectedIds.includes(p.id) ? 'table-primary' : ''}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={selectedIds.includes(p.id)}
-                          onChange={() => handleSelectOne(p.id)}
-                          aria-label={`Select ${p.name}`}
-                        />
-                      </td>
-                      <td>
-                        <div className="d-flex align-items-center gap-3">
-                          <div
-                            className="ardab-icon-box icon-box-green flex-shrink-0"
-                            style={{ width: 40, height: 40, fontSize: '1.15rem' }}
-                          >
-                            <i className="bi bi-box-seam"></i>
-                          </div>
-                          <div>
-                            <div className="fw-bold text-dark">{p.name}</div>
-                            <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
-                              SKU: {p.sku} &bull; Unit: {p.unit}
+                  {paginatedProducts.map((p) => {
+                    const catName = typeof p.category === 'string' ? p.category : p.category?.name || 'General';
+                    const code = p.itemCode || p.sku || 'PENDING';
+                    return (
+                      <tr key={p.id} className={selectedIds.includes(p.id) ? 'table-primary' : ''}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={selectedIds.includes(p.id)}
+                            onChange={() => handleSelectOne(p.id)}
+                            aria-label={`Select ${p.name}`}
+                          />
+                        </td>
+                        <td>
+                          <div className="d-flex align-items-center gap-3">
+                            {(() => {
+                              const thumb =
+                                p.primaryImage?.thumbnailUrl ||
+                                p.primaryImage?.url ||
+                                (typeof p.images?.[0] === 'string'
+                                  ? p.images[0]
+                                  : (p.images?.[0] as ProductImageItem)?.url) ||
+                                p.imageUrl;
+                              if (thumb) {
+                                return (
+                                  <img
+                                    src={thumb}
+                                    alt={p.name}
+                                    className="rounded-2 border object-fit-cover flex-shrink-0"
+                                    style={{ width: 44, height: 44 }}
+                                    loading="lazy"
+                                  />
+                                );
+                              }
+                              return (
+                                <div
+                                  className="ardab-icon-box icon-box-green flex-shrink-0"
+                                  style={{ width: 44, height: 44, fontSize: '1.15rem' }}
+                                >
+                                  <i className="bi bi-box-seam"></i>
+                                </div>
+                              );
+                            })()}
+                            <div>
+                              <div className="fw-bold text-dark">{p.name}</div>
+                              <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
+                                <code className="text-primary fw-semibold">{code}</code> &bull; Unit: {p.unit}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="fw-semibold text-dark small">
-                          <i className="bi bi-building me-1 text-muted"></i>
-                          {p.sellerName || 'Direct Marketplace'}
-                        </div>
-                      </td>
-                      <td>
-                        <span className="text-dark fw-medium small">{p.category}</span>
-                      </td>
-                      <td>
-                        {p.discountPercent > 0 ? (
-                          <div>
-                            <div className="d-flex align-items-center gap-2">
-                              <span className="fw-bold text-success fs-6">
-                                {formatCurrency(p.sellingPrice)}
-                              </span>
-                              <span className="badge badge-warning-soft" style={{ fontSize: '0.65rem' }}>
-                                {p.discountPercent}% OFF
+                        </td>
+                        <td>
+                          <div className="fw-semibold text-dark small">
+                            <i className="bi bi-building me-1 text-muted"></i>
+                            {p.sellerName || (p.seller ? p.seller.companyName : 'Direct Marketplace')}
+                          </div>
+                        </td>
+                        <td>
+                          <span className="text-dark fw-medium small">{catName}</span>
+                        </td>
+                        <td>
+                          {p.discountPercent && p.discountPercent > 0 ? (
+                            <div>
+                              <div className="d-flex align-items-center gap-2">
+                                <span className="fw-bold text-success fs-6">
+                                  {formatCurrency(p.sellingPrice)}
+                                </span>
+                                <span className="badge badge-warning-soft" style={{ fontSize: '0.65rem' }}>
+                                  {p.discountPercent}% OFF
+                                </span>
+                              </div>
+                              <span
+                                className="text-muted text-decoration-line-through small"
+                                style={{ fontSize: '0.75rem' }}
+                              >
+                                {p.originalPrice ? formatCurrency(p.originalPrice) : ''}
                               </span>
                             </div>
-                            <span
-                              className="text-muted text-decoration-line-through small"
-                              style={{ fontSize: '0.75rem' }}
-                            >
-                              {p.originalPrice ? formatCurrency(p.originalPrice) : ''}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="fw-bold text-dark fs-6">
-                            {formatCurrency(p.sellingPrice)}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        <span className="badge badge-neutral-soft">{formatWeight(p.weightKg)}</span>
-                      </td>
-                      <td>
-                        <div className="d-flex gap-1 flex-wrap">
-                          {p.cityAvailability.map((city) => (
-                            <span
-                              key={city}
-                              className="badge bg-light text-dark border"
-                              style={{ fontSize: '0.65rem' }}
-                            >
-                              {city}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td>
-                        <span
-                          className={`ardab-badge ${
-                            p.status === 'ACTIVE' ? 'badge-success-soft' : 'badge-danger-soft'
-                          }`}
-                        >
-                          {p.status}
-                        </span>
-                      </td>
-                      <td className="text-end">
-                        <div className="d-inline-flex align-items-center gap-1">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-light border"
-                            title="View Details"
-                            onClick={() => setViewProduct(p)}
-                          >
-                            <i className="bi bi-eye"></i>
-                          </button>
-                          {canEdit && (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-light border"
-                                title="Edit Product"
-                                onClick={() => handleOpenEdit(p)}
-                              >
-                                <i className="bi bi-pencil"></i>
-                              </button>
-                              <button
-                                type="button"
-                                className={`btn btn-sm ${
-                                  p.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'
-                                }`}
-                                title={p.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                                onClick={() => promptToggleStatus(p)}
-                              >
-                                <i
-                                  className={`bi ${
-                                    p.status === 'ACTIVE' ? 'bi-pause-circle' : 'bi-play-circle'
-                                  }`}
-                                ></i>
-                              </button>
-                            </>
+                          ) : (
+                            <div className="fw-bold text-dark fs-6">
+                              {formatCurrency(p.sellingPrice)}
+                            </div>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td>
+                          <span className="badge badge-neutral-soft">
+                            {formatWeight(p.weight || p.weightKg || 0)}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="d-flex gap-1 flex-wrap">
+                            {(p.cityAvailability || ['All Cities']).map((city) => (
+                              <span
+                                key={city}
+                                className="badge bg-light text-dark border"
+                                style={{ fontSize: '0.65rem' }}
+                              >
+                                {city}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>{renderStatusBadge(p.status)}</td>
+                        <td className="text-end">
+                          <div className="d-inline-flex align-items-center gap-1">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-light border"
+                              title="View Details"
+                              onClick={() => setViewProduct(p)}
+                            >
+                              <i className="bi bi-eye"></i>
+                            </button>
+                            {canEdit && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-light border"
+                                  title="Edit Product"
+                                  onClick={() => handleOpenEdit(p)}
+                                >
+                                  <i className="bi bi-pencil"></i>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`btn btn-sm ${
+                                    p.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'
+                                  }`}
+                                  title={p.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                                  onClick={() => promptToggleStatus(p)}
+                                >
+                                  <i
+                                    className={`bi ${
+                                      p.status === 'ACTIVE' ? 'bi-pause-circle' : 'bi-play-circle'
+                                    }`}
+                                  ></i>
+                                </button>
+                                {p.status !== 'ARCHIVED' && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-secondary"
+                                    title="Archive Product"
+                                    onClick={() => promptArchiveProduct(p)}
+                                  >
+                                    <i className="bi bi-archive"></i>
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               ) : null}
             </table>
@@ -617,107 +957,118 @@ export default function ProductsPage() {
               Loading products...
             </div>
           ) : paginatedProducts.length > 0 ? (
-            paginatedProducts.map((p) => (
-              <div
-                key={p.id}
-                className={`ardab-card p-3 ${selectedIds.includes(p.id) ? 'border-primary' : ''}`}
-              >
-                <div className="d-flex justify-content-between align-items-start mb-2">
-                  <div className="d-flex align-items-start gap-2">
-                    <input
-                      type="checkbox"
-                      className="form-check-input mt-1"
-                      checked={selectedIds.includes(p.id)}
-                      onChange={() => handleSelectOne(p.id)}
-                      aria-label={`Select ${p.name}`}
-                    />
-                    <div>
-                      <h3 className="h6 fw-bold text-dark mb-0">{p.name}</h3>
-                      <span className="text-muted small" style={{ fontSize: '0.75rem' }}>
-                        {p.sku} &bull; {p.category}
-                      </span>
-                    </div>
-                  </div>
-                  <span
-                    className={`ardab-badge ${
-                      p.status === 'ACTIVE' ? 'badge-success-soft' : 'badge-danger-soft'
-                    }`}
-                    style={{ fontSize: '0.65rem' }}
-                  >
-                    {p.status}
-                  </span>
-                </div>
-
-                {/* Seller attribution */}
-                <div className="p-2 bg-light rounded-2 small text-muted mb-2">
-                  Owner / Seller: <strong className="text-dark">{p.sellerName || 'Direct Marketplace'}</strong>
-                </div>
-
-                <div className="d-flex justify-content-between align-items-center mb-2 pt-2 border-top">
-                  <div>
+            paginatedProducts.map((p) => {
+              const catName = typeof p.category === 'string' ? p.category : p.category?.name || 'General';
+              const code = p.itemCode || p.sku || 'PENDING';
+              return (
+                <div
+                  key={p.id}
+                  className={`ardab-card p-3 ${selectedIds.includes(p.id) ? 'border-primary' : ''}`}
+                >
+                  <div className="d-flex justify-content-between align-items-start mb-2">
                     <div className="d-flex align-items-center gap-2">
-                      <span className="fw-bold text-dark fs-6">{formatCurrency(p.sellingPrice)}</span>
-                      {p.discountPercent > 0 && (
-                        <span className="badge badge-warning-soft" style={{ fontSize: '0.65rem' }}>
-                          {p.discountPercent}% OFF
+                      <input
+                        type="checkbox"
+                        className="form-check-input mt-0"
+                        checked={selectedIds.includes(p.id)}
+                        onChange={() => handleSelectOne(p.id)}
+                        aria-label={`Select ${p.name}`}
+                      />
+                      {(() => {
+                        const thumb =
+                          p.primaryImage?.thumbnailUrl ||
+                          p.primaryImage?.url ||
+                          (typeof p.images?.[0] === 'string'
+                            ? p.images[0]
+                            : (p.images?.[0] as ProductImageItem)?.url) ||
+                          p.imageUrl;
+                        if (thumb) {
+                          return (
+                            <img
+                              src={thumb}
+                              alt={p.name}
+                              className="rounded-2 border object-fit-cover flex-shrink-0"
+                              style={{ width: 40, height: 40 }}
+                              loading="lazy"
+                            />
+                          );
+                        }
+                        return (
+                          <div
+                            className="ardab-icon-box icon-box-green flex-shrink-0"
+                            style={{ width: 40, height: 40, fontSize: '1rem' }}
+                          >
+                            <i className="bi bi-box-seam"></i>
+                          </div>
+                        );
+                      })()}
+                      <div>
+                        <h3 className="h6 fw-bold text-dark mb-0">{p.name}</h3>
+                        <span className="text-muted small" style={{ fontSize: '0.75rem' }}>
+                          <code className="text-primary">{code}</code> &bull; {catName}
                         </span>
-                      )}
+                      </div>
                     </div>
-                    {p.discountPercent > 0 && p.originalPrice && (
+                    {renderStatusBadge(p.status)}
+                  </div>
+
+                  {/* Seller attribution */}
+                  <div className="p-2 bg-light rounded-2 small text-muted mb-2">
+                    Owner / Seller: <strong className="text-dark">{p.sellerName || (p.seller ? p.seller.companyName : 'Direct Marketplace')}</strong>
+                  </div>
+
+                  <div className="d-flex justify-content-between align-items-center mb-2 pt-2 border-top">
+                    <div>
+                      <span className="fw-bold text-dark fs-6">{formatCurrency(p.sellingPrice)}</span>
+                      <span className="text-muted small ms-1">/ {p.unit}</span>
+                    </div>
+                    <span className="badge badge-neutral-soft">{formatWeight(p.weight || p.weightKg || 0)}</span>
+                  </div>
+
+                  <div className="d-flex gap-1 flex-wrap mb-3">
+                    {(p.cityAvailability || ['All Cities']).map((city) => (
                       <span
-                        className="text-muted text-decoration-line-through small"
-                        style={{ fontSize: '0.75rem' }}
+                        key={city}
+                        className="badge bg-light text-dark border"
+                        style={{ fontSize: '0.65rem' }}
                       >
-                        {formatCurrency(p.originalPrice)}
+                        {city}
                       </span>
+                    ))}
+                  </div>
+
+                  <div className="d-flex align-items-center justify-content-end gap-2 pt-2 border-top">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-light border"
+                      onClick={() => setViewProduct(p)}
+                    >
+                      <i className="bi bi-eye me-1"></i> View
+                    </button>
+                    {canEdit && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-light border"
+                          onClick={() => handleOpenEdit(p)}
+                        >
+                          <i className="bi bi-pencil me-1"></i> Edit
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${
+                            p.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'
+                          }`}
+                          onClick={() => promptToggleStatus(p)}
+                        >
+                          {p.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </>
                     )}
                   </div>
-                  <span className="badge badge-neutral-soft">{formatWeight(p.weightKg)}</span>
                 </div>
-
-                <div className="d-flex gap-1 flex-wrap mb-3">
-                  {p.cityAvailability.map((city) => (
-                    <span
-                      key={city}
-                      className="badge bg-light text-dark border"
-                      style={{ fontSize: '0.65rem' }}
-                    >
-                      {city}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="d-flex align-items-center justify-content-end gap-2 pt-2 border-top">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-light border"
-                    onClick={() => setViewProduct(p)}
-                  >
-                    <i className="bi bi-eye me-1"></i> View
-                  </button>
-                  {canEdit && (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-light border"
-                        onClick={() => handleOpenEdit(p)}
-                      >
-                        <i className="bi bi-pencil me-1"></i> Edit
-                      </button>
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${
-                          p.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'
-                        }`}
-                        onClick={() => promptToggleStatus(p)}
-                      >
-                        {p.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <EmptyState
               icon="bi-box-seam"
@@ -740,7 +1091,7 @@ export default function ProductsPage() {
           className="mb-4"
         />
 
-        {/* Modal: Add / Edit Product with Owner & Discount */}
+        {/* Modal: Add / Edit Product with Seller First & Cascading Categories */}
         {isModalOpen && (
           <div
             className="modal show d-block"
@@ -755,88 +1106,126 @@ export default function ProductsPage() {
                       {editingProduct ? 'Edit Product & Pricing' : 'Post New Marketplace Product'}
                     </h5>
                     <span className="text-muted small">
-                      Assign product owner / seller, base price, and active discounts
+                      Select product owner / seller first, bind category, and specify standard units
                     </span>
                   </div>
                   <button
                     type="button"
                     className="btn-close"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={handleCloseModal}
                     aria-label="Close"
                   ></button>
                 </div>
 
                 <form onSubmit={handleSaveProduct}>
                   <div className="modal-body p-4">
+                    {formError && (
+                      <div className="alert alert-danger d-flex align-items-center gap-2 py-2 mb-3">
+                        <i className="bi bi-exclamation-octagon-fill fs-5"></i>
+                        <div className="small">{formError}</div>
+                      </div>
+                    )}
+
                     <div className="row g-3">
-                      {/* Product Name */}
+                      {/* 1. SELLER / PRODUCT OWNER FIRST */}
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">
+                          Product Owner / Seller (Supplier) <span className="text-danger">*</span>
+                        </label>
+                        <select
+                          className="form-select"
+                          required
+                          value={formData.sellerId}
+                          onChange={(e) => handleSellerChange(e.target.value)}
+                        >
+                          <option value="">-- Select Product Owner / Seller --</option>
+                          {suppliers.map((sup) => (
+                            <option key={sup.id} value={sup.id}>
+                              {sup.companyName} ({sup.city}) {sup.status !== 'ACTIVE' ? `[${sup.status}]` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
+                          Selecting a seller automatically activates and filters available marketplace categories
+                        </span>
+                      </div>
+
+                      {/* 2. CASCADING MARKETPLACE CATEGORY (DISABLED UNTIL SELLER SELECTED) */}
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">
+                          Marketplace Category <span className="text-danger">*</span>
+                        </label>
+                        <div className="position-relative">
+                          <select
+                            className={`form-select ${!formData.sellerId ? 'bg-light' : ''}`}
+                            required
+                            disabled={!formData.sellerId || isLoadingSellerCategories}
+                            value={formData.categoryId}
+                            onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                          >
+                            {!formData.sellerId ? (
+                              <option value="">Select a seller first to enable categories</option>
+                            ) : isLoadingSellerCategories ? (
+                              <option value="">Loading assigned categories...</option>
+                            ) : sellerCategories.length === 0 ? (
+                              <option value="">No categories assigned to this seller</option>
+                            ) : (
+                              <>
+                                <option value="">-- Select Category --</option>
+                                {sellerCategories.map((cat) => (
+                                  <option key={cat.id} value={cat.id}>
+                                    {cat.name}
+                                  </option>
+                                ))}
+                              </>
+                            )}
+                          </select>
+                        </div>
+                        {formData.sellerId && !isLoadingSellerCategories && sellerCategories.length === 0 && (
+                          <div className="text-warning small mt-1" style={{ fontSize: '0.72rem' }}>
+                            <i className="bi bi-exclamation-triangle me-1"></i>
+                            This seller currently has no marketplace categories assigned. Assign categories in Supplier Management.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. PRODUCT NAME */}
                       <div className="col-md-8">
-                        <label className="form-label">Product Name *</label>
+                        <label className="form-label fw-semibold">
+                          Product Name <span className="text-danger">*</span>
+                        </label>
                         <input
                           type="text"
                           className="form-control"
                           required
-                          placeholder="e.g. Magna White Teff (50 KG Bag)"
+                          placeholder="e.g. Magna White Teff Grade 1"
                           value={formData.name}
                           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         />
                       </div>
 
-                      {/* SKU */}
+                      {/* 4. ITEM CODE (READ-ONLY, AUTO-GENERATED SERVER-SIDE) */}
                       <div className="col-md-4">
-                        <label className="form-label">SKU / Item Code *</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          required
-                          value={formData.sku}
-                          onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                        />
-                      </div>
-
-                      {/* Product Owner / Seller (Supplier) */}
-                      <div className="col-md-6">
-                        <label className="form-label">Product Owner / Seller (Supplier) *</label>
-                        <select
-                          className="form-select"
-                          value={formData.sellerId}
-                          onChange={(e) => {
-                            const sup = suppliers.find((s) => s.id === e.target.value);
-                            setFormData({
-                              ...formData,
-                              sellerId: e.target.value,
-                              sellerName: sup ? sup.companyName : '',
-                            });
-                          }}
-                        >
-                          {suppliers.map((sup) => (
-                            <option key={sup.id} value={sup.id}>
-                              {sup.companyName} ({sup.city})
-                            </option>
-                          ))}
-                        </select>
+                        <label className="form-label fw-semibold">Item Code</label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-light text-muted">
+                            <i className="bi bi-upc-scan"></i>
+                          </span>
+                          <input
+                            type="text"
+                            className="form-control bg-light text-muted font-monospace fw-semibold"
+                            readOnly
+                            value={editingProduct ? (editingProduct.itemCode || editingProduct.sku || '') : '[Auto-generated upon save]'}
+                          />
+                        </div>
                         <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-                          Owner / Merchant supplier fulfilling this commodity
+                          {editingProduct
+                            ? 'Server-assigned sequential code (strictly immutable)'
+                            : 'Atomic sequence format (e.g. ARDAB-000001)'}
                         </span>
                       </div>
 
-                      {/* Category */}
-                      <div className="col-md-6">
-                        <label className="form-label">Marketplace Category *</label>
-                        <select
-                          className="form-select"
-                          value={formData.categoryId}
-                          onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                        >
-                          {categories.map((cat) => (
-                            <option key={cat.id} value={cat.id}>
-                              {cat.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Description */}
+                      {/* 5. DESCRIPTION */}
                       <div className="col-12">
                         <label className="form-label">Product Description</label>
                         <textarea
@@ -844,18 +1233,35 @@ export default function ProductsPage() {
                           rows={2}
                           value={formData.description}
                           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                          placeholder="Provide details about quality grade, origin, packaging..."
+                          placeholder="Specify quality characteristics, origin highlands, cleaning standards..."
                         ></textarea>
                       </div>
 
-                      {/* PRICING & DISCOUNT SECTION */}
+                      {/* 6. PRICING & VALUATION */}
                       <div className="col-12">
                         <div className="p-3 bg-light rounded-3 border">
                           <h6 className="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-                            <i className="bi bi-tag-fill text-success"></i>
-                            Pricing, Valuation & Active Discount
+                            <i className="bi bi-cash-stack text-success"></i>
+                            Pricing & Valuation
                           </h6>
                           <div className="row g-3">
+                            <div className="col-md-4">
+                              <label className="form-label small fw-semibold">Cost Price / Base ETB (Optional)</label>
+                              <div className="input-group">
+                                <input
+                                  type="number"
+                                  className="form-control"
+                                  min={0}
+                                  value={formData.costPrice || ''}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, costPrice: Number(e.target.value) })
+                                  }
+                                  placeholder="0.00"
+                                />
+                                <span className="input-group-text small">ETB</span>
+                              </div>
+                            </div>
+
                             <div className="col-md-4">
                               <label className="form-label small fw-semibold">Regular / Original Price (ETB) *</label>
                               <div className="input-group">
@@ -863,7 +1269,7 @@ export default function ProductsPage() {
                                   type="number"
                                   className="form-control"
                                   required
-                                  min={0}
+                                  min={1}
                                   value={formData.originalPrice}
                                   onChange={(e) =>
                                     handlePriceChange(Number(e.target.value), formData.discountPercent)
@@ -890,19 +1296,23 @@ export default function ProductsPage() {
                               </div>
                             </div>
 
-                            <div className="col-md-4">
-                              <label className="form-label small fw-semibold">Final Marketplace Selling Price</label>
-                              <div className="form-control bg-white fw-bold text-success">
-                                {formatCurrency(formData.sellingPrice)}
+                            <div className="col-12">
+                              <div className="d-flex align-items-center justify-content-between p-2 bg-white rounded border">
+                                <span className="small text-muted fw-medium">Active Marketplace Selling Price:</span>
+                                <span className="fs-5 fw-bold text-success">
+                                  {formatCurrency(formData.sellingPrice)}
+                                </span>
                               </div>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Logistics details */}
+                      {/* 7. LOGISTICS SPECIFICATION: UNIT & WEIGHT (PACKAGING UNIT REMOVED) */}
                       <div className="col-md-6">
-                        <label className="form-label">Unit Weight (KG) *</label>
+                        <label className="form-label fw-semibold">
+                          Unit Weight (KG) <span className="text-danger">*</span>
+                        </label>
                         <div className="input-group">
                           <input
                             type="number"
@@ -910,43 +1320,249 @@ export default function ProductsPage() {
                             required
                             min={0.1}
                             step={0.1}
-                            value={formData.weightKg}
+                            value={formData.weight}
                             onChange={(e) =>
-                              setFormData({ ...formData, weightKg: Number(e.target.value) })
+                              setFormData({ ...formData, weight: Number(e.target.value) })
                             }
                           />
                           <span className="input-group-text small">KG</span>
                         </div>
+                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
+                          Physical commodity weight used for vehicle logistics calculation
+                        </span>
                       </div>
 
                       <div className="col-md-6">
-                        <label className="form-label">Packaging Unit *</label>
+                        <label className="form-label fw-semibold">
+                          Unit of Measure <span className="text-danger">*</span>
+                        </label>
                         <input
                           type="text"
                           className="form-control"
                           required
-                          placeholder="e.g. bag, sack, kg, bunch"
+                          placeholder="e.g. kg, bag, quintal, liter, piece"
                           value={formData.unit}
                           onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                         />
+                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
+                          Standard trade trading unit for quoting and consumer display
+                        </span>
                       </div>
 
-                      {/* Initial Status */}
+                      {/* 8. STATUS LIFECYCLE */}
                       <div className="col-md-6">
-                        <label className="form-label">Catalog Status</label>
+                        <label className="form-label fw-semibold">Product Lifecycle Status</label>
                         <select
                           className="form-select"
                           value={formData.status}
                           onChange={(e) =>
                             setFormData({
                               ...formData,
-                              status: e.target.value as 'ACTIVE' | 'INACTIVE',
+                              status: e.target.value as ProductStatus,
                             })
                           }
                         >
-                          <option value="ACTIVE">Active (Immediate Listing)</option>
-                          <option value="INACTIVE">Inactive (Draft / Hidden)</option>
+                          <option value="ACTIVE">Active (Live in Marketplace)</option>
+                          <option value="DRAFT">Draft (Under Review)</option>
+                          <option value="INACTIVE">Inactive (Hidden)</option>
+                          <option value="OUT_OF_STOCK">Out of Stock</option>
                         </select>
+                      </div>
+
+                      {/* 9. CITY AVAILABILITY */}
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">City Availability</label>
+                        <select
+                          className="form-select"
+                          value={formData.cityAvailability[0] || 'All Cities'}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              cityAvailability: [e.target.value],
+                            })
+                          }
+                        >
+                          <option value="All Cities">All Hub Cities</option>
+                          <option value="Addis Ababa">Addis Ababa</option>
+                          <option value="Bahir Dar">Bahir Dar</option>
+                          <option value="Gondar">Gondar</option>
+                          <option value="Hawassa">Hawassa</option>
+                          <option value="Adama">Adama</option>
+                        </select>
+                      </div>
+
+                      {/* 10. PRODUCT IMAGES (CLOUDINARY STORAGE GATEWAY) */}
+                      <div className="col-12">
+                        <div className="p-3 bg-light rounded-3 border">
+                          <div className="d-flex align-items-center justify-content-between mb-2">
+                            <h6 className="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                              <i className="bi bi-images text-primary"></i>
+                              Product Images
+                            </h6>
+                            <span className="text-muted small" style={{ fontSize: '0.72rem' }}>
+                              JPEG, PNG, WEBP &bull; Max 5MB per image &bull; Up to 10 images
+                            </span>
+                          </div>
+
+                          {/* Drag & Drop Upload Zone */}
+                          <div
+                            className={`border rounded-3 p-3 text-center ${
+                              isDragging ? 'bg-primary-subtle border-primary' : 'bg-white border-secondary-subtle'
+                            }`}
+                            style={{ cursor: 'pointer', borderStyle: 'dashed', borderWidth: '2px' }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDragging(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              setIsDragging(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setIsDragging(false);
+                              if (e.dataTransfer.files) {
+                                validateAndAddFiles(e.dataTransfer.files);
+                              }
+                            }}
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              multiple
+                              accept="image/jpeg,image/png,image/webp"
+                              className="d-none"
+                              onChange={(e) => {
+                                if (e.target.files) {
+                                  validateAndAddFiles(e.target.files);
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                            <div className="py-2">
+                              <i className="bi bi-cloud-arrow-up text-primary fs-2 d-block mb-1"></i>
+                              <div className="fw-semibold text-dark small">
+                                Drag & drop product images here, or <span className="text-primary text-decoration-underline">browse files</span>
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '0.7rem' }}>
+                                Direct secure upload through Ardab gateway to Cloudinary
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Existing & Staged Image Previews */}
+                          {(existingImages.length > 0 || stagedFiles.length > 0) && (
+                            <div className="mt-3">
+                              <div className="small fw-semibold text-muted mb-2">
+                                Image Gallery ({existingImages.length + stagedFiles.length}/10):
+                              </div>
+                              <div className="row g-2">
+                                {/* Existing Saved Images (When editing) */}
+                                {existingImages.map((img) => (
+                                  <div key={img.id} className="col-6 col-sm-4 col-md-3">
+                                    <div className="position-relative rounded-2 border overflow-hidden bg-white shadow-sm">
+                                      <img
+                                        src={img.thumbnailUrl || img.url}
+                                        alt="Product asset"
+                                        className="w-100 object-fit-cover"
+                                        style={{ height: 100 }}
+                                      />
+                                      {img.isPrimary && (
+                                        <span
+                                          className="position-absolute top-0 start-0 m-1 badge bg-success shadow-sm"
+                                          style={{ fontSize: '0.65rem' }}
+                                        >
+                                          <i className="bi bi-star-fill me-1"></i> Primary
+                                        </span>
+                                      )}
+                                      <div className="p-1 bg-light border-top d-flex align-items-center justify-content-between gap-1">
+                                        {!img.isPrimary && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-xs btn-outline-primary py-0 px-1"
+                                            style={{ fontSize: '0.7rem' }}
+                                            title="Set as Primary Image"
+                                            disabled={isSettingPrimaryId === img.id}
+                                            onClick={() => handleSetPrimaryExisting(img.id)}
+                                          >
+                                            {isSettingPrimaryId === img.id ? '...' : 'Make Primary'}
+                                          </button>
+                                        )}
+                                        {img.isPrimary && <span className="text-success small ms-1" style={{ fontSize: '0.7rem' }}>Primary</span>}
+                                        <button
+                                          type="button"
+                                          className="btn btn-xs btn-outline-danger py-0 px-1 ms-auto"
+                                          style={{ fontSize: '0.7rem' }}
+                                          title="Delete Image from Cloudinary"
+                                          disabled={isDeletingImageId === img.id}
+                                          onClick={() => handleDeleteExistingImage(img.id)}
+                                        >
+                                          {isDeletingImageId === img.id ? (
+                                            <span className="spinner-border spinner-border-sm" style={{ width: 10, height: 10 }} />
+                                          ) : (
+                                            <i className="bi bi-trash"></i>
+                                          )}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {/* Staged New Images (Pending upload on save) */}
+                                {stagedFiles.map((item) => (
+                                  <div key={item.id} className="col-6 col-sm-4 col-md-3">
+                                    <div className="position-relative rounded-2 border overflow-hidden bg-white shadow-sm">
+                                      <img
+                                        src={item.preview}
+                                        alt={item.file.name}
+                                        className="w-100 object-fit-cover"
+                                        style={{ height: 100 }}
+                                      />
+                                      <span
+                                        className="position-absolute top-0 end-0 m-1 badge bg-info shadow-sm"
+                                        style={{ fontSize: '0.65rem' }}
+                                      >
+                                        New
+                                      </span>
+                                      {item.isPrimary && (
+                                        <span
+                                          className="position-absolute top-0 start-0 m-1 badge bg-success shadow-sm"
+                                          style={{ fontSize: '0.65rem' }}
+                                        >
+                                          <i className="bi bi-star-fill me-1"></i> Primary
+                                        </span>
+                                      )}
+                                      <div className="p-1 bg-light border-top d-flex align-items-center justify-content-between gap-1">
+                                        {!item.isPrimary && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-xs btn-outline-primary py-0 px-1"
+                                            style={{ fontSize: '0.7rem' }}
+                                            title="Set as Primary Image"
+                                            onClick={() => handleSetPrimaryStaged(item.id)}
+                                          >
+                                            Make Primary
+                                          </button>
+                                        )}
+                                        {item.isPrimary && <span className="text-success small ms-1" style={{ fontSize: '0.7rem' }}>Primary</span>}
+                                        <button
+                                          type="button"
+                                          className="btn btn-xs btn-outline-danger py-0 px-1 ms-auto"
+                                          style={{ fontSize: '0.7rem' }}
+                                          title="Remove File"
+                                          onClick={() => handleRemoveStaged(item.id)}
+                                        >
+                                          <i className="bi bi-x-lg"></i>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -955,12 +1571,22 @@ export default function ProductsPage() {
                     <button
                       type="button"
                       className="btn btn-ardab-outline btn-sm"
-                      onClick={() => setIsModalOpen(false)}
+                      disabled={isSaving}
+                      onClick={handleCloseModal}
                     >
                       Cancel
                     </button>
-                    <button type="submit" className="btn btn-ardab-primary btn-sm">
-                      {editingProduct ? 'Save Changes' : 'Publish Product'}
+                    <button type="submit" className="btn btn-ardab-primary btn-sm" disabled={isSaving}>
+                      {isSaving ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-1" role="status" />
+                          Saving...
+                        </>
+                      ) : editingProduct ? (
+                        'Save Changes'
+                      ) : (
+                        'Publish Product'
+                      )}
                     </button>
                   </div>
                 </form>
@@ -976,34 +1602,100 @@ export default function ProductsPage() {
             tabIndex={-1}
             style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}
           >
-            <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-dialog modal-dialog-centered modal-lg">
               <div className="modal-content rounded-4 border-0 shadow">
                 <div className="modal-header border-bottom">
                   <div>
                     <h5 className="modal-title fw-bold text-dark mb-0">{viewProduct.name}</h5>
                     <span className="text-muted small">
-                      Owner: {viewProduct.sellerName || 'Direct Marketplace'}
+                      Owner: {viewProduct.sellerName || (viewProduct.seller ? viewProduct.seller.companyName : 'Direct Marketplace')}
                     </span>
                   </div>
                   <button
                     type="button"
                     className="btn-close"
-                    onClick={() => setViewProduct(null)}
+                    onClick={() => {
+                      setViewProduct(null);
+                      setActiveDetailImageIndex(0);
+                    }}
                     aria-label="Close"
                   ></button>
                 </div>
                 <div className="modal-body p-4">
-                  <div className="mb-3">
-                    <span className="text-muted small">Description</span>
-                    <p className="text-dark small mt-1">{viewProduct.description}</p>
-                  </div>
+                  {/* Image Gallery */}
+                  {(() => {
+                    const galleryImages: string[] = [];
+                    if (viewProduct.productImages && viewProduct.productImages.length > 0) {
+                      viewProduct.productImages.forEach((img) => galleryImages.push(img.url));
+                    } else if (viewProduct.images && viewProduct.images.length > 0) {
+                      viewProduct.images.forEach((img) => {
+                        galleryImages.push(typeof img === 'string' ? img : img.url);
+                      });
+                    } else if (viewProduct.imageUrl) {
+                      galleryImages.push(viewProduct.imageUrl);
+                    }
+
+                    if (galleryImages.length > 0) {
+                      const activeImg = galleryImages[activeDetailImageIndex] || galleryImages[0];
+                      return (
+                        <div className="mb-4">
+                          <div
+                            className="w-100 bg-light rounded-3 border d-flex align-items-center justify-content-center overflow-hidden mb-2"
+                            style={{ height: 260 }}
+                          >
+                            <img
+                              src={activeImg}
+                              alt={viewProduct.name}
+                              className="img-fluid object-fit-contain"
+                              style={{ maxHeight: 260 }}
+                            />
+                          </div>
+                          {galleryImages.length > 1 && (
+                            <div className="d-flex gap-2 overflow-auto pb-1">
+                              {galleryImages.map((imgUrl, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  className={`btn p-0 rounded-2 border overflow-hidden flex-shrink-0 ${
+                                    idx === activeDetailImageIndex ? 'border-primary border-2 shadow-sm' : 'opacity-75'
+                                  }`}
+                                  style={{ width: 56, height: 56 }}
+                                  onClick={() => setActiveDetailImageIndex(idx)}
+                                >
+                                  <img
+                                    src={imgUrl}
+                                    alt={`Thumbnail ${idx + 1}`}
+                                    className="w-100 h-100 object-fit-cover"
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="p-3 bg-light rounded-3 border text-center text-muted mb-4">
+                        <i className="bi bi-images fs-3 d-block mb-1"></i>
+                        <span className="small">No images uploaded for this commodity</span>
+                      </div>
+                    );
+                  })()}
+
+                  {viewProduct.description && (
+                    <div className="mb-3">
+                      <span className="text-muted small fw-semibold">Description</span>
+                      <p className="text-dark small mt-1">{viewProduct.description}</p>
+                    </div>
+                  )}
+
                   <div className="row g-3 pt-2 border-top">
-                    <div className="col-6">
+                    <div className="col-6 col-md-4">
                       <div className="text-muted small">Selling Price</div>
                       <div className="fw-bold fs-5 text-success">
                         {formatCurrency(viewProduct.sellingPrice)}
                       </div>
-                      {viewProduct.discountPercent > 0 && (
+                      {viewProduct.discountPercent && viewProduct.discountPercent > 0 ? (
                         <div className="text-muted small">
                           <span className="text-decoration-line-through me-1">
                             {viewProduct.originalPrice ? formatCurrency(viewProduct.originalPrice) : ''}
@@ -1012,31 +1704,55 @@ export default function ProductsPage() {
                             {viewProduct.discountPercent}% OFF
                           </span>
                         </div>
-                      )}
+                      ) : null}
                     </div>
-                    <div className="col-6">
+                    {viewProduct.costPrice && viewProduct.costPrice > 0 ? (
+                      <div className="col-6 col-md-4">
+                        <div className="text-muted small">Cost Price (Super Admin)</div>
+                        <div className="fw-bold fs-5 text-muted">
+                          {formatCurrency(viewProduct.costPrice)}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="col-6 col-md-4">
                       <div className="text-muted small">Logistics Unit Weight</div>
                       <div className="fw-bold fs-5 text-dark">
-                        {formatWeight(viewProduct.weightKg)} / {viewProduct.unit}
+                        {formatWeight(viewProduct.weight || viewProduct.weightKg || 0)} / {viewProduct.unit}
                       </div>
                     </div>
-                    <div className="col-6">
-                      <div className="text-muted small">Seller / Supplier</div>
+                    <div className="col-6 col-md-4">
+                      <div className="text-muted small">Product Owner / Seller</div>
                       <div className="text-dark fw-medium small">
-                        {viewProduct.sellerName || 'Direct Platform'}
+                        {viewProduct.sellerName || (viewProduct.seller ? viewProduct.seller.companyName : 'Direct Platform')}
                       </div>
                     </div>
-                    <div className="col-6">
+                    <div className="col-6 col-md-4">
                       <div className="text-muted small">Category</div>
-                      <div className="text-dark fw-medium small">{viewProduct.category}</div>
+                      <div className="text-dark fw-medium small">
+                        {typeof viewProduct.category === 'string'
+                          ? viewProduct.category
+                          : viewProduct.category?.name || 'General'}
+                      </div>
                     </div>
-                    <div className="col-6">
-                      <div className="text-muted small">SKU</div>
-                      <code>{viewProduct.sku}</code>
+                    <div className="col-6 col-md-4">
+                      <div className="text-muted small">Sequential Item Code</div>
+                      <code className="text-primary fw-bold fs-6">{viewProduct.itemCode || viewProduct.sku}</code>
                     </div>
-                    <div className="col-6">
+                    <div className="col-6 col-md-4">
                       <div className="text-muted small">Status</div>
-                      <span className="badge badge-success-soft">{viewProduct.status}</span>
+                      {renderStatusBadge(viewProduct.status)}
+                    </div>
+                    <div className="col-6 col-md-4">
+                      <div className="text-muted small">Created Date</div>
+                      <span className="text-dark small">
+                        {viewProduct.createdAt ? new Date(viewProduct.createdAt).toLocaleDateString() : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="col-6 col-md-4">
+                      <div className="text-muted small">Last Updated</div>
+                      <span className="text-dark small">
+                        {viewProduct.updatedAt ? new Date(viewProduct.updatedAt).toLocaleDateString() : 'N/A'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1044,7 +1760,10 @@ export default function ProductsPage() {
                   <button
                     type="button"
                     className="btn btn-ardab-outline btn-sm"
-                    onClick={() => setViewProduct(null)}
+                    onClick={() => {
+                      setViewProduct(null);
+                      setActiveDetailImageIndex(0);
+                    }}
                   >
                     Close
                   </button>

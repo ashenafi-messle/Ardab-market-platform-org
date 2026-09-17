@@ -1,51 +1,129 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import { useAuth } from '@/context/AuthContext';
-import { fleetApi } from '@/lib/api';
-import { Trip, TripStatus } from '@/types/trip';
+import { deliveriesApi } from '@/lib/api';
+import {
+  Delivery,
+  DeliveryStatus,
+  DeliverySummaryMetrics,
+  DeliveryTimelineEvent,
+  AvailableTrip,
+} from '@/types/delivery';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import Pagination from '@/components/common/Pagination';
 import ConfirmationModal, { ConfirmationVariant } from '@/components/common/ConfirmationModal';
 import TableSkeleton from '@/components/common/TableSkeleton';
 import EmptyState from '@/components/common/EmptyState';
-import { formatWeight, formatCapacity } from '@/lib/formatters';
+import { formatCurrency, formatWeight } from '@/lib/formatters';
 import { STANDARD_FLEET_CAPACITY_KG, DEFAULT_PAGE_SIZE } from '@/lib/constants';
 import { hasPermission } from '@/lib/permissions';
 
-const DELIVERY_STATUS_FILTERS: { label: string; value: TripStatus | 'ALL' }[] = [
-  { label: 'All Deliveries', value: 'ALL' },
-  { label: 'In Transit', value: 'IN_PROGRESS' },
-  { label: 'Loading at Hub', value: 'LOADING' },
-  { label: 'Ready for Trip', value: 'READY' },
-  { label: 'Completed', value: 'COMPLETED' },
+const DELIVERY_STATUS_TABS: { label: string; value: DeliveryStatus | 'ALL'; countKey?: keyof DeliverySummaryMetrics }[] = [
+  { label: 'All Deliveries', value: 'ALL', countKey: 'totalDeliveries' },
+  { label: 'Pending Preparation', value: 'PENDING', countKey: 'pendingDeliveries' },
+  { label: 'Ready for Trip', value: 'READY_FOR_ASSIGNMENT', countKey: 'readyDeliveries' },
+  { label: 'Trip Assigned', value: 'ASSIGNED', countKey: 'assignedDeliveries' },
+  { label: 'Out for Delivery', value: 'OUT_FOR_DELIVERY', countKey: 'outForDelivery' },
+  { label: 'Delivered', value: 'DELIVERED', countKey: 'deliveredToday' },
+  { label: 'Failed Attempts', value: 'FAILED', countKey: 'failedDeliveries' },
+  { label: 'Cancelled', value: 'CANCELLED', countKey: 'cancelledDeliveries' },
+];
+
+const FAILURE_REASON_OPTIONS = [
+  'Customer unavailable at destination',
+  'Incorrect delivery address or contact number',
+  'Customer refused delivery consignment',
+  'Severe vehicle mechanical breakdown',
+  'Adverse weather or road blockage',
+  'Other operational constraint',
+];
+
+const CANCELLATION_REASON_OPTIONS = [
+  'Order cancelled by customer',
+  'Consignment items damaged prior to dispatch',
+  'Duplicate delivery dispatch entry',
+  'Customer requested change of fulfillment date',
+  'Delivery route unreachable',
+  'Other administrative cancellation',
 ];
 
 export default function DeliveriesPage() {
   const { user, selectedCity } = useAuth();
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [activeFilter, setActiveFilter] = useState<TripStatus | 'ALL'>('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearch = useDebounce(searchTerm, 300);
-  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+
+  // Deliveries and Pagination state
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: DEFAULT_PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+  });
   const [isLoading, setIsLoading] = useState(true);
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  // Filters & Search
+  const [activeTab, setActiveTab] = useState<DeliveryStatus | 'ALL'>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  const [zoneFilter, setZoneFilter] = useState('All Zones');
+  const [sortBy, setSortBy] = useState<string>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Confirmation modal
+  // Summary Metrics
+  const [summary, setSummary] = useState<DeliverySummaryMetrics>({
+    totalDeliveries: 0,
+    pendingDeliveries: 0,
+    readyDeliveries: 0,
+    assignedDeliveries: 0,
+    outForDelivery: 0,
+    deliveredToday: 0,
+    failedDeliveries: 0,
+    cancelledDeliveries: 0,
+  });
+  const [isSummaryLoading, setIsSummaryLoading] = useState(true);
+
+  // Selection & Details Drawer
+  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<DeliveryTimelineEvent[]>([]);
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+
+  // Status & Feedback messages
+  const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+  const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+
+  // Trip Assignment Modal
+  const [isAssignTripModalOpen, setIsAssignTripModalOpen] = useState(false);
+  const [availableTrips, setAvailableTrips] = useState<AvailableTrip[]>([]);
+  const [isLoadingTrips, setIsLoadingTrips] = useState(false);
+  const [selectedTripId, setSelectedTripId] = useState('');
+  const [assigningDelivery, setAssigningDelivery] = useState<Delivery | null>(null);
+
+  // Failure & Cancellation Modals
+  const [reasonModal, setReasonModal] = useState<{
+    isOpen: boolean;
+    deliveryId: string;
+    deliveryNumber: string;
+    actionType: 'FAIL' | 'CANCEL';
+  }>({
+    isOpen: false,
+    deliveryId: '',
+    deliveryNumber: '',
+    actionType: 'FAIL',
+  });
+  const [selectedReason, setSelectedReason] = useState('');
+  const [additionalNotes, setAdditionalNotes] = useState('');
+
+  // Generic Confirmation Modal
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
     message: string;
     variant: ConfirmationVariant;
-    action: () => Promise<void>;
     confirmLabel?: string;
+    action: () => Promise<void>;
   }>({
     isOpen: false,
     title: '',
@@ -55,673 +133,1180 @@ export default function DeliveriesPage() {
   });
   const [isConfirming, setIsConfirming] = useState(false);
 
-  const canManageDeliveries = hasPermission(user?.role, 'deliveries:update_status');
+  // Permissions
+  const canView = hasPermission(user?.role, 'deliveries:view');
+  const canAssign = hasPermission(user?.role, 'deliveries:assign');
+  const canUpdateStatus = hasPermission(user?.role, 'deliveries:update_status');
+
+  // Load KPI summary metrics
+  const loadSummary = useCallback(async () => {
+    try {
+      setIsSummaryLoading(true);
+      const data = await deliveriesApi.getSummary(selectedCity);
+      setSummary(data);
+    } catch (err) {
+      console.error('Failed to load delivery summary metrics:', err);
+    } finally {
+      setIsSummaryLoading(false);
+    }
+  }, [selectedCity]);
+
+  // Load paginated deliveries list
+  const loadDeliveries = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const res = await deliveriesApi.list({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        search: debouncedSearch,
+        city: selectedCity,
+        deliveryZone: zoneFilter,
+        status: activeTab === 'ALL' ? undefined : activeTab,
+        sortBy,
+        sortOrder,
+      });
+      setDeliveries(res.items);
+      setPagination((prev) => ({
+        ...prev,
+        total: res.pagination?.total || res.items.length,
+        totalPages: res.pagination?.totalPages || 1,
+      }));
+    } catch (err: any) {
+      console.error('Failed to load deliveries:', err);
+      setActionErrorMessage(err.message || 'Unable to load deliveries.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [pagination.page, pagination.pageSize, debouncedSearch, selectedCity, zoneFilter, activeTab, sortBy, sortOrder]);
+
+  // Initial load and filter change hooks
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   useEffect(() => {
-    let isMounted = true;
-    fleetApi
-      .getTrips(selectedCity, activeFilter)
-      .then((res) => {
-        if (isMounted) setTrips(res);
-      })
-      .catch((e) => {
-        console.error(e);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
+    loadDeliveries();
+  }, [loadDeliveries]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedCity, activeFilter]);
+  // Reset page to 1 on filter or search change
+  useEffect(() => {
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  }, [debouncedSearch, selectedCity, zoneFilter, activeTab]);
 
-  const executeUpdateStatus = async (tripId: string, newStatus: TripStatus) => {
+  // Load timeline events when delivery details open
+  const openDeliveryDetails = async (delivery: Delivery) => {
+    setSelectedDelivery(delivery);
+    setIsLoadingTimeline(true);
     try {
-      const updated = await fleetApi.updateTripStatus(tripId, newStatus);
-      setTrips((prev) => prev.map((t) => (t.id === tripId ? updated : t)));
-      if (selectedTrip && selectedTrip.id === tripId) {
-        setSelectedTrip(updated);
-      }
-      setActionMessage(`Delivery run ${tripId} status updated to ${newStatus.replace('_', ' ')}.`);
-      setTimeout(() => setActionMessage(null), 3500);
-    } catch (e) {
-      console.error(e);
+      const activities = await deliveriesApi.getActivity(delivery.id);
+      setTimelineEvents(activities);
+    } catch (err) {
+      console.error('Failed to load timeline events:', err);
+      setTimelineEvents([]);
+    } finally {
+      setIsLoadingTimeline(false);
     }
   };
 
-  const promptStatusChange = (trip: Trip, newStatus: TripStatus) => {
-    const isDispatch = newStatus === 'IN_PROGRESS';
-    const isComplete = newStatus === 'COMPLETED';
+  // Toast message dismiss timer
+  useEffect(() => {
+    if (actionSuccessMessage) {
+      const timer = setTimeout(() => setActionSuccessMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [actionSuccessMessage]);
 
+  useEffect(() => {
+    if (actionErrorMessage) {
+      const timer = setTimeout(() => setActionErrorMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [actionErrorMessage]);
+
+  // Actions Handlers
+  const handlePrepareDelivery = async (delivery: Delivery) => {
+    try {
+      setIsProcessingAction(true);
+      const updated = await deliveriesApi.prepare(delivery.id);
+      setActionSuccessMessage(`Delivery ${delivery.deliveryNumber} is now marked Ready for Trip Assignment.`);
+      setDeliveries((prev) => prev.map((d) => (d.id === delivery.id ? updated : d)));
+      if (selectedDelivery?.id === delivery.id) setSelectedDelivery(updated);
+      loadSummary();
+    } catch (err: any) {
+      setActionErrorMessage(err.message || 'Failed to prepare delivery.');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const openAssignTripModal = async (delivery: Delivery) => {
+    setAssigningDelivery(delivery);
+    setSelectedTripId('');
+    setIsAssignTripModalOpen(true);
+    setIsLoadingTrips(true);
+    try {
+      const trips = await deliveriesApi.getAvailableTrips(delivery.city);
+      setAvailableTrips(trips);
+    } catch (err) {
+      console.error('Failed to fetch available trips:', err);
+      setAvailableTrips([]);
+    } finally {
+      setIsLoadingTrips(false);
+    }
+  };
+
+  const submitAssignTrip = async () => {
+    if (!assigningDelivery || !selectedTripId) return;
+    try {
+      setIsProcessingAction(true);
+      const updated = await deliveriesApi.assignTrip(assigningDelivery.id, selectedTripId);
+      setActionSuccessMessage(`Delivery ${assigningDelivery.deliveryNumber} successfully assigned to Trip.`);
+      setDeliveries((prev) => prev.map((d) => (d.id === assigningDelivery.id ? updated : d)));
+      if (selectedDelivery?.id === assigningDelivery.id) setSelectedDelivery(updated);
+      setIsAssignTripModalOpen(false);
+      loadSummary();
+    } catch (err: any) {
+      setActionErrorMessage(err.message || 'Failed to assign delivery to trip.');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleDispatchDelivery = async (delivery: Delivery) => {
+    try {
+      setIsProcessingAction(true);
+      const updated = await deliveriesApi.dispatch(delivery.id);
+      setActionSuccessMessage(`Delivery ${delivery.deliveryNumber} dispatched and is Out for Delivery.`);
+      setDeliveries((prev) => prev.map((d) => (d.id === delivery.id ? updated : d)));
+      if (selectedDelivery?.id === delivery.id) setSelectedDelivery(updated);
+      loadSummary();
+    } catch (err: any) {
+      setActionErrorMessage(err.message || 'Failed to dispatch delivery.');
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const promptCompleteDelivery = (delivery: Delivery) => {
     setConfirmModal({
       isOpen: true,
-      title: isDispatch ? `Dispatch Run ${trip.id}` : `Complete Delivery Run ${trip.id}`,
-      message: isDispatch
-        ? `Confirm departure of ${trip.vehicleRegistration} driven by ${trip.driverName} carrying ${formatWeight(trip.currentLoadKg)} consignment to zones: ${trip.deliveryZones.join(', ')}?`
-        : `Mark delivery run ${trip.id} as completed? All ${trip.orderCount} customer deliveries will be marked fulfilled.`,
-      variant: isComplete ? 'success' : 'primary',
-      confirmLabel: isDispatch ? 'Dispatch Trip' : 'Mark Completed',
+      title: `Confirm Delivery Fulfillment`,
+      message: `Are you sure you want to mark ${delivery.deliveryNumber} as delivered? The customer consignment will be registered as fulfilled and the associated order will be updated to Delivered.`,
+      variant: 'success',
+      confirmLabel: 'Confirm Delivery Fulfilled',
       action: async () => {
-        await executeUpdateStatus(trip.id, newStatus);
+        try {
+          setIsProcessingAction(true);
+          const updated = await deliveriesApi.complete(delivery.id);
+          setActionSuccessMessage(`Delivery ${delivery.deliveryNumber} completed successfully.`);
+          setDeliveries((prev) => prev.map((d) => (d.id === delivery.id ? updated : d)));
+          if (selectedDelivery?.id === delivery.id) setSelectedDelivery(updated);
+          loadSummary();
+        } catch (err: any) {
+          setActionErrorMessage(err.message || 'Failed to complete delivery.');
+        } finally {
+          setIsProcessingAction(false);
+        }
       },
     });
   };
 
-  const handleConfirmModalAction = async () => {
+  const openFailModal = (delivery: Delivery) => {
+    setReasonModal({
+      isOpen: true,
+      deliveryId: delivery.id,
+      deliveryNumber: delivery.deliveryNumber,
+      actionType: 'FAIL',
+    });
+    setSelectedReason(FAILURE_REASON_OPTIONS[0]);
+    setAdditionalNotes('');
+  };
+
+  const openCancelModal = (delivery: Delivery) => {
+    setReasonModal({
+      isOpen: true,
+      deliveryId: delivery.id,
+      deliveryNumber: delivery.deliveryNumber,
+      actionType: 'CANCEL',
+    });
+    setSelectedReason(CANCELLATION_REASON_OPTIONS[0]);
+    setAdditionalNotes('');
+  };
+
+  const submitReasonAction = async () => {
+    if (!reasonModal.deliveryId || !selectedReason) return;
     try {
-      setIsConfirming(true);
-      await confirmModal.action();
-      setConfirmModal((prev) => ({ ...prev, isOpen: false }));
-    } catch (e) {
-      console.error(e);
+      setIsProcessingAction(true);
+      let updated: Delivery;
+      if (reasonModal.actionType === 'FAIL') {
+        updated = await deliveriesApi.fail(reasonModal.deliveryId, selectedReason, additionalNotes);
+        setActionSuccessMessage(`Delivery ${reasonModal.deliveryNumber} recorded as Failed.`);
+      } else {
+        updated = await deliveriesApi.cancel(reasonModal.deliveryId, selectedReason);
+        setActionSuccessMessage(`Delivery ${reasonModal.deliveryNumber} has been Cancelled.`);
+      }
+      setDeliveries((prev) => prev.map((d) => (d.id === reasonModal.deliveryId ? updated : d)));
+      if (selectedDelivery?.id === reasonModal.deliveryId) setSelectedDelivery(updated);
+      setReasonModal((prev) => ({ ...prev, isOpen: false }));
+      loadSummary();
+    } catch (err: any) {
+      setActionErrorMessage(err.message || `Failed to ${reasonModal.actionType.toLowerCase()} delivery.`);
     } finally {
-      setIsConfirming(false);
+      setIsProcessingAction(false);
     }
   };
 
-  // Filtered trips
-  const filteredTrips = useMemo(() => {
-    return trips.filter((t) => {
-      const q = debouncedSearch.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        t.id.toLowerCase().includes(q) ||
-        t.vehicleRegistration.toLowerCase().includes(q) ||
-        t.driverName.toLowerCase().includes(q) ||
-        t.city.toLowerCase().includes(q) ||
-        t.deliveryZones.some((z) => z.toLowerCase().includes(q));
-      return matchesSearch;
-    });
-  }, [trips, debouncedSearch]);
-
-  // Paginated records
-  const totalPages = Math.ceil(filteredTrips.length / pageSize) || 1;
-  const safePage = Math.min(currentPage, totalPages);
-  const paginatedTrips = useMemo(() => {
-    const start = (safePage - 1) * pageSize;
-    return filteredTrips.slice(start, start + pageSize);
-  }, [filteredTrips, safePage, pageSize]);
-
-  const activeDeliveriesCount = trips.filter(
-    (t) => t.status === 'IN_PROGRESS' || t.status === 'LOADING'
-  ).length;
-
-  const inTransitLoadKg = trips
-    .filter((t) => t.status === 'IN_PROGRESS')
-    .reduce((sum, t) => sum + t.currentLoadKg, 0);
-
-  const handleResetFilters = () => {
-    setSearchTerm('');
-    setActiveFilter('ALL');
+  // Helper for Status Badge Styling
+  const renderStatusBadge = (status: DeliveryStatus) => {
+    switch (status) {
+      case 'PENDING':
+        return <span className="badge bg-warning text-dark px-2 py-1">Pending Prep</span>;
+      case 'READY_FOR_ASSIGNMENT':
+        return <span className="badge bg-info text-dark px-2 py-1">Ready for Trip</span>;
+      case 'ASSIGNED':
+        return <span className="badge bg-primary px-2 py-1">Trip Assigned</span>;
+      case 'OUT_FOR_DELIVERY':
+        return <span className="badge bg-indigo text-white px-2 py-1" style={{ backgroundColor: '#6f42c1' }}>Out for Delivery</span>;
+      case 'DELIVERED':
+        return <span className="badge bg-success px-2 py-1">Delivered</span>;
+      case 'FAILED':
+        return <span className="badge bg-danger px-2 py-1">Failed Attempt</span>;
+      case 'CANCELLED':
+        return <span className="badge bg-secondary px-2 py-1">Cancelled</span>;
+      default:
+        return <span className="badge bg-light text-dark px-2 py-1">{status}</span>;
+    }
   };
 
   return (
     <AdminLayout>
       <PageContainer
-        title="Deliveries Management & Live Tracking"
-        subtitle={`Manage and monitor delivery runs, destination zones, ${formatWeight(STANDARD_FLEET_CAPACITY_KG)} fleet capacity, and driver fulfillment`}
-        breadcrumbs={[{ label: 'Core Operations' }, { label: 'Deliveries' }]}
+        title="Fleet Deliveries Fulfillment"
+        subtitle="Operational order fulfillment monitoring &bull; Vehicle consolidation and destination execution"
+        breadcrumbs={[{ label: 'Fleet' }, { label: 'Deliveries' }]}
         actions={
           <div className="d-flex align-items-center gap-2">
-            <span className="badge bg-success rounded-pill px-3 py-2 d-inline-flex align-items-center gap-1 shadow-sm">
-              <i className="bi bi-truck"></i>
-              <span>{activeDeliveriesCount} Active Delivery Runs</span>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 bg-white border"
+              onClick={() => {
+                loadSummary();
+                loadDeliveries();
+              }}
+              disabled={isLoading}
+            >
+              <i className={`bi bi-arrow-clockwise ${isLoading ? 'spin' : ''}`}></i>
+              <span className="d-none d-sm-inline">Refresh</span>
+            </button>
+            <span className="badge badge-success-soft d-none d-md-inline-block">
+              <i className="bi bi-shield-check me-1"></i> Authoritative Fulfillment
             </span>
           </div>
         }
       >
-        {/* Flash action message */}
-        {actionMessage && (
-          <div
-            className="alert alert-success alert-dismissible fade show d-flex align-items-center justify-content-between p-3 mb-4 rounded-3 shadow-sm border-0"
-            role="alert"
-          >
-            <div className="d-flex align-items-center gap-2">
-              <i className="bi bi-check-circle-fill text-success fs-5"></i>
-              <span className="fw-medium">{actionMessage}</span>
-            </div>
-            <button
-              type="button"
-              className="btn-close"
-              onClick={() => setActionMessage(null)}
-              aria-label="Close"
-            ></button>
+        {/* Toast Feedback Messages */}
+        {actionSuccessMessage && (
+          <div className="alert alert-success alert-dismissible fade show shadow-sm d-flex align-items-center gap-2 mb-3" role="alert">
+            <i className="bi bi-check-circle-fill text-success fs-5"></i>
+            <div>{actionSuccessMessage}</div>
+            <button type="button" className="btn-close ms-auto" onClick={() => setActionSuccessMessage(null)}></button>
           </div>
         )}
 
-        {/* Deliveries Overview KPI Row */}
+        {actionErrorMessage && (
+          <div className="alert alert-danger alert-dismissible fade show shadow-sm d-flex align-items-center gap-2 mb-3" role="alert">
+            <i className="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+            <div>{actionErrorMessage}</div>
+            <button type="button" className="btn-close ms-auto" onClick={() => setActionErrorMessage(null)}></button>
+          </div>
+        )}
+
+        {/* Dynamic KPI Summary Cards */}
         <div className="row g-3 mb-4">
-          <div className="col-6 col-lg-3">
-            <div className="ardab-card p-3 p-md-4 h-100">
-              <span className="text-muted small d-block mb-1">Active Deliveries</span>
-              <div className="fs-3 fw-bold text-dark">{activeDeliveriesCount}</div>
-              <span className="badge badge-success-soft mt-1">Live En Route</span>
+          <div className="col-6 col-md-4 col-xl-2">
+            <div className="ardab-card p-3 h-100">
+              <span className="text-muted small">Total Deliveries</span>
+              <div className="d-flex align-items-baseline gap-2 mt-1">
+                <h3 className="fw-bold mb-0 text-dark">
+                  {isSummaryLoading ? '...' : summary.totalDeliveries}
+                </h3>
+              </div>
+              <div className="text-muted mt-2 small" style={{ fontSize: '0.75rem' }}>All-time created</div>
             </div>
           </div>
-          <div className="col-6 col-lg-3">
-            <div className="ardab-card p-3 p-md-4 h-100">
-              <span className="text-muted small d-block mb-1">In-Transit Freight Load</span>
-              <div className="fs-3 fw-bold text-primary">{formatWeight(inTransitLoadKg)}</div>
-              <span className="text-muted small">{formatWeight(STANDARD_FLEET_CAPACITY_KG)} Fleet Trucks</span>
+
+          <div className="col-6 col-md-4 col-xl-2">
+            <div className="ardab-card p-3 h-100">
+              <span className="text-muted small">Pending Prep</span>
+              <div className="d-flex align-items-baseline gap-2 mt-1">
+                <h3 className="fw-bold mb-0 text-warning">
+                  {isSummaryLoading ? '...' : summary.pendingDeliveries}
+                </h3>
+              </div>
+              <div className="text-muted mt-2 small" style={{ fontSize: '0.75rem' }}>Awaiting packaging</div>
             </div>
           </div>
-          <div className="col-6 col-lg-3">
-            <div className="ardab-card p-3 p-md-4 h-100">
-              <span className="text-muted small d-block mb-1">On-Time Fulfillment</span>
-              <div className="fs-3 fw-bold text-success">98.8%</div>
-              <span className="badge badge-info-soft mt-1">SLA Compliant</span>
+
+          <div className="col-6 col-md-4 col-xl-2">
+            <div className="ardab-card p-3 h-100">
+              <span className="text-muted small">Ready for Trip</span>
+              <div className="d-flex align-items-baseline gap-2 mt-1">
+                <h3 className="fw-bold mb-0 text-info">
+                  {isSummaryLoading ? '...' : summary.readyDeliveries}
+                </h3>
+              </div>
+              <div className="text-muted mt-2 small" style={{ fontSize: '0.75rem' }}>Unassigned to run</div>
             </div>
           </div>
-          <div className="col-6 col-lg-3">
-            <div className="ardab-card p-3 p-md-4 h-100">
-              <span className="text-muted small d-block mb-1">Regional Scope</span>
-              <div className="fs-3 fw-bold text-dark">{selectedCity}</div>
-              <span className="text-muted small">Hub Delivery Terminals</span>
+
+          <div className="col-6 col-md-4 col-xl-2">
+            <div className="ardab-card p-3 h-100">
+              <span className="text-muted small">Out for Delivery</span>
+              <div className="d-flex align-items-baseline gap-2 mt-1">
+                <h3 className="fw-bold mb-0 text-primary">
+                  {isSummaryLoading ? '...' : summary.outForDelivery}
+                </h3>
+              </div>
+              <div className="text-muted mt-2 small" style={{ fontSize: '0.75rem' }}>In vehicle transit</div>
+            </div>
+          </div>
+
+          <div className="col-6 col-md-4 col-xl-2">
+            <div className="ardab-card p-3 h-100">
+              <span className="text-muted small">Delivered Today</span>
+              <div className="d-flex align-items-baseline gap-2 mt-1">
+                <h3 className="fw-bold mb-0 text-success">
+                  {isSummaryLoading ? '...' : summary.deliveredToday}
+                </h3>
+              </div>
+              <div className="text-muted mt-2 small" style={{ fontSize: '0.75rem' }}>Fulfillment success</div>
+            </div>
+          </div>
+
+          <div className="col-6 col-md-4 col-xl-2">
+            <div className="ardab-card p-3 h-100">
+              <span className="text-muted small">Failed Attempts</span>
+              <div className="d-flex align-items-baseline gap-2 mt-1">
+                <h3 className="fw-bold mb-0 text-danger">
+                  {isSummaryLoading ? '...' : summary.failedDeliveries}
+                </h3>
+              </div>
+              <div className="text-muted mt-2 small" style={{ fontSize: '0.75rem' }}>Exception issues</div>
             </div>
           </div>
         </div>
 
-        {/* Filters & View Toggle */}
-        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-          <div className="overflow-x-auto pb-1">
-            <div className="d-flex gap-2" style={{ minWidth: 'max-content' }}>
-              {DELIVERY_STATUS_FILTERS.map((f) => (
-                <button
-                  key={f.value}
-                  type="button"
-                  className={`btn btn-sm rounded-pill px-3 ${
-                    activeFilter === f.value
-                      ? 'btn-ardab-primary shadow-sm'
-                      : 'btn-outline-secondary bg-white border'
-                  }`}
-                  onClick={() => {
-                    setActiveFilter(f.value);
-                    setCurrentPage(1);
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="d-flex gap-2 align-items-center align-self-end align-self-md-auto">
-            <span className="text-muted small d-none d-sm-inline">Layout:</span>
-            <div className="btn-group btn-group-sm bg-white border rounded-pill p-1 shadow-sm">
+        {/* Status Filter Tabs */}
+        <div className="mb-3 d-flex gap-2 flex-wrap border-bottom pb-3">
+          {DELIVERY_STATUS_TABS.map((tab) => {
+            const count = tab.countKey ? summary[tab.countKey] : null;
+            const isActive = activeTab === tab.value;
+            return (
               <button
+                key={tab.value}
                 type="button"
-                className={`btn btn-sm rounded-pill ${
-                  viewMode === 'cards' ? 'btn-ardab-primary' : 'btn-light border-0'
+                className={`btn btn-sm rounded-pill px-3 d-flex align-items-center gap-1 ${
+                  isActive ? 'btn-ardab-primary shadow-sm' : 'btn-outline-secondary bg-white border'
                 }`}
-                onClick={() => setViewMode('cards')}
-                title="Cards View"
+                onClick={() => setActiveTab(tab.value)}
               >
-                <i className="bi bi-grid-fill me-1"></i> Cards
+                <span>{tab.label}</span>
+                {count !== null && (
+                  <span
+                    className={`badge rounded-pill ms-1 ${
+                      isActive ? 'bg-white text-success' : 'bg-light text-dark'
+                    }`}
+                    style={{ fontSize: '0.7rem' }}
+                  >
+                    {isSummaryLoading ? '...' : count}
+                  </span>
+                )}
               </button>
-              <button
-                type="button"
-                className={`btn btn-sm rounded-pill ${
-                  viewMode === 'table' ? 'btn-ardab-primary' : 'btn-light border-0'
-                }`}
-                onClick={() => setViewMode('table')}
-                title="Table View"
-              >
-                <i className="bi bi-table me-1"></i> Table
-              </button>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
-        {/* Search Bar */}
+        {/* Filter and Search Toolbar */}
         <div className="ardab-card p-3 mb-4">
           <div className="row g-3 align-items-center">
-            <div className="col-12 col-md-8">
-              <div className="position-relative">
-                <i className="bi bi-search position-absolute start-0 top-50 translate-middle-y ms-3 text-muted"></i>
+            {/* Search */}
+            <div className="col-12 col-md-6 col-lg-5">
+              <div className="input-group input-group-sm">
+                <span className="input-group-text bg-light border-end-0">
+                  <i className="bi bi-search text-muted"></i>
+                </span>
                 <input
                   type="text"
-                  className="form-control ps-5"
-                  placeholder="Search deliveries by Trip ID (TRP-XXXX), vehicle, driver, or destination zone..."
+                  className="form-control border-start-0"
+                  placeholder="Search delivery #, order #, customer, phone..."
                   value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  aria-label="Search deliveries"
+                  onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                {searchTerm && (
+                  <button
+                    className="btn btn-outline-secondary border"
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                  >
+                    <i className="bi bi-x"></i>
+                  </button>
+                )}
               </div>
             </div>
-            <div className="col-12 col-md-4 text-md-end">
-              <span className="text-muted small">
-                Showing <strong className="text-dark">{filteredTrips.length}</strong> delivery runs in {selectedCity}
-              </span>
+
+            {/* Zone Filter */}
+            <div className="col-6 col-md-3 col-lg-3">
+              <select
+                className="form-select form-select-sm"
+                value={zoneFilter}
+                onChange={(e) => setZoneFilter(e.target.value)}
+              >
+                <option value="All Zones">All Delivery Zones</option>
+                <option value="Arada Central">Arada Central</option>
+                <option value="Maraki Campus Zone">Maraki Campus Zone</option>
+                <option value="Azezo West">Azezo West</option>
+                <option value="Piazza Commercial">Piazza Commercial</option>
+                <option value="Autopark Logistics Zone">Autopark Logistics Zone</option>
+                <option value="Central Zone">Central Zone</option>
+              </select>
+            </div>
+
+            {/* Sort Dropdown */}
+            <div className="col-6 col-md-3 col-lg-3">
+              <div className="d-flex align-items-center gap-1">
+                <select
+                  className="form-select form-select-sm"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  <option value="createdAt">Sort by Date</option>
+                  <option value="deliveryNumber">Delivery Number</option>
+                  <option value="scheduledAt">Scheduled Time</option>
+                  <option value="status">Status</option>
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary bg-white border px-2"
+                  onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                  title={`Sort ${sortOrder === 'asc' ? 'Descending' : 'Ascending'}`}
+                >
+                  <i className={`bi bi-sort-${sortOrder === 'asc' ? 'down' : 'up'}`}></i>
+                </button>
+              </div>
+            </div>
+
+            {/* Results Count & Reset */}
+            <div className="col-12 col-lg-1 text-lg-end text-muted small">
+              {pagination.total} total
             </div>
           </div>
         </div>
 
-        {/* View Mode: Cards Grid */}
-        {viewMode === 'cards' ? (
-          <div className="row g-3 mb-4">
-            {isLoading ? (
-              <div className="col-12 text-center py-5 text-muted">
-                <div className="spinner-border spinner-border-sm text-primary me-2" role="status" />
-                Loading delivery runs...
-              </div>
-            ) : paginatedTrips.length === 0 ? (
-              <div className="col-12">
-                <EmptyState
-                  icon="bi-truck"
-                  title="No delivery runs found"
-                  description="No active trips match your selected status filter or search keywords."
-                  actionLabel="Reset Filters"
-                  onAction={handleResetFilters}
-                />
-              </div>
-            ) : (
-              paginatedTrips.map((trip) => (
-                <div key={trip.id} className="col-12 col-md-6 col-xl-4">
-                  <div className="ardab-card h-100 p-4 shadow-sm position-relative">
-                    <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
-                      <div>
-                        <span className="fw-bold text-dark fs-6">{trip.id}</span>
-                        <div className="text-muted small" style={{ fontSize: '0.72rem' }}>
-                          <i className="bi bi-clock me-1"></i>
-                          {trip.startTime || trip.createdTime}
-                        </div>
-                      </div>
-                      <span
-                        className={`ardab-badge ${
-                          trip.status === 'COMPLETED'
-                            ? 'badge-success-soft'
-                            : trip.status === 'IN_PROGRESS'
-                            ? 'badge-info-soft'
-                            : 'badge-warning-soft'
-                        }`}
-                      >
-                        {trip.status.replace('_', ' ')}
-                      </span>
-                    </div>
-
-                    {/* Driver & Vehicle */}
-                    <div className="mb-3">
-                      <div className="d-flex justify-content-between text-muted small mb-1">
-                        <span>Assigned Vehicle:</span>
-                        <strong className="text-dark">{trip.vehicleRegistration}</strong>
-                      </div>
-                      <div className="d-flex justify-content-between text-muted small mb-1">
-                        <span>Driver Name:</span>
-                        <span className="fw-semibold text-dark">{trip.driverName}</span>
-                      </div>
-                      <div className="d-flex justify-content-between text-muted small mb-1">
-                        <span>Regional Hub:</span>
-                        <span className="text-dark">{trip.pickupHub}</span>
-                      </div>
-                      <div className="d-flex justify-content-between text-muted small">
-                        <span>Orders in Consignment:</span>
-                        <span className="fw-bold text-success">{trip.orderCount} orders</span>
-                      </div>
-                    </div>
-
-                    {/* 5,000 KG Capacity Model Progress Bar */}
-                    <div className="p-3 bg-light rounded-3 border mb-3">
-                      <div className="d-flex justify-content-between align-items-center small mb-1">
-                        <span className="text-muted">Load Capacity</span>
-                        <span className="fw-bold text-dark">
-                          {formatCapacity(trip.currentLoadKg, STANDARD_FLEET_CAPACITY_KG)}
-                        </span>
-                      </div>
-                      <div className="ardab-progress mb-2" style={{ height: 8 }}>
-                        <div
-                          className="ardab-progress-bar bg-success"
-                          style={{ width: `${trip.utilizationPercentage}%` }}
-                        ></div>
-                      </div>
-                      <div
-                        className="d-flex justify-content-between text-muted"
-                        style={{ fontSize: '0.75rem' }}
-                      >
-                        <span>{formatWeight(trip.remainingCapacityKg)} remaining</span>
-                        <span className="fw-medium text-dark">{trip.city} Hub</span>
-                      </div>
-                    </div>
-
-                    {/* Destination Zones */}
-                    <div className="mb-3">
-                      <span className="text-muted small d-block mb-1">Destination Zones:</span>
-                      <div className="d-flex gap-1 flex-wrap">
-                        {trip.deliveryZones.map((z) => (
-                          <span
-                            key={z}
-                            className="badge badge-info-soft"
-                            style={{ fontSize: '0.72rem' }}
-                          >
-                            <i className="bi bi-geo-alt me-1"></i>
-                            {z}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Control Buttons */}
-                    <div className="d-flex justify-content-between align-items-center pt-3 border-top">
-                      {canManageDeliveries && trip.status === 'LOADING' && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-info text-white fw-semibold"
-                          onClick={() => promptStatusChange(trip, 'IN_PROGRESS')}
-                        >
-                          <i className="bi bi-send me-1"></i> Dispatch Trip
-                        </button>
-                      )}
-                      {canManageDeliveries && trip.status === 'IN_PROGRESS' && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-success fw-semibold"
-                          onClick={() => promptStatusChange(trip, 'COMPLETED')}
-                        >
-                          <i className="bi bi-check-all me-1"></i> Complete Trip
-                        </button>
-                      )}
-                      {trip.status === 'COMPLETED' && (
-                        <span className="text-muted small">
-                          <i className="bi bi-check-circle-fill text-success me-1"></i> Completed
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-light border ms-auto"
-                        onClick={() => setSelectedTrip(trip)}
-                      >
-                        Trip Details &rarr;
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
+        {/* Deliveries Display: Desktop Table (>768px) & Mobile Cards (<768px) */}
+        {isLoading ? (
+          <div className="ardab-card p-0 mb-4 overflow-hidden">
+            <div className="table-responsive">
+              <table className="table table-hover align-middle mb-0">
+                <TableSkeleton rows={6} columns={8} />
+              </table>
+            </div>
           </div>
+        ) : deliveries.length === 0 ? (
+          <EmptyState
+            icon="bi-truck"
+            title={debouncedSearch || activeTab !== 'ALL' || zoneFilter !== 'All Zones' ? 'No matching deliveries found' : 'No deliveries in system'}
+            description={
+              debouncedSearch || activeTab !== 'ALL' || zoneFilter !== 'All Zones'
+                ? 'Try adjusting your search criteria or filter tags.'
+                : 'Customer incoming orders will generate authoritative fulfillment delivery records automatically.'
+            }
+            actionLabel={(debouncedSearch || activeTab !== 'ALL' || zoneFilter !== 'All Zones') ? 'Clear Filters' : undefined}
+            onAction={
+              (debouncedSearch || activeTab !== 'ALL' || zoneFilter !== 'All Zones')
+                ? () => {
+                    setSearchTerm('');
+                    setActiveTab('ALL');
+                    setZoneFilter('All Zones');
+                  }
+                : undefined
+            }
+          />
         ) : (
-          /* View Mode: Table */
-          <div className="ardab-card p-0 mb-4 overflow-hidden shadow-sm">
-            <div className="ardab-table-wrapper">
-              <table className="ardab-table">
-                <thead>
-                  <tr>
-                    <th>Trip ID</th>
-                    <th>Vehicle & Driver</th>
-                    <th>City & Pickup Hub</th>
-                    <th>Load ({formatWeight(STANDARD_FLEET_CAPACITY_KG)} Max)</th>
-                    <th>Destination Zones</th>
-                    <th>Status</th>
-                    <th className="text-end">Manage</th>
-                  </tr>
-                </thead>
-                {isLoading ? (
-                  <TableSkeleton rows={5} columns={7} />
-                ) : paginatedTrips.length > 0 ? (
+          <>
+            {/* Desktop Table */}
+            <div className="ardab-card p-0 d-none d-lg-block mb-4 overflow-hidden">
+              <div className="table-responsive">
+                <table className="table table-hover align-middle mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th style={{ width: '13%' }}>Delivery #</th>
+                      <th style={{ width: '12%' }}>Order</th>
+                      <th style={{ width: '15%' }}>Customer</th>
+                      <th style={{ width: '15%' }}>Destination</th>
+                      <th style={{ width: '12%' }}>Trip / Logistics</th>
+                      <th style={{ width: '10%' }}>Weight</th>
+                      <th style={{ width: '11%' }}>Status</th>
+                      <th style={{ width: '12%' }} className="text-end pe-3">Actions</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {paginatedTrips.map((trip) => (
-                      <tr key={trip.id}>
+                    {deliveries.map((delivery) => (
+                      <tr key={delivery.id}>
                         <td>
-                          <span className="fw-bold text-success">{trip.id}</span>
-                          <div className="text-muted small" style={{ fontSize: '0.7rem' }}>
-                            {trip.orderCount} orders
+                          <div className="d-flex align-items-center gap-1">
+                            <span className="fw-semibold text-dark font-monospace">{delivery.deliveryNumber}</span>
                           </div>
-                        </td>
-                        <td>
-                          <div className="fw-semibold text-dark">{trip.driverName}</div>
                           <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
-                            {trip.vehicleRegistration}
+                            {new Date(delivery.createdAt).toLocaleDateString()}
                           </div>
                         </td>
+
                         <td>
-                          <div className="fw-medium text-dark">{trip.city}</div>
-                          <div
-                            className="text-muted small text-truncate"
-                            style={{ maxWidth: 180, fontSize: '0.75rem' }}
-                          >
-                            {trip.pickupHub}
+                          <div className="fw-medium text-dark font-monospace">
+                            {delivery.order?.orderNumber || '—'}
                           </div>
-                        </td>
-                        <td>
-                          <div className="fw-bold text-dark">{formatWeight(trip.currentLoadKg)}</div>
                           <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
-                            {trip.utilizationPercentage}% full
+                            {delivery.order?.totalAmount ? formatCurrency(delivery.order.totalAmount) : ''}
                           </div>
                         </td>
+
                         <td>
-                          <div className="d-flex gap-1 flex-wrap" style={{ maxWidth: 200 }}>
-                            {trip.deliveryZones.map((z) => (
-                              <span
-                                key={z}
-                                className="badge badge-info-soft"
-                                style={{ fontSize: '0.7rem' }}
-                              >
-                                {z}
+                          <div className="fw-medium text-dark text-truncate" style={{ maxWidth: '140px' }}>
+                            {delivery.recipientName}
+                          </div>
+                          <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
+                            {delivery.recipientPhone}
+                          </div>
+                        </td>
+
+                        <td>
+                          <div className="text-dark small fw-medium">
+                            {delivery.city} &bull; {delivery.deliveryZone || 'Zone'}
+                          </div>
+                          <div className="text-muted text-truncate small" style={{ maxWidth: '160px', fontSize: '0.75rem' }}>
+                            {delivery.addressLine}
+                          </div>
+                        </td>
+
+                        <td>
+                          {delivery.trip ? (
+                            <div>
+                              <span className="badge bg-light text-dark border font-monospace">
+                                {delivery.trip.tripNumber}
                               </span>
-                            ))}
+                              <div className="text-muted small" style={{ fontSize: '0.72rem' }}>
+                                {delivery.trip.vehicle?.plateNumber || 'Truck'} &bull; {delivery.trip.driver?.fullName?.split(' ')[0] || 'Driver'}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-muted small fst-italic">Unassigned</span>
+                          )}
+                        </td>
+
+                        <td>
+                          <div className="small text-dark fw-medium">
+                            {formatWeight(delivery.order?.totalWeight || 0)}
+                          </div>
+                          <div className="text-muted small" style={{ fontSize: '0.72rem' }}>
+                            {delivery.order?.itemCount || 0} item(s)
                           </div>
                         </td>
-                        <td>
-                          <span
-                            className={`ardab-badge ${
-                              trip.status === 'COMPLETED'
-                                ? 'badge-success-soft'
-                                : trip.status === 'IN_PROGRESS'
-                                ? 'badge-info-soft'
-                                : 'badge-warning-soft'
-                            }`}
-                          >
-                            {trip.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="text-end">
-                          <div className="d-inline-flex gap-1">
-                            {canManageDeliveries && trip.status === 'LOADING' && (
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-info text-white fw-semibold"
-                                onClick={() => promptStatusChange(trip, 'IN_PROGRESS')}
-                                title="Dispatch Run"
-                              >
-                                <i className="bi bi-send"></i>
-                              </button>
-                            )}
-                            {canManageDeliveries && trip.status === 'IN_PROGRESS' && (
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-success fw-semibold"
-                                onClick={() => promptStatusChange(trip, 'COMPLETED')}
-                                title="Complete Run"
-                              >
-                                <i className="bi bi-check-all"></i>
-                              </button>
-                            )}
+
+                        <td>{renderStatusBadge(delivery.status)}</td>
+
+                        <td className="text-end pe-3">
+                          <div className="d-flex align-items-center justify-content-end gap-1">
+                            {/* View Details Button */}
                             <button
                               type="button"
-                              className="btn btn-sm btn-light border"
-                              onClick={() => setSelectedTrip(trip)}
+                              className="btn btn-sm btn-outline-secondary p-1 px-2 border"
+                              onClick={() => openDeliveryDetails(delivery)}
                               title="View Details"
                             >
-                              <i className="bi bi-eye"></i> Details
+                              <i className="bi bi-eye"></i>
                             </button>
+
+                            {/* State Specific Operations */}
+                            {delivery.status === 'PENDING' && canUpdateStatus && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary p-1 px-2"
+                                onClick={() => handlePrepareDelivery(delivery)}
+                                disabled={isProcessingAction}
+                                title="Prepare for Trip Assignment"
+                              >
+                                <i className="bi bi-check2-circle me-1"></i> Prepare
+                              </button>
+                            )}
+
+                            {delivery.status === 'READY_FOR_ASSIGNMENT' && canAssign && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-success p-1 px-2"
+                                onClick={() => openAssignTripModal(delivery)}
+                                disabled={isProcessingAction}
+                                title="Assign to Consolidated Trip"
+                              >
+                                <i className="bi bi-truck me-1"></i> Assign Trip
+                              </button>
+                            )}
+
+                            {delivery.status === 'ASSIGNED' && canUpdateStatus && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-info p-1 px-2"
+                                onClick={() => handleDispatchDelivery(delivery)}
+                                disabled={isProcessingAction}
+                                title="Dispatch Run (Out for Delivery)"
+                              >
+                                <i className="bi bi-send me-1"></i> Dispatch
+                              </button>
+                            )}
+
+                            {delivery.status === 'OUT_FOR_DELIVERY' && canUpdateStatus && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-success p-1 px-2"
+                                  onClick={() => promptCompleteDelivery(delivery)}
+                                  disabled={isProcessingAction}
+                                  title="Mark Delivered"
+                                >
+                                  <i className="bi bi-check-lg"></i> Complete
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-danger p-1 px-2"
+                                  onClick={() => openFailModal(delivery)}
+                                  disabled={isProcessingAction}
+                                  title="Record Failed Delivery"
+                                >
+                                  <i className="bi bi-x-lg"></i>
+                                </button>
+                              </>
+                            )}
+
+                            {/* Cancellation (if not terminal) */}
+                            {['PENDING', 'READY_FOR_ASSIGNMENT', 'ASSIGNED'].includes(delivery.status) && canUpdateStatus && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger p-1 px-2 border-0"
+                                onClick={() => openCancelModal(delivery)}
+                                disabled={isProcessingAction}
+                                title="Cancel Delivery"
+                              >
+                                <i className="bi bi-trash text-danger"></i>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
-                ) : null}
-              </table>
-
-              {!isLoading && paginatedTrips.length === 0 && (
-                <div className="p-4">
-                  <EmptyState
-                    icon="bi-truck"
-                    title="No delivery runs found"
-                    description="No active trips match your selected status filter or search keywords."
-                    actionLabel="Reset Filters"
-                    onAction={handleResetFilters}
-                  />
-                </div>
-              )}
+                </table>
+              </div>
             </div>
-          </div>
+
+            {/* Mobile Cards Layout (<768px, exactly 320, 360, 375, 390, 414, 430px responsive) */}
+            <div className="d-lg-none d-flex flex-column gap-3 mb-4">
+              {deliveries.map((delivery) => (
+                <div key={delivery.id} className="ardab-card p-3 shadow-sm">
+                  <div className="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                    <span className="fw-bold font-monospace text-dark">{delivery.deliveryNumber}</span>
+                    {renderStatusBadge(delivery.status)}
+                  </div>
+
+                  <div className="small mb-1">
+                    <span className="text-muted">Order: </span>
+                    <span className="fw-medium font-monospace text-dark">{delivery.order?.orderNumber || '—'}</span>
+                  </div>
+
+                  <div className="small mb-1">
+                    <span className="text-muted">Customer: </span>
+                    <span className="fw-semibold text-dark">{delivery.recipientName}</span>
+                    <span className="text-muted ms-1">({delivery.recipientPhone})</span>
+                  </div>
+
+                  <div className="small mb-1">
+                    <span className="text-muted">Destination: </span>
+                    <span className="text-dark">{delivery.city} &bull; {delivery.deliveryZone || 'Zone'}</span>
+                  </div>
+
+                  <div className="small mb-2 text-truncate text-muted" style={{ fontSize: '0.78rem' }}>
+                    {delivery.addressLine}
+                  </div>
+
+                  <div className="d-flex justify-content-between align-items-center bg-light p-2 rounded mb-3 small">
+                    <div>
+                      <span className="text-muted">Trip: </span>
+                      <span className="fw-medium text-dark">{delivery.trip?.tripNumber || 'Unassigned'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted">Weight: </span>
+                      <span className="fw-bold text-dark">{formatWeight(delivery.order?.totalWeight || 0)}</span>
+                    </div>
+                  </div>
+
+                  <div className="d-flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary flex-grow-1"
+                      onClick={() => openDeliveryDetails(delivery)}
+                    >
+                      <i className="bi bi-eye me-1"></i> View Details
+                    </button>
+
+                    {delivery.status === 'PENDING' && canUpdateStatus && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary flex-grow-1"
+                        onClick={() => handlePrepareDelivery(delivery)}
+                        disabled={isProcessingAction}
+                      >
+                        <i className="bi bi-check2-circle me-1"></i> Prepare
+                      </button>
+                    )}
+
+                    {delivery.status === 'READY_FOR_ASSIGNMENT' && canAssign && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-success flex-grow-1"
+                        onClick={() => openAssignTripModal(delivery)}
+                        disabled={isProcessingAction}
+                      >
+                        <i className="bi bi-truck me-1"></i> Assign Trip
+                      </button>
+                    )}
+
+                    {delivery.status === 'ASSIGNED' && canUpdateStatus && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-info flex-grow-1"
+                        onClick={() => handleDispatchDelivery(delivery)}
+                        disabled={isProcessingAction}
+                      >
+                        <i className="bi bi-send me-1"></i> Dispatch
+                      </button>
+                    )}
+
+                    {delivery.status === 'OUT_FOR_DELIVERY' && canUpdateStatus && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-success flex-grow-1"
+                          onClick={() => promptCompleteDelivery(delivery)}
+                          disabled={isProcessingAction}
+                        >
+                          <i className="bi bi-check-lg me-1"></i> Complete
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => openFailModal(delivery)}
+                          disabled={isProcessingAction}
+                        >
+                          <i className="bi bi-x-lg"></i>
+                        </button>
+                      </>
+                    )}
+
+                    {['PENDING', 'READY_FOR_ASSIGNMENT', 'ASSIGNED'].includes(delivery.status) && canUpdateStatus && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger"
+                        onClick={() => openCancelModal(delivery)}
+                        disabled={isProcessingAction}
+                      >
+                        <i className="bi bi-trash"></i>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div className="text-muted small">
+                Showing {deliveries.length} of {pagination.total} deliveries
+              </div>
+              <Pagination
+                currentPage={pagination.page}
+                totalPages={pagination.totalPages}
+                pageSize={pagination.pageSize}
+                totalRecords={pagination.total}
+                onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
+                onPageSizeChange={(sz) => setPagination((prev) => ({ ...prev, pageSize: sz, page: 1 }))}
+              />
+            </div>
+          </>
         )}
 
-        {/* Server-ready Pagination Component */}
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          pageSize={pageSize}
-          totalRecords={filteredTrips.length}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={setPageSize}
-          className="mb-4"
-        />
-
-        {/* Modal: Trip Details */}
-        {selectedTrip && (
+        {/* DELIVERY DETAILS DRAWER / MODAL */}
+        {selectedDelivery && (
           <div
-            className="modal show d-block"
+            className="modal fade show d-block"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}
             tabIndex={-1}
-            style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}
+            onClick={() => setSelectedDelivery(null)}
           >
-            <div className="modal-dialog modal-dialog-centered modal-lg">
-              <div className="modal-content rounded-4 border-0 shadow">
-                <div className="modal-header border-bottom">
+            <div
+              className="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="modal-content border-0 shadow">
+                <div className="modal-header bg-light border-bottom">
                   <div>
-                    <h5 className="modal-title fw-bold text-dark mb-0">
-                      Delivery Run &mdash; {selectedTrip.id}
+                    <h5 className="modal-title fw-bold font-monospace d-flex align-items-center gap-2">
+                      <span>{selectedDelivery.deliveryNumber}</span>
+                      {renderStatusBadge(selectedDelivery.status)}
                     </h5>
                     <span className="text-muted small">
-                      {selectedTrip.city} Hub &bull; {selectedTrip.vehicleRegistration} &bull; Driver:{' '}
-                      {selectedTrip.driverName}
+                      Created on {new Date(selectedDelivery.createdAt).toLocaleString()}
                     </span>
                   </div>
                   <button
                     type="button"
                     className="btn-close"
-                    onClick={() => setSelectedTrip(null)}
-                    aria-label="Close"
+                    onClick={() => setSelectedDelivery(null)}
                   ></button>
                 </div>
 
                 <div className="modal-body p-4">
-                  {/* Status & Capacity Card */}
-                  <div className="p-3 bg-light rounded-3 border mb-4">
-                    <div className="row g-3">
-                      <div className="col-6 col-md-3">
-                        <span className="text-muted small d-block">Run Status</span>
-                        <span
-                          className={`ardab-badge ${
-                            selectedTrip.status === 'COMPLETED'
-                              ? 'badge-success-soft'
-                              : selectedTrip.status === 'IN_PROGRESS'
-                              ? 'badge-info-soft'
-                              : 'badge-warning-soft'
-                          }`}
-                        >
-                          {selectedTrip.status.replace('_', ' ')}
-                        </span>
+                  {/* SECTION 1: DELIVERY & ORDER SUMMARY */}
+                  <div className="row g-3 mb-4">
+                    <div className="col-12 col-md-6">
+                      <div className="p-3 bg-light rounded h-100">
+                        <div className="fw-bold text-dark small mb-2 text-uppercase tracking-wider">
+                          <i className="bi bi-receipt me-1 text-primary"></i> Order Information
+                        </div>
+                        <div className="small mb-1">
+                          <span className="text-muted">Order #: </span>
+                          <span className="fw-semibold font-monospace text-dark">{selectedDelivery.order?.orderNumber || '—'}</span>
+                        </div>
+                        <div className="small mb-1">
+                          <span className="text-muted">Order Total: </span>
+                          <span className="fw-bold text-success">
+                            {selectedDelivery.order?.totalAmount ? formatCurrency(selectedDelivery.order.totalAmount) : '—'}
+                          </span>
+                        </div>
+                        <div className="small mb-1">
+                          <span className="text-muted">Consignment Weight: </span>
+                          <span className="fw-bold text-dark">
+                            {formatWeight(selectedDelivery.order?.totalWeight || 0)}
+                          </span>
+                        </div>
+                        <div className="small">
+                          <span className="text-muted">Payment Status: </span>
+                          <span className="badge bg-secondary-soft text-dark">
+                            {selectedDelivery.order?.paymentStatus || 'PENDING'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="col-6 col-md-3">
-                        <span className="text-muted small d-block">Consignment Weight</span>
-                        <strong className="text-dark fs-6">
-                          {formatWeight(selectedTrip.currentLoadKg)}
-                        </strong>
-                      </div>
-                      <div className="col-6 col-md-3">
-                        <span className="text-muted small d-block">Fleet Max Capacity</span>
-                        <strong className="text-primary fs-6">
-                          {formatWeight(STANDARD_FLEET_CAPACITY_KG)}
-                        </strong>
-                      </div>
-                      <div className="col-6 col-md-3">
-                        <span className="text-muted small d-block">Utilization</span>
-                        <strong className="text-success fs-6">
-                          {selectedTrip.utilizationPercentage}%
-                        </strong>
+                    </div>
+
+                    <div className="col-12 col-md-6">
+                      <div className="p-3 bg-light rounded h-100">
+                        <div className="fw-bold text-dark small mb-2 text-uppercase tracking-wider">
+                          <i className="bi bi-geo-alt me-1 text-danger"></i> Destination Snapshot
+                        </div>
+                        <div className="small mb-1">
+                          <span className="text-muted">Recipient: </span>
+                          <span className="fw-semibold text-dark">{selectedDelivery.recipientName}</span>
+                        </div>
+                        <div className="small mb-1">
+                          <span className="text-muted">Phone: </span>
+                          <span className="text-dark">{selectedDelivery.recipientPhone}</span>
+                        </div>
+                        <div className="small mb-1">
+                          <span className="text-muted">Zone: </span>
+                          <span className="text-dark">{selectedDelivery.city} &bull; {selectedDelivery.deliveryZone || 'Standard'}</span>
+                        </div>
+                        <div className="small">
+                          <span className="text-muted">Address: </span>
+                          <span className="text-dark">{selectedDelivery.addressLine}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Destination Zones */}
-                  <div className="mb-4">
-                    <h6 className="fw-bold text-dark mb-2">
-                      <i className="bi bi-geo-alt-fill text-danger me-2"></i>
-                      Target Delivery Zones
-                    </h6>
-                    <div className="d-flex gap-2 flex-wrap">
-                      {selectedTrip.deliveryZones.map((z) => (
-                        <span key={z} className="badge bg-white text-dark border p-2 shadow-sm">
-                          <i className="bi bi-pin-map me-1 text-primary"></i>
-                          {z}
-                        </span>
-                      ))}
+                  {/* SECTION 2: TRIP & FLEET ALLOCATION */}
+                  <div className="p-3 border rounded mb-4">
+                    <div className="fw-bold text-dark small mb-2 text-uppercase tracking-wider">
+                      <i className="bi bi-truck me-1 text-success"></i> Fleet Journey & Trip Allocation
                     </div>
+                    {selectedDelivery.trip ? (
+                      <div className="row g-2 small">
+                        <div className="col-6 col-md-3">
+                          <span className="text-muted d-block">Trip Run</span>
+                          <span className="fw-bold font-monospace text-dark">{selectedDelivery.trip.tripNumber}</span>
+                        </div>
+                        <div className="col-6 col-md-3">
+                          <span className="text-muted d-block">Vehicle</span>
+                          <span className="fw-medium text-dark">
+                            {selectedDelivery.trip.vehicle?.plateNumber || '—'}
+                          </span>
+                        </div>
+                        <div className="col-6 col-md-3">
+                          <span className="text-muted d-block">Assigned Driver</span>
+                          <span className="fw-medium text-dark">
+                            {selectedDelivery.trip.driver?.fullName || '—'}
+                          </span>
+                        </div>
+                        <div className="col-6 col-md-3">
+                          <span className="text-muted d-block">Trip Load Utilization</span>
+                          <span className="fw-bold text-dark">
+                            {formatWeight(selectedDelivery.trip.totalWeightKg)} / {formatWeight(selectedDelivery.trip.maxCapacityKg)}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-muted small fst-italic">
+                        No fleet vehicle trip currently assigned. Ready to be consolidated into a 5,000 KG capacity run.
+                      </div>
+                    )}
                   </div>
 
-                  {/* Consignment Orders in this trip */}
-                  <div>
-                    <h6 className="fw-bold text-dark mb-2">
-                      <i className="bi bi-box-seam text-primary me-2"></i>
-                      Consignment Orders ({selectedTrip.orderIds.length})
-                    </h6>
-                    <div className="table-responsive border rounded-3">
-                      <table className="table table-sm table-hover mb-0">
-                        <thead className="bg-light">
-                          <tr>
-                            <th className="p-2 ps-3">Order ID</th>
-                            <th className="p-2">Hub Action</th>
-                            <th className="p-2 text-end pe-3">Consignment Link</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedTrip.orderIds.map((ordId) => (
-                            <tr key={ordId}>
-                              <td className="p-2 ps-3 fw-bold text-success">{ordId}</td>
-                              <td className="p-2">
-                                <span className="badge badge-success-soft">Staged in Truck</span>
-                              </td>
-                              <td className="p-2 text-end pe-3">
-                                <span className="text-muted small">Assigned &bull; In Route</span>
-                              </td>
+                  {/* SECTION 3: ORDER ITEMS SNAPSHOT */}
+                  {selectedDelivery.order?.items && selectedDelivery.order.items.length > 0 && (
+                    <div className="mb-4">
+                      <div className="fw-bold text-dark small mb-2 text-uppercase tracking-wider">
+                        <i className="bi bi-boxes me-1 text-secondary"></i> Package Contents
+                      </div>
+                      <div className="table-responsive border rounded">
+                        <table className="table table-sm mb-0 align-middle">
+                          <thead className="table-light small">
+                            <tr>
+                              <th>Product</th>
+                              <th>Item Code</th>
+                              <th className="text-center">Qty</th>
+                              <th className="text-end">Unit Price</th>
+                              <th className="text-end">Weight</th>
+                              <th className="text-end pe-2">Subtotal</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="small">
+                            {selectedDelivery.order.items.map((item) => (
+                              <tr key={item.id}>
+                                <td className="fw-medium text-dark">{item.productName}</td>
+                                <td className="font-monospace text-muted small">{item.itemCode}</td>
+                                <td className="text-center">{item.quantity} {item.unit}</td>
+                                <td className="text-end">{formatCurrency(item.unitPrice)}</td>
+                                <td className="text-end">{formatWeight(item.totalWeight)}</td>
+                                <td className="text-end pe-2 fw-semibold">{formatCurrency(item.subtotal)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
+                  )}
+
+                  {/* SECTION 4: ACTIVITY TIMELINE */}
+                  <div>
+                    <div className="fw-bold text-dark small mb-2 text-uppercase tracking-wider">
+                      <i className="bi bi-clock-history me-1 text-primary"></i> Lifecycle Timeline
+                    </div>
+                    {isLoadingTimeline ? (
+                      <div className="text-muted small">Loading timeline...</div>
+                    ) : timelineEvents.length === 0 ? (
+                      <div className="text-muted small fst-italic">No activity logged yet.</div>
+                    ) : (
+                      <div className="position-relative ps-3 border-start ms-2 py-1">
+                        {timelineEvents.map((event, idx) => (
+                          <div key={event.id || idx} className="position-relative mb-3">
+                            <span
+                              className="position-absolute translate-middle rounded-circle bg-success"
+                              style={{ left: '-13px', top: '10px', width: '8px', height: '8px' }}
+                            ></span>
+                            <div className="d-flex justify-content-between align-items-baseline">
+                              <span className="fw-bold small text-dark">{event.action}</span>
+                              <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                {new Date(event.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="text-muted small" style={{ fontSize: '0.8rem' }}>
+                              {event.description} &bull; <span className="fst-italic">{event.actor}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="modal-footer border-top bg-light d-flex justify-content-between">
-                  <div className="d-flex gap-2">
-                    {canManageDeliveries && selectedTrip.status === 'LOADING' && (
+                <div className="modal-footer bg-light border-top">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setSelectedDelivery(null)}
+                  >
+                    Close
+                  </button>
+
+                  {selectedDelivery.status === 'PENDING' && canUpdateStatus && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={() => handlePrepareDelivery(selectedDelivery)}
+                      disabled={isProcessingAction}
+                    >
+                      Prepare for Trip
+                    </button>
+                  )}
+
+                  {selectedDelivery.status === 'READY_FOR_ASSIGNMENT' && canAssign && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-success"
+                      onClick={() => openAssignTripModal(selectedDelivery)}
+                      disabled={isProcessingAction}
+                    >
+                      Assign to Trip
+                    </button>
+                  )}
+
+                  {selectedDelivery.status === 'ASSIGNED' && canUpdateStatus && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-info text-white"
+                      onClick={() => handleDispatchDelivery(selectedDelivery)}
+                      disabled={isProcessingAction}
+                    >
+                      Dispatch Consignment
+                    </button>
+                  )}
+
+                  {selectedDelivery.status === 'OUT_FOR_DELIVERY' && canUpdateStatus && (
+                    <>
                       <button
                         type="button"
-                        className="btn btn-sm btn-info text-white"
-                        onClick={() => promptStatusChange(selectedTrip, 'IN_PROGRESS')}
+                        className="btn btn-sm btn-danger"
+                        onClick={() => openFailModal(selectedDelivery)}
+                        disabled={isProcessingAction}
                       >
-                        <i className="bi bi-send me-1"></i> Dispatch Trip Now
+                        Record Failure
                       </button>
-                    )}
-                    {canManageDeliveries && selectedTrip.status === 'IN_PROGRESS' && (
                       <button
                         type="button"
                         className="btn btn-sm btn-success"
-                        onClick={() => promptStatusChange(selectedTrip, 'COMPLETED')}
+                        onClick={() => promptCompleteDelivery(selectedDelivery)}
+                        disabled={isProcessingAction}
                       >
-                        <i className="bi bi-check-all me-1"></i> Mark Trip Completed
+                        Mark Delivered
                       </button>
-                    )}
-                  </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TRIP ASSIGNMENT MODAL */}
+        {isAssignTripModalOpen && assigningDelivery && (
+          <div
+            className="modal fade show d-block"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}
+            tabIndex={-1}
+            onClick={() => setIsAssignTripModalOpen(false)}
+          >
+            <div className="modal-dialog modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-content border-0 shadow">
+                <div className="modal-header bg-light">
+                  <h5 className="modal-title fw-bold fs-6">
+                    Assign {assigningDelivery.deliveryNumber} to Fleet Trip
+                  </h5>
                   <button
                     type="button"
-                    className="btn btn-sm btn-ardab-outline"
-                    onClick={() => setSelectedTrip(null)}
+                    className="btn-close"
+                    onClick={() => setIsAssignTripModalOpen(false)}
+                  ></button>
+                </div>
+
+                <div className="modal-body p-4">
+                  <div className="p-2 bg-light rounded small mb-3">
+                    <div>
+                      <span className="text-muted">Destination City: </span>
+                      <span className="fw-bold text-dark">{assigningDelivery.city}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted">Delivery Weight: </span>
+                      <span className="fw-bold text-dark">{formatWeight(assigningDelivery.order?.totalWeight || 0)}</span>
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold text-dark">
+                      Select Available Journey Run (Max 5,000 KG)
+                    </label>
+                    {isLoadingTrips ? (
+                      <div className="text-muted small">Searching available vehicle runs...</div>
+                    ) : availableTrips.length === 0 ? (
+                      <div className="alert alert-warning small mb-0">
+                        No active runs scheduled in {assigningDelivery.city}. Please create or dispatch a trip in Fleet Trips.
+                      </div>
+                    ) : (
+                      <div className="d-flex flex-column gap-2">
+                        {availableTrips.map((trip) => {
+                          const deliveryWeight = Number(assigningDelivery.order?.totalWeight || 0);
+                          const willExceedCapacity = deliveryWeight > trip.remainingCapacityKg;
+                          return (
+                            <label
+                              key={trip.id}
+                              className={`d-flex justify-content-between align-items-center p-3 border rounded cursor-pointer ${
+                                selectedTripId === trip.id ? 'border-primary bg-primary-soft' : ''
+                              } ${willExceedCapacity ? 'opacity-50' : ''}`}
+                              style={{ cursor: willExceedCapacity ? 'not-allowed' : 'pointer' }}
+                            >
+                              <div className="d-flex align-items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name="tripSelection"
+                                  value={trip.id}
+                                  checked={selectedTripId === trip.id}
+                                  onChange={() => setSelectedTripId(trip.id)}
+                                  disabled={willExceedCapacity}
+                                />
+                                <div>
+                                  <div className="fw-bold font-monospace text-dark">{trip.tripNumber}</div>
+                                  <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
+                                    {trip.vehiclePlate} ({trip.vehicleModel}) &bull; {trip.driverName}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-end small">
+                                <div className="fw-bold text-dark">
+                                  {formatWeight(trip.currentLoadKg)} / {formatWeight(trip.capacityKg)}
+                                </div>
+                                <div className={willExceedCapacity ? 'text-danger fw-bold' : 'text-success'}>
+                                  {willExceedCapacity ? 'Exceeds Capacity' : `${formatWeight(trip.remainingCapacityKg)} left`}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setIsAssignTripModalOpen(false)}
                   >
-                    Close
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={submitAssignTrip}
+                    disabled={!selectedTripId || isProcessingAction}
+                  >
+                    {isProcessingAction ? 'Assigning...' : 'Confirm Assignment'}
                   </button>
                 </div>
               </div>
@@ -729,16 +1314,99 @@ export default function DeliveriesPage() {
           </div>
         )}
 
-        {/* Confirmation Modal */}
+        {/* STRUCTURED REASON MODAL (FAIL / CANCEL) */}
+        {reasonModal.isOpen && (
+          <div
+            className="modal fade show d-block"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}
+            tabIndex={-1}
+            onClick={() => setReasonModal((prev) => ({ ...prev, isOpen: false }))}
+          >
+            <div className="modal-dialog modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-content border-0 shadow">
+                <div className="modal-header bg-light">
+                  <h5 className="modal-title fw-bold fs-6">
+                    {reasonModal.actionType === 'FAIL' ? 'Record Failed Delivery' : 'Cancel Delivery'} - {reasonModal.deliveryNumber}
+                  </h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => setReasonModal((prev) => ({ ...prev, isOpen: false }))}
+                  ></button>
+                </div>
+
+                <div className="modal-body p-4">
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold text-dark">
+                      Structured Reason <span className="text-danger">*</span>
+                    </label>
+                    <select
+                      className="form-select form-select-sm"
+                      value={selectedReason}
+                      onChange={(e) => setSelectedReason(e.target.value)}
+                    >
+                      {(reasonModal.actionType === 'FAIL' ? FAILURE_REASON_OPTIONS : CANCELLATION_REASON_OPTIONS).map(
+                        (r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold text-dark">Operational Notes / Details</label>
+                    <textarea
+                      className="form-control form-control-sm"
+                      rows={3}
+                      placeholder="Add specific context, driver remarks, or customer contact notes..."
+                      value={additionalNotes}
+                      onChange={(e) => setAdditionalNotes(e.target.value)}
+                    ></textarea>
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setReasonModal((prev) => ({ ...prev, isOpen: false }))}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${reasonModal.actionType === 'FAIL' ? 'btn-warning' : 'btn-danger'}`}
+                    onClick={submitReasonAction}
+                    disabled={!selectedReason || isProcessingAction}
+                  >
+                    {isProcessingAction ? 'Submitting...' : reasonModal.actionType === 'FAIL' ? 'Confirm Failure' : 'Confirm Cancellation'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* REUSABLE CONFIRMATION MODAL */}
         <ConfirmationModal
           isOpen={confirmModal.isOpen}
           title={confirmModal.title}
           message={confirmModal.message}
           variant={confirmModal.variant}
-          confirmLabel={confirmModal.confirmLabel || 'Confirm'}
-          isLoading={isConfirming}
-          onConfirm={handleConfirmModalAction}
+          confirmLabel={confirmModal.confirmLabel}
+          onConfirm={async () => {
+            setIsConfirming(true);
+            try {
+              await confirmModal.action();
+              setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+            } finally {
+              setIsConfirming(false);
+            }
+          }}
           onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+          isLoading={isConfirming}
         />
       </PageContainer>
     </AdminLayout>

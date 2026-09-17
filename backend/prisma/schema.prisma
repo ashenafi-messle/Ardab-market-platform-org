@@ -45,6 +45,109 @@ enum OtpPurpose {
   SECURITY_VERIFICATION
 }
 
+enum SupplierStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum SupplierVerificationStatus {
+  VERIFIED
+  PENDING
+  REJECTED
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  OUT_OF_STOCK
+  ARCHIVED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum CustomerVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  READY_FOR_DELIVERY
+  ASSIGNED_TO_TRIP
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+  FAILED
+  RETURNED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  FAILED
+  REFUNDED
+}
+
+enum DeliveryStatus {
+  PENDING
+  READY_FOR_ASSIGNMENT
+  ASSIGNED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum TripStatus {
+  PLANNING
+  LOADING
+  READY
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  NOTIFICATION
+  OPERATIONAL_ALERT
+  SYSTEM_ANNOUNCEMENT
+}
+
+enum NotificationCategory {
+  ORDER
+  DELIVERY
+  FLEET
+  SECURITY
+  SYSTEM
+  PAYMENT
+  CUSTOMER
+}
+
+enum NotificationSeverity {
+  INFO
+  SUCCESS
+  WARNING
+  CRITICAL
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
 // ------------------------------------------------------------------------------
 // Admin Authentication & Identity
 // ------------------------------------------------------------------------------
@@ -63,10 +166,12 @@ model AdminUser {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  sessions            AdminSession[]
-  passwordResetTokens PasswordResetToken[]
-  otps                AdminOtp[]
-  auditLogs           AuditLog[]
+  sessions               AdminSession[]
+  passwordResetTokens    PasswordResetToken[]
+  otps                   AdminOtp[]
+  auditLogs              AuditLog[]
+  notifications          Notification[]
+  notificationRecipients NotificationRecipient[]
 
   @@index([email])
   @@index([role])
@@ -162,3 +267,665 @@ model AuditLog {
   @@index([timestamp])
   @@map("audit_logs")
 }
+
+// ------------------------------------------------------------------------------
+// Payment Method Configurations (Platform Settlement Channels)
+// ------------------------------------------------------------------------------
+
+model PaymentMethod {
+  id            String    @id @default(uuid())
+  name          String
+  provider      String?
+  accountName   String?
+  accountNumber String?
+  description   String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  suppliers     Supplier[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("payment_methods")
+}
+
+// ------------------------------------------------------------------------------
+// Supplier Management & Agricultural Producers
+// ------------------------------------------------------------------------------
+
+model Supplier {
+  id                 String                     @id @default(uuid())
+  companyName        String
+  name               String
+  phone              String
+  email              String?
+  city               String
+  category           String?
+  tinNumber          String?
+  address            String
+  status             SupplierStatus             @default(ACTIVE)
+  verificationStatus SupplierVerificationStatus @default(PENDING)
+  notes              String?
+  paymentMethodId    String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  paymentMethod      PaymentMethod?             @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  paymentMethods     SupplierPaymentMethod[]
+  sellerCategories   SellerMarketplaceCategory[]
+  products           Product[]
+
+  @@index([companyName])
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+  @@index([city])
+  @@index([status])
+  @@index([verificationStatus])
+  @@index([paymentMethodId])
+  @@index([createdAt])
+  @@map("suppliers")
+}
+
+// ------------------------------------------------------------------------------
+// Supplier Payment Methods (Multi-Channel Settlement Accounts)
+// ------------------------------------------------------------------------------
+
+model SupplierPaymentMethod {
+  id            String   @id @default(uuid())
+  supplierId    String
+  paymentMethod String
+  accountNumber String
+  isPrimary     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@index([paymentMethod])
+  @@map("supplier_payment_methods")
+}
+
+// ------------------------------------------------------------------------------
+// Marketplace Categories
+// ------------------------------------------------------------------------------
+
+model MarketplaceCategory {
+  id               String                      @id @default(uuid())
+  name             String                      @unique
+  slug             String                      @unique
+  icon             String?
+  description      String?
+  isActive         Boolean                     @default(true)
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+
+  sellerCategories SellerMarketplaceCategory[]
+  products         Product[]
+
+  @@index([name])
+  @@index([slug])
+  @@index([isActive])
+  @@map("marketplace_categories")
+}
+
+// ------------------------------------------------------------------------------
+// Seller / Supplier Category Assignments (Many-to-Many)
+// ------------------------------------------------------------------------------
+
+model SellerMarketplaceCategory {
+  id         String              @id @default(uuid())
+  sellerId   String
+  categoryId String
+  createdAt  DateTime            @default(now())
+
+  seller     Supplier            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category   MarketplaceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, categoryId])
+  @@index([sellerId])
+  @@index([categoryId])
+  @@map("seller_marketplace_categories")
+}
+
+// ------------------------------------------------------------------------------
+// Marketplace Products
+// ------------------------------------------------------------------------------
+
+model Product {
+  id                    String              @id @default(uuid())
+  itemCode              String              @unique
+  name                  String
+  description           String?
+  sellerId              String
+  marketplaceCategoryId String
+  unit                  String
+  weight                Decimal             @db.Decimal(10, 2)
+  costPrice             Decimal?            @db.Decimal(12, 2)
+  sellingPrice          Decimal             @db.Decimal(12, 2)
+  status                ProductStatus       @default(ACTIVE)
+  cityAvailability      String[]            @default(["All Cities"])
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  seller                Supplier            @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  category              MarketplaceCategory @relation(fields: [marketplaceCategoryId], references: [id], onDelete: Restrict)
+  images                ProductImage[]
+  orderItems            OrderItem[]
+
+  @@index([itemCode])
+  @@index([sellerId])
+  @@index([marketplaceCategoryId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("products")
+}
+
+// ------------------------------------------------------------------------------
+// Product Images (Cloudinary CDN Storage & Media Metadata)
+// ------------------------------------------------------------------------------
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  url       String
+  publicId  String
+  width     Int?
+  height    Int?
+  format    String?
+  bytes     Int?
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Profiles & Commercial Consumer Identity
+// ------------------------------------------------------------------------------
+
+model Customer {
+  id                 String                     @id @default(uuid())
+  customerCode       String                     @unique
+  fullName           String
+  phone              String
+  email              String?
+  passwordHash       String?
+  profileImageUrl    String?
+  city               String                     @default("Gondar")
+  deliveryZone       String?
+  status             CustomerStatus             @default(ACTIVE)
+  verificationStatus CustomerVerificationStatus @default(PENDING)
+  lastActivityAt     DateTime?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  addresses          CustomerAddress[]
+  orders             Order[]
+  deliveries         Delivery[]
+  scoreEvents        CustomerScoreEvent[]
+  activities         CustomerActivity[]
+  reviews            CustomerReview[]
+
+  @@index([customerCode])
+  @@index([phone])
+  @@index([email])
+  @@index([city])
+  @@index([status])
+  @@index([verificationStatus])
+  @@index([createdAt])
+  @@index([lastActivityAt])
+  @@map("customers")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Delivery Addresses (Multi-Destination Support)
+// ------------------------------------------------------------------------------
+
+model CustomerAddress {
+  id           String   @id @default(uuid())
+  customerId   String
+  label        String   @default("Home")
+  recipientName String
+  phone        String
+  city         String
+  deliveryZone String?
+  neighborhood String?
+  addressLine  String
+  latitude     Decimal? @db.Decimal(10, 8)
+  longitude    Decimal? @db.Decimal(11, 8)
+  isDefault    Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([city])
+  @@index([isDefault])
+  @@map("customer_addresses")
+}
+
+// ------------------------------------------------------------------------------
+// Commercial Marketplace Orders (Authoritative Order & Financial Truth)
+// ------------------------------------------------------------------------------
+
+model Order {
+  id                      String                @id @default(uuid())
+  orderNumber             String                @unique
+  customerId              String
+  city                    String
+  deliveryZone            String?
+  deliveryAddress         String?
+  status                  OrderStatus           @default(PENDING)
+  subtotal                Decimal               @db.Decimal(12, 2)
+  deliveryFee             Decimal               @default(0) @db.Decimal(12, 2)
+  discountAmount          Decimal               @default(0) @db.Decimal(12, 2)
+  taxAmount               Decimal               @default(0) @db.Decimal(12, 2)
+  totalAmount             Decimal               @db.Decimal(12, 2)
+  totalWeight             Decimal               @default(0) @db.Decimal(10, 2)
+  currency                String                @default("ETB")
+  paymentMethod           String?
+  paymentStatus           PaymentStatus         @default(PENDING)
+  customerNote            String?
+  internalNote            String?
+  idempotencyKey          String?               @unique
+  placedAt                DateTime              @default(now())
+  confirmedAt             DateTime?
+  processingAt            DateTime?
+  readyAt                 DateTime?
+  dispatchedAt            DateTime?
+  deliveredAt             DateTime?
+  cancelledAt             DateTime?
+  cancelledReason         String?
+  rejectedAt              DateTime?
+  rejectedReason          String?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  customer                Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items                   OrderItem[]
+  deliveryAddressSnapshot OrderDeliveryAddress?
+  activities              OrderActivity[]
+  delivery                Delivery?
+
+  @@index([customerId])
+  @@index([customerId, status])
+  @@index([customerId, createdAt])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([city])
+  @@index([placedAt])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+// ------------------------------------------------------------------------------
+// Historical Order Items & Product Snapshots (Immutable Audit Truth)
+// ------------------------------------------------------------------------------
+
+model OrderItem {
+  id                  String   @id @default(uuid())
+  orderId             String
+  productId           String?
+  productNameSnapshot String
+  itemCodeSnapshot    String
+  unitSnapshot        String
+  unitPrice           Decimal  @db.Decimal(12, 2)
+  quantity            Int
+  weightPerUnit       Decimal  @db.Decimal(10, 2)
+  totalWeight         Decimal  @db.Decimal(10, 2)
+  subtotal            Decimal  @db.Decimal(12, 2)
+  sellerIdSnapshot    String?
+  sellerNameSnapshot  String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product             Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+// ------------------------------------------------------------------------------
+// Order Delivery Address Snapshot (Preserved at Checkout)
+// ------------------------------------------------------------------------------
+
+model OrderDeliveryAddress {
+  id           String   @id @default(uuid())
+  orderId      String   @unique
+  recipientName String
+  phone        String
+  city         String
+  deliveryZone String?
+  neighborhood String?
+  addressLine  String
+  latitude     Decimal? @db.Decimal(10, 8)
+  longitude    Decimal? @db.Decimal(11, 8)
+  createdAt    DateTime @default(now())
+
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_delivery_addresses")
+}
+
+// ------------------------------------------------------------------------------
+// Order Activity Log & Operational Lifecycle Trail
+// ------------------------------------------------------------------------------
+
+model OrderActivity {
+  id          String       @id @default(uuid())
+  orderId     String
+  action      String
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus?
+  description String
+  actor       String       @default("Super Admin")
+  actorId     String?
+  metadata    String?
+  createdAt   DateTime     @default(now())
+
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([orderId, createdAt])
+  @@map("order_activities")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Platform Score & Loyalty Events (System-Generated Experience Truth)
+// ------------------------------------------------------------------------------
+
+model CustomerScoreEvent {
+  id          String   @id @default(uuid())
+  customerId  String
+  type        String
+  points      Int
+  source      String
+  referenceId String?
+  metadata    String?
+  createdAt   DateTime @default(now())
+
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([customerId, createdAt])
+  @@index([type])
+  @@map("customer_score_events")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Activity Log & Audit Trail (Chronological Event History)
+// ------------------------------------------------------------------------------
+
+model CustomerActivity {
+  id          String   @id @default(uuid())
+  customerId  String
+  action      String
+  description String
+  actor       String   @default("Customer")
+  metadata    String?
+  createdAt   DateTime @default(now())
+
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([customerId, createdAt])
+  @@index([action])
+  @@map("customer_activities")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Reviews & Feedback (Ratings Distinct from Score)
+// ------------------------------------------------------------------------------
+
+model CustomerReview {
+  id         String   @id @default(uuid())
+  customerId String
+  orderId    String?
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([orderId])
+  @@map("customer_reviews")
+}
+
+// ------------------------------------------------------------------------------
+// Fleet Logistics: Vehicles & Ardab Heavy Cargo Trucks (5,000 KG Capacity)
+// ------------------------------------------------------------------------------
+
+model Vehicle {
+  id           String     @id @default(uuid())
+  plateNumber  String     @unique
+  model        String
+  city         String
+  capacityKg   Decimal    @default(5000.00) @db.Decimal(10, 2)
+  status       String     @default("AVAILABLE")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  trips        Trip[]
+  deliveries   Delivery[]
+
+  @@index([plateNumber])
+  @@index([city])
+  @@index([status])
+  @@map("vehicles")
+}
+
+// ------------------------------------------------------------------------------
+// Fleet Logistics: Drivers & Transport Personnel
+// ------------------------------------------------------------------------------
+
+model Driver {
+  id            String     @id @default(uuid())
+  driverCode    String     @unique
+  fullName      String
+  phone         String
+  email         String?
+  city          String
+  licenseNumber String?
+  status        String     @default("AVAILABLE")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  trips         Trip[]
+  deliveries    Delivery[]
+
+  @@index([driverCode])
+  @@index([phone])
+  @@index([city])
+  @@index([status])
+  @@map("drivers")
+}
+
+// ------------------------------------------------------------------------------
+// Fleet Logistics: Vehicle Trips & Multi-Order Consolidated Journeys
+// ------------------------------------------------------------------------------
+
+model Trip {
+  id            String       @id @default(uuid())
+  tripNumber    String       @unique
+  city          String
+  vehicleId     String?
+  driverId      String?
+  status        TripStatus   @default(PLANNING)
+  maxCapacityKg Decimal      @default(5000.00) @db.Decimal(10, 2)
+  totalWeightKg Decimal      @default(0.00) @db.Decimal(10, 2)
+  pickupHub     String?
+  deliveryZones String[]     @default([])
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  vehicle       Vehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driver        Driver?      @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  deliveries    Delivery[]
+
+  @@index([tripNumber])
+  @@index([city])
+  @@index([status])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([createdAt])
+  @@map("trips")
+}
+
+// ------------------------------------------------------------------------------
+// Delivery Operations & Order Fulfillment Truth
+// ------------------------------------------------------------------------------
+
+model Delivery {
+  id                   String            @id @default(uuid())
+  deliveryNumber       String            @unique
+  orderId              String            @unique
+  customerId           String
+  tripId               String?
+  driverId             String?
+  vehicleId            String?
+  status               DeliveryStatus    @default(PENDING)
+  city                 String
+  deliveryZone         String?
+  neighborhood         String?
+  addressLine          String
+  recipientName        String
+  recipientPhone       String
+  latitude             Decimal?          @db.Decimal(10, 8)
+  longitude            Decimal?          @db.Decimal(11, 8)
+  scheduledAt          DateTime?
+  estimatedDeliveryAt  DateTime?
+  dispatchedAt         DateTime?
+  deliveredAt          DateTime?
+  failedAt             DateTime?
+  cancelledAt          DateTime?
+  deliveryFee          Decimal           @default(0) @db.Decimal(12, 2)
+  deliveryNotes        String?
+  failureReason        String?
+  cancellationReason   String?
+  proofOfDeliveryUrl   String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  order                Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer             Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  trip                 Trip?             @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  driver               Driver?           @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  vehicle              Vehicle?          @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  activities           DeliveryActivity[]
+
+  @@index([deliveryNumber])
+  @@index([orderId])
+  @@index([customerId])
+  @@index([tripId])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([status])
+  @@index([city])
+  @@index([deliveryZone])
+  @@index([scheduledAt])
+  @@index([deliveredAt])
+  @@index([createdAt])
+  @@map("deliveries")
+}
+
+// ------------------------------------------------------------------------------
+// Delivery Activity Log & Operational Audit Trail
+// ------------------------------------------------------------------------------
+
+model DeliveryActivity {
+  id          String          @id @default(uuid())
+  deliveryId  String
+  action      String
+  fromStatus  DeliveryStatus?
+  toStatus    DeliveryStatus?
+  description String
+  actor       String          @default("Super Admin")
+  actorId     String?
+  metadata    String?
+  createdAt   DateTime        @default(now())
+
+  delivery    Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+  @@index([deliveryId, createdAt])
+  @@map("delivery_activities")
+}
+
+// ------------------------------------------------------------------------------
+// Notifications & Operational Alerts Module
+// ------------------------------------------------------------------------------
+
+model Notification {
+  id         String               @id @default(uuid())
+  type       NotificationType     @default(NOTIFICATION)
+  category   NotificationCategory @default(SYSTEM)
+  title      String
+  message    String
+  severity   NotificationSeverity @default(INFO)
+  priority   NotificationPriority @default(NORMAL)
+  isAlert    Boolean              @default(false)
+  entityType String?
+  entityId   String?
+  actionUrl  String?
+  metadata   String?
+  targetRole UserRole?
+  adminId    String?
+  createdAt  DateTime             @default(now())
+  expiresAt  DateTime?
+
+  admin      AdminUser?           @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  recipients NotificationRecipient[]
+
+  @@index([type])
+  @@index([category])
+  @@index([severity])
+  @@index([priority])
+  @@index([isAlert])
+  @@index([entityType, entityId])
+  @@index([targetRole])
+  @@index([adminId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id                   String       @id @default(uuid())
+  notificationId       String
+  adminId              String
+  isRead               Boolean      @default(false)
+  readAt               DateTime?
+  isAcknowledged       Boolean      @default(false)
+  acknowledgedAt       DateTime?
+  acknowledgedById     String?
+  acknowledgementNotes String?
+  createdAt            DateTime     @default(now())
+
+  notification         Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  admin                AdminUser    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, adminId])
+  @@index([notificationId])
+  @@index([adminId])
+  @@index([isRead])
+  @@index([isAcknowledged])
+  @@index([createdAt])
+  @@map("notification_recipients")
+}
+

@@ -9,9 +9,6 @@
  */
 
 import {
-  mockProducts,
-  mockSuppliers,
-  mockCategories,
   mockCustomers,
   mockOrders,
   mockVehicles,
@@ -41,13 +38,44 @@ import {
 } from './mock-data';
 
 import { LoginCredentials, AuthResponse, ForgotPasswordRequest, ResetPasswordRequest, SuperAdminUser } from '@/types/auth';
-import { Product, Category } from '@/types/product';
-import { Supplier } from '@/types/supplier';
-import { Customer } from '@/types/customer';
-import { Order, OrderStatus } from '@/types/order';
+import {
+  Product,
+  Category,
+  CreateProductInput,
+  UpdateProductInput,
+  ProductListParams,
+  ProductListResult,
+  ProductStatus,
+  ProductImageItem,
+} from '@/types/product';
+import {
+  Supplier,
+  CreateSupplierInput,
+  UpdateSupplierInput,
+  SupplierListParams,
+  SupplierListResult,
+} from '@/types/supplier';
+import { PaymentMethod } from '@/types/paymentMethod';
+import {
+  Customer,
+  CustomerAccountStatus,
+  CustomerVerificationStatus,
+  CustomerSummaryMetrics,
+  CustomerListParams,
+  CustomerListResult,
+  CustomerActivityItem,
+} from '@/types/customer';
+import { Order, OrderStatus, OrderSummaryMetrics, OrderTimelineEvent } from '@/types/order';
 import { Vehicle } from '@/types/vehicle';
 import { Driver } from '@/types/driver';
 import { Trip, TripStatus } from '@/types/trip';
+import {
+  Delivery,
+  DeliveryStatus,
+  DeliverySummaryMetrics,
+  DeliveryTimelineEvent,
+  AvailableTrip,
+} from '@/types/delivery';
 import { RevenueMetrics, Transaction } from '@/types/finance';
 import { SalesByCity, SalesByCategory, OperationalPerformance } from '@/types/report';
 import { NotificationItem } from '@/types/notification';
@@ -104,10 +132,33 @@ let inMemoryToken: string | null = null;
 
 export const setAuthToken = (token: string | null) => {
   inMemoryToken = token;
+  if (typeof window !== 'undefined') {
+    try {
+      if (token) {
+        localStorage.setItem('ardab_admin_token', token);
+      } else {
+        localStorage.removeItem('ardab_admin_token');
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }
 };
 
 export const getAuthToken = (): string | null => {
-  return inMemoryToken;
+  if (inMemoryToken) return inMemoryToken;
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('ardab_admin_token');
+      if (stored) {
+        inMemoryToken = stored;
+        return stored;
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }
+  return null;
 };
 
 interface BackendAuthPayload {
@@ -128,14 +179,20 @@ interface BackendAuthPayload {
 
 async function fetchAuthApi<T = BackendAuthPayload>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
 
-  if (inMemoryToken) {
-    headers['Authorization'] = `Bearer ${inMemoryToken}`;
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
   }
+
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
 
   let response: Response;
   try {
@@ -276,304 +333,1164 @@ export const authApi = {
 // ==========================================
 // 2. Marketplace: Products & Categories (GET/POST /api/products, /api/categories)
 // ==========================================
+function normalizeProduct(raw: unknown): Product {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const categoryObj = typeof r.category === 'object' && r.category ? (r.category as { id?: string; name?: string; slug?: string; icon?: string | null }) : null;
+  const sellerObj = typeof r.seller === 'object' && r.seller ? (r.seller as { id: string; companyName: string; name: string; phone?: string; city?: string; status?: string }) : null;
+
+  const rawImages = Array.isArray(r.images) ? r.images : [];
+  const normalizedImages: (string | ProductImageItem)[] = rawImages.map((img) => {
+    if (img && typeof img === 'object') {
+      const item = img as Record<string, unknown>;
+      return {
+        id: String(item.id || ''),
+        productId: item.productId ? String(item.productId) : undefined,
+        url: String(item.url || ''),
+        publicId: item.publicId ? String(item.publicId) : undefined,
+        width: typeof item.width === 'number' ? item.width : null,
+        height: typeof item.height === 'number' ? item.height : null,
+        format: item.format ? String(item.format) : null,
+        bytes: typeof item.bytes === 'number' ? item.bytes : null,
+        sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : 0,
+        isPrimary: Boolean(item.isPrimary),
+        thumbnailUrl: item.thumbnailUrl ? String(item.thumbnailUrl) : String(item.url || ''),
+        createdAt: item.createdAt ? String(item.createdAt) : undefined,
+        updatedAt: item.updatedAt ? String(item.updatedAt) : undefined,
+      } as ProductImageItem;
+    }
+    return String(img);
+  });
+
+  const primaryObj = normalizedImages.find(
+    (img): img is ProductImageItem => typeof img === 'object' && img !== null && img.isPrimary
+  ) || (typeof normalizedImages[0] === 'object' ? (normalizedImages[0] as ProductImageItem) : null);
+
+  const primaryUrl = primaryObj?.url || (typeof normalizedImages[0] === 'string' ? normalizedImages[0] : (typeof r.imageUrl === 'string' ? r.imageUrl : ''));
+
+  const rawItemCode = String(r.itemCode || r.sku || '');
+  const rawSellerId = String(r.sellerId || (sellerObj ? sellerObj.id : ''));
+  const rawCategoryId = String(r.marketplaceCategoryId || categoryObj?.id || r.categoryId || '');
+  const rawCategoryName = categoryObj ? String(categoryObj.name) : (typeof r.category === 'string' ? r.category : 'General');
+  const rawWeight = typeof r.weight === 'number' ? r.weight : Number(r.weight || r.weightKg || 1);
+  const rawCostPrice = r.costPrice !== null && r.costPrice !== undefined ? Number(r.costPrice) : null;
+  const rawSellingPrice = Number(r.sellingPrice || 0);
+
+  return {
+    id: String(r.id || ''),
+    name: String(r.name || ''),
+    itemCode: rawItemCode,
+    sku: rawItemCode,
+    sellerId: rawSellerId,
+    sellerName: sellerObj?.companyName || sellerObj?.name || (typeof r.sellerName === 'string' ? r.sellerName : 'Direct Platform'),
+    seller: sellerObj || undefined,
+    marketplaceCategoryId: rawCategoryId,
+    categoryId: rawCategoryId,
+    category: rawCategoryName,
+    unit: String(r.unit || 'kg'),
+    weight: rawWeight,
+    weightKg: rawWeight,
+    costPrice: rawCostPrice,
+    sellingPrice: rawSellingPrice,
+    originalPrice: r.originalPrice ? Number(r.originalPrice) : rawSellingPrice,
+    discountPercent: typeof r.discountPercent === 'number' ? r.discountPercent : 0,
+    discountPrice: r.discountPrice ? Number(r.discountPrice) : rawSellingPrice,
+    images: normalizedImages,
+    primaryImage: primaryObj,
+    imageUrl: primaryUrl,
+    cityAvailability: Array.isArray(r.cityAvailability) && r.cityAvailability.length > 0 ? (r.cityAvailability as string[]) : ['All Cities'],
+    status: (r.status as ProductStatus) || 'ACTIVE',
+    createdAt: String(r.createdAt || new Date().toISOString()),
+    updatedAt: String(r.updatedAt || new Date().toISOString()),
+  };
+}
+
 export const productsApi = {
-  getAll: async (filterCity?: string, categoryId?: string): Promise<Product[]> => {
-    await delay(80);
-    let results = [...mockProducts];
-    if (filterCity && filterCity !== 'All Cities') {
-      results = results.filter((p) => p.cityAvailability.includes(filterCity));
-    }
-    if (categoryId && categoryId !== 'all') {
-      results = results.filter((p) => p.categoryId === categoryId);
-    }
-    return results;
-  },
+  list: async (params: ProductListParams = {}): Promise<ProductListResult> => {
+    const queryParts: string[] = [];
+    if (params.page) queryParts.push(`page=${params.page}`);
+    if (params.pageSize) queryParts.push(`pageSize=${params.pageSize}`);
+    if (params.limit) queryParts.push(`limit=${params.limit}`);
+    if (params.city && params.city !== 'All Cities') queryParts.push(`city=${encodeURIComponent(params.city)}`);
+    if (params.sellerId && params.sellerId !== 'all') queryParts.push(`sellerId=${encodeURIComponent(params.sellerId)}`);
+    if (params.categoryId && params.categoryId !== 'all') queryParts.push(`categoryId=${encodeURIComponent(params.categoryId)}`);
+    if (params.status && params.status !== 'ALL') queryParts.push(`status=${encodeURIComponent(params.status)}`);
+    if (params.search && params.search.trim()) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
 
-  getById: async (id: string): Promise<Product | undefined> => {
-    await delay(50);
-    return mockProducts.find((p) => p.id === id);
-  },
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: { items: Product[]; pagination: ProductListResult['pagination'] };
+    }>(`/api/products${qs}`, {
+      method: 'GET',
+    });
 
-  create: async (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Promise<Product> => {
-    await delay(120);
-    const newProduct: Product = {
-      ...product,
-      id: `PRD-${Math.floor(100 + Math.random() * 900)}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    const items = (res.data?.items || []).map((p) => normalizeProduct(p));
+    return {
+      items,
+      products: items,
+      pagination: res.data?.pagination || {
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPrevPage: false,
+      },
     };
-    mockProducts.unshift(newProduct);
-    return newProduct;
   },
 
-  update: async (id: string, updates: Partial<Product>): Promise<Product> => {
-    await delay(100);
-    const index = mockProducts.findIndex((p) => p.id === id);
-    if (index !== -1) {
-      mockProducts[index] = { ...mockProducts[index], ...updates, updatedAt: new Date().toISOString() };
-      return mockProducts[index];
-    }
-    throw new Error('Product not found');
+  getAll: async (filterCity?: string, categoryId?: string, sellerId?: string): Promise<Product[]> => {
+    const queryParts: string[] = ['pageSize=100'];
+    if (filterCity && filterCity !== 'All Cities') queryParts.push(`city=${encodeURIComponent(filterCity)}`);
+    if (categoryId && categoryId !== 'all') queryParts.push(`categoryId=${encodeURIComponent(categoryId)}`);
+    if (sellerId && sellerId !== 'all') queryParts.push(`sellerId=${encodeURIComponent(sellerId)}`);
+
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: { items?: Product[] } | Product[];
+    }>(`/api/products?${queryParts.join('&')}`, {
+      method: 'GET',
+    });
+
+    const rawList = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+    return rawList.map((p) => normalizeProduct(p));
   },
 
-  toggleStatus: async (id: string): Promise<Product> => {
-    await delay(80);
-    const item = mockProducts.find((p) => p.id === id);
-    if (item) {
-      item.status = item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-      return item;
+  getById: async (id: string): Promise<Product> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Product }>(`/api/products/${id}`, {
+      method: 'GET',
+    });
+    if (!res.data) throw new Error('Product not found');
+    return normalizeProduct(res.data);
+  },
+
+  create: async (input: CreateProductInput | FormData): Promise<Product> => {
+    let body: BodyInit;
+    if (typeof FormData !== 'undefined' && input instanceof FormData) {
+      body = input;
+    } else {
+      const p = input as CreateProductInput;
+      body = JSON.stringify({
+        name: p.name.trim(),
+        description: p.description?.trim() || null,
+        sellerId: p.sellerId,
+        marketplaceCategoryId: p.marketplaceCategoryId,
+        unit: p.unit.trim(),
+        weight: Number(p.weight),
+        costPrice: p.costPrice !== undefined && p.costPrice !== null ? Number(p.costPrice) : null,
+        sellingPrice: Number(p.sellingPrice),
+        images: p.images || [],
+        cityAvailability: p.cityAvailability && p.cityAvailability.length > 0 ? p.cityAvailability : ['All Cities'],
+        status: p.status || 'ACTIVE',
+      });
     }
-    throw new Error('Product not found');
+
+    const res = await fetchAuthApi<{ success: boolean; data: Product }>('/api/products', {
+      method: 'POST',
+      body,
+    });
+    if (!res.data) throw new Error('Failed to create product');
+    return normalizeProduct(res.data);
+  },
+
+  uploadImage: async (productId: string, file: File, isPrimary?: boolean): Promise<ProductImageItem> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    if (isPrimary !== undefined) {
+      formData.append('isPrimary', String(isPrimary));
+    }
+    const res = await fetchAuthApi<{ success: boolean; data: ProductImageItem }>(`/api/products/${productId}/images`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.data) throw new Error('Failed to upload image');
+    return res.data;
+  },
+
+  deleteImage: async (productId: string, imageId: string): Promise<void> => {
+    await fetchAuthApi<{ success: boolean }>(`/api/products/${productId}/images/${imageId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  setPrimaryImage: async (productId: string, imageId: string): Promise<ProductImageItem> => {
+    const res = await fetchAuthApi<{ success: boolean; data: ProductImageItem }>(`/api/products/${productId}/images/${imageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isPrimary: true }),
+    });
+    if (!res.data) throw new Error('Failed to set primary image');
+    return res.data;
+  },
+
+  reorderImages: async (productId: string, imageIds: string[]): Promise<ProductImageItem[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: ProductImageItem[] }>(`/api/products/${productId}/images/reorder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ imageIds }),
+    });
+    return res.data || [];
+  },
+
+  update: async (id: string, input: UpdateProductInput): Promise<Product> => {
+    // Strictly omit itemCode (immutable) and packagingUnit (removed)
+    const payload: Record<string, unknown> = {};
+    if (input.name !== undefined) payload.name = input.name.trim();
+    if (input.description !== undefined) payload.description = input.description ? input.description.trim() : null;
+    if (input.sellerId !== undefined) payload.sellerId = input.sellerId;
+    if (input.marketplaceCategoryId !== undefined) payload.marketplaceCategoryId = input.marketplaceCategoryId;
+    if (input.unit !== undefined) payload.unit = input.unit.trim();
+    if (input.weight !== undefined) payload.weight = Number(input.weight);
+    if (input.costPrice !== undefined) payload.costPrice = input.costPrice !== null ? Number(input.costPrice) : null;
+    if (input.sellingPrice !== undefined) payload.sellingPrice = Number(input.sellingPrice);
+    if (input.images !== undefined) payload.images = input.images;
+    if (input.cityAvailability !== undefined) payload.cityAvailability = input.cityAvailability;
+    if (input.status !== undefined) payload.status = input.status;
+
+    const res = await fetchAuthApi<{ success: boolean; data: Product }>(`/api/products/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    if (!res.data) throw new Error('Failed to update product');
+    return normalizeProduct(res.data);
+  },
+
+
+  toggleStatus: async (id: string, status?: ProductStatus): Promise<Product> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Product }>(`/api/products/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(status ? { status } : {}),
+    });
+    if (!res.data) throw new Error('Failed to toggle product status');
+    return normalizeProduct(res.data);
+  },
+
+  delete: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const res = await fetchAuthApi<{ success: boolean; message?: string }>(`/api/products/${id}`, {
+      method: 'DELETE',
+    });
+    return { success: res.success ?? true, message: res.message || 'Product archived successfully' };
   },
 
   getPaginated: async (options: QueryOptions = {}): Promise<PaginatedResponse<Product>> => {
-    await delay(90);
     const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search, city, category, status } = options;
-    let results = [...mockProducts];
-
-    if (city && city !== 'All Cities') {
-      results = results.filter((p) => p.cityAvailability.includes(city));
-    }
-    if (category && category !== 'all') {
-      results = results.filter((p) => p.categoryId === category);
-    }
-    if (status && status !== 'ALL') {
-      results = results.filter((p) => p.status === status);
-    }
-    if (search && search.trim()) {
-      const q = search.trim().toLowerCase();
-      results = results.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q) ||
-          (p.sellerName && p.sellerName.toLowerCase().includes(q))
-      );
-    }
-
-    return paginateItems(results, page, pageSize);
+    const result = await productsApi.list({
+      page,
+      pageSize,
+      search,
+      city,
+      categoryId: category,
+      status,
+    });
+    return {
+      data: result.items,
+      pagination: result.pagination,
+    };
   },
 
   bulkUpdateStatus: async (ids: string[], status: 'ACTIVE' | 'INACTIVE'): Promise<number> => {
-    await delay(120);
     let count = 0;
-    mockProducts.forEach((p) => {
-      if (ids.includes(p.id)) {
-        p.status = status;
-        p.updatedAt = new Date().toISOString();
+    for (const id of ids) {
+      try {
+        await productsApi.toggleStatus(id, status as ProductStatus);
         count++;
+      } catch {
+        // Continue on error
       }
-    });
+    }
     return count;
   },
 };
 
 export const categoriesApi = {
   getAll: async (): Promise<Category[]> => {
-    await delay(60);
-    return [...mockCategories];
+    const res = await fetchAuthApi<{ success: boolean; data: Category[] }>('/api/categories', {
+      method: 'GET',
+    });
+    return (res.data || []).map((c) => ({
+      ...c,
+      icon: c.icon || 'bi-box-seam',
+      status: c.isActive !== false ? 'ACTIVE' : 'INACTIVE',
+      productCount: c.productCount || 0,
+      createdAt: c.createdAt || new Date().toISOString().split('T')[0],
+    }));
+  },
+
+  getBySeller: async (sellerId: string): Promise<Category[]> => {
+    if (!sellerId || sellerId === 'all') return [];
+    const res = await fetchAuthApi<{ success: boolean; data: Category[] }>(
+      `/api/sellers/${sellerId}/marketplace-categories`,
+      {
+        method: 'GET',
+      }
+    );
+    return (res.data || []).map((c) => ({
+      ...c,
+      icon: c.icon || 'bi-box-seam',
+      status: c.isActive !== false ? 'ACTIVE' : 'INACTIVE',
+      productCount: c.productCount || 0,
+      createdAt: c.createdAt || new Date().toISOString().split('T')[0],
+    }));
   },
 
   create: async (category: Omit<Category, 'id' | 'createdAt' | 'productCount'>): Promise<Category> => {
-    await delay(100);
-    const newCat: Category = {
-      ...category,
-      id: `CAT-${String(mockCategories.length + 1).padStart(2, '0')}`,
-      productCount: 0,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    mockCategories.push(newCat);
-    return newCat;
+    const res = await fetchAuthApi<{ success: boolean; data: Category }>('/api/categories', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: category.name,
+        slug: category.slug,
+        icon: category.icon,
+        description: category.description,
+        isActive: category.status !== 'INACTIVE',
+      }),
+    });
+    if (!res.data) throw new Error('Failed to create category');
+    return res.data;
+  },
+};
+
+export const paymentMethodsApi = {
+  getActive: async (): Promise<PaymentMethod[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: PaymentMethod[] }>('/api/payment-methods?active=true', {
+      method: 'GET',
+    });
+    return res.data || [];
+  },
+
+  getAll: async (): Promise<PaymentMethod[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: PaymentMethod[] }>('/api/payment-methods', {
+      method: 'GET',
+    });
+    return res.data || [];
+  },
+
+  create: async (data: Partial<PaymentMethod>): Promise<PaymentMethod> => {
+    const res = await fetchAuthApi<{ success: boolean; data: PaymentMethod }>('/api/payment-methods', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!res.data) throw new Error('Failed to create payment method');
+    return res.data;
+  },
+
+  update: async (id: string, data: Partial<PaymentMethod>): Promise<PaymentMethod> => {
+    const res = await fetchAuthApi<{ success: boolean; data: PaymentMethod }>(`/api/payment-methods/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (!res.data) throw new Error('Failed to update payment method');
+    return res.data;
+  },
+
+  toggleStatus: async (id: string, isActive: boolean): Promise<PaymentMethod> => {
+    const res = await fetchAuthApi<{ success: boolean; data: PaymentMethod }>(`/api/payment-methods/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    });
+    if (!res.data) throw new Error('Failed to toggle payment method status');
+    return res.data;
   },
 };
 
 export const suppliersApi = {
-  getAll: async (filterCity?: string): Promise<Supplier[]> => {
-    await delay(70);
-    if (filterCity && filterCity !== 'All Cities') {
-      return mockSuppliers.filter((s) => s.city === filterCity);
-    }
-    return [...mockSuppliers];
-  },
+  list: async (params: SupplierListParams = {}): Promise<SupplierListResult> => {
+    const queryParts: string[] = [];
+    if (params.page) queryParts.push(`page=${params.page}`);
+    if (params.limit) queryParts.push(`limit=${params.limit}`);
+    if (params.city && params.city !== 'All Cities') queryParts.push(`city=${encodeURIComponent(params.city)}`);
+    if (params.status && params.status !== 'ALL') queryParts.push(`status=${encodeURIComponent(params.status)}`);
+    if (params.search && params.search.trim()) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
 
-  getById: async (id: string): Promise<Supplier | undefined> => {
-    await delay(50);
-    return mockSuppliers.find((s) => s.id === id);
-  },
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: { items: Supplier[]; pagination: SupplierListResult['pagination'] };
+    }>(`/api/suppliers${qs}`, {
+      method: 'GET',
+    });
 
-  register: async (supplier: Omit<Supplier, 'id' | 'productCount' | 'registeredAt'>): Promise<Supplier> => {
-    await delay(120);
-    const newSupplier: Supplier = {
-      ...supplier,
-      id: `SUP-${String(mockSuppliers.length + 1).padStart(3, '0')}`,
-      productCount: 0,
-      registeredAt: new Date().toISOString().split('T')[0],
+    return {
+      items: res.data?.items || [],
+      pagination: res.data?.pagination || {
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPrevPage: false,
+      },
     };
-    mockSuppliers.unshift(newSupplier);
-    return newSupplier;
   },
 
-  update: async (id: string, updates: Partial<Supplier>): Promise<Supplier> => {
-    await delay(100);
-    const index = mockSuppliers.findIndex((s) => s.id === id);
-    if (index !== -1) {
-      mockSuppliers[index] = { ...mockSuppliers[index], ...updates };
-      return mockSuppliers[index];
+  getAll: async (filterCity?: string): Promise<Supplier[]> => {
+    let endpoint = '/api/suppliers?limit=100';
+    if (filterCity && filterCity !== 'All Cities') {
+      endpoint += `&city=${encodeURIComponent(filterCity)}`;
     }
-    throw new Error('Supplier not found');
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: { items?: Supplier[] } | Supplier[];
+    }>(endpoint, {
+      method: 'GET',
+    });
+    return Array.isArray(res.data) ? res.data : (res.data?.items || []);
   },
 
-  toggleStatus: async (id: string): Promise<Supplier> => {
-    await delay(80);
-    const supplier = mockSuppliers.find((s) => s.id === id);
-    if (supplier) {
-      supplier.status = supplier.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-      return supplier;
+  getById: async (id: string): Promise<Supplier> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Supplier }>(`/api/suppliers/${id}`, {
+      method: 'GET',
+    });
+    if (!res.data) throw new Error('Supplier not found');
+    return res.data;
+  },
+
+  register: async (supplier: CreateSupplierInput): Promise<Supplier> => {
+    const payload: Record<string, unknown> = {
+      name: supplier.name.trim(),
+      companyName: supplier.companyName.trim(),
+      phone: supplier.phone.trim(),
+      city: supplier.city.trim(),
+      address: supplier.address.trim(),
+    };
+    if (supplier.email && supplier.email.trim()) {
+      payload.email = supplier.email.trim().toLowerCase();
     }
-    throw new Error('Supplier not found');
+    if (supplier.category && supplier.category.trim()) {
+      payload.category = supplier.category.trim();
+    }
+    if (supplier.tinNumber && supplier.tinNumber.trim()) {
+      payload.tinNumber = supplier.tinNumber.trim();
+    }
+    if (Array.isArray(supplier.paymentMethods) && supplier.paymentMethods.length > 0) {
+      payload.paymentMethods = supplier.paymentMethods.map((pm, idx) => ({
+        paymentMethod: pm.paymentMethod.trim(),
+        accountNumber: pm.accountNumber.trim(),
+        isPrimary: pm.isPrimary ?? (idx === 0),
+      }));
+    }
+    if (supplier.paymentMethodId && supplier.paymentMethodId.trim()) {
+      payload.paymentMethodId = supplier.paymentMethodId.trim();
+    }
+    if (supplier.status) {
+      payload.status = supplier.status;
+    }
+    if (supplier.notes && supplier.notes.trim()) {
+      payload.notes = supplier.notes.trim();
+    }
+
+    const res = await fetchAuthApi<{ success: boolean; data: Supplier }>('/api/suppliers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.data) throw new Error('Failed to register supplier');
+    return res.data;
+  },
+
+  update: async (id: string, updates: UpdateSupplierInput): Promise<Supplier> => {
+    const payload: Record<string, unknown> = {};
+    if (updates.name !== undefined) payload.name = updates.name.trim();
+    if (updates.companyName !== undefined) payload.companyName = updates.companyName.trim();
+    if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+    if (updates.city !== undefined) payload.city = updates.city.trim();
+    if (updates.address !== undefined) payload.address = updates.address.trim();
+    if (updates.email !== undefined) {
+      payload.email = updates.email && updates.email.trim() ? updates.email.trim().toLowerCase() : null;
+    }
+    if (updates.category !== undefined) {
+      payload.category = updates.category && updates.category.trim() ? updates.category.trim() : null;
+    }
+    if (updates.tinNumber !== undefined) {
+      payload.tinNumber = updates.tinNumber && updates.tinNumber.trim() ? updates.tinNumber.trim() : null;
+    }
+    if (updates.notes !== undefined) {
+      payload.notes = updates.notes && updates.notes.trim() ? updates.notes.trim() : null;
+    }
+    if (updates.status !== undefined) payload.status = updates.status;
+    if (Array.isArray(updates.paymentMethods)) {
+      payload.paymentMethods = updates.paymentMethods.map((pm, idx) => ({
+        paymentMethod: pm.paymentMethod.trim(),
+        accountNumber: pm.accountNumber.trim(),
+        isPrimary: pm.isPrimary ?? (idx === 0),
+      }));
+    }
+    if (updates.paymentMethodId !== undefined) {
+      payload.paymentMethodId = updates.paymentMethodId;
+    }
+
+    const res = await fetchAuthApi<{ success: boolean; data: Supplier }>(`/api/suppliers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.data) throw new Error('Failed to update supplier');
+    return res.data;
+  },
+
+  toggleStatus: async (id: string, targetStatus?: string): Promise<Supplier> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Supplier }>(`/api/suppliers/${id}/status`, {
+      method: 'PATCH',
+      body: targetStatus ? JSON.stringify({ status: targetStatus }) : undefined,
+    });
+    if (!res.data) throw new Error('Failed to update supplier status');
+    return res.data;
   },
 };
 
 // ==========================================
 // 3. Operations: Customers (GET/POST /api/customers)
 // ==========================================
+function normalizeCustomer(r: any): Customer {
+  const metrics = r.metrics || {
+    totalOrders: Number(r.orderCount || 0),
+    completedOrders: Number(r.orderCount || 0),
+    cancelledOrders: 0,
+    totalSpent: typeof r.totalSpendingEtb === 'number' ? r.totalSpendingEtb : 0,
+    totalScore: Number(r.trustScore || 0),
+  };
+
+  const fullName = r.fullName || r.name || 'Customer';
+  const status = (r.status || r.accountStatus || 'ACTIVE') as CustomerAccountStatus;
+  const verificationStatus = (r.verificationStatus || 'PENDING') as CustomerVerificationStatus;
+
+  return {
+    id: String(r.id),
+    customerCode: r.customerCode || `CUST-${String(r.id).slice(0, 6)}`,
+    fullName,
+    name: fullName,
+    phone: String(r.phone || ''),
+    email: r.email || '',
+    profileImageUrl: r.profileImageUrl || null,
+    city: r.city || 'Gondar',
+    deliveryZone: r.deliveryZone || '',
+    address: r.address || (r.addresses && r.addresses[0]?.addressLine) || '',
+    status,
+    accountStatus: status,
+    verificationStatus,
+    metrics: {
+      totalOrders: Number(metrics.totalOrders || 0),
+      completedOrders: Number(metrics.completedOrders || 0),
+      cancelledOrders: Number(metrics.cancelledOrders || 0),
+      totalSpent: metrics.totalSpent ?? '0.00',
+      totalScore: Number(metrics.totalScore || 0),
+    },
+    orderCount: Number(metrics.totalOrders || 0),
+    totalSpendingEtb: Number(metrics.totalSpent || 0),
+    trustScore: Number(metrics.totalScore || 0),
+    addresses: r.addresses || [],
+    orders: r.orders || [],
+    activities: r.activities || [],
+    lastActivityAt: r.lastActivityAt || null,
+    createdAt: String(r.createdAt || new Date().toISOString()),
+    registeredAt: String(r.registeredAt || r.createdAt || new Date().toISOString()),
+    lastOrderAt: r.lastOrderAt,
+  };
+}
+
 export const customersApi = {
+  list: async (params: CustomerListParams = {}): Promise<CustomerListResult> => {
+    const queryParts: string[] = [];
+    if (params.page) queryParts.push(`page=${params.page}`);
+    if (params.pageSize) queryParts.push(`pageSize=${params.pageSize}`);
+    if (params.city && params.city !== 'All Cities') queryParts.push(`city=${encodeURIComponent(params.city)}`);
+    if (params.deliveryZone && params.deliveryZone !== 'ALL') queryParts.push(`deliveryZone=${encodeURIComponent(params.deliveryZone)}`);
+    if (params.status && params.status !== 'ALL') queryParts.push(`status=${encodeURIComponent(params.status)}`);
+    if (params.verificationStatus && params.verificationStatus !== 'ALL') queryParts.push(`verificationStatus=${encodeURIComponent(params.verificationStatus)}`);
+    if (params.search && params.search.trim()) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
+    if (params.sortBy) queryParts.push(`sortBy=${encodeURIComponent(params.sortBy)}`);
+    if (params.sortOrder) queryParts.push(`sortOrder=${encodeURIComponent(params.sortOrder)}`);
+
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any[];
+      pagination: CustomerListResult['pagination'];
+    }>(`/api/customers${qs}`, { method: 'GET' });
+
+    const items = (res.data || []).map((c) => normalizeCustomer(c));
+    return {
+      items,
+      pagination: res.pagination || {
+        total: items.length,
+        page: params.page || 1,
+        pageSize: params.pageSize || 25,
+        totalPages: Math.ceil(items.length / (params.pageSize || 25)) || 1,
+      },
+    };
+  },
+
   getAll: async (filterCity?: string): Promise<Customer[]> => {
-    await delay(80);
-    if (filterCity && filterCity !== 'All Cities') {
-      return mockCustomers.filter((c) => c.city === filterCity);
-    }
-    return [...mockCustomers];
+    const queryParts: string[] = ['pageSize=100'];
+    if (filterCity && filterCity !== 'All Cities') queryParts.push(`city=${encodeURIComponent(filterCity)}`);
+
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any[];
+    }>(`/api/customers?${queryParts.join('&')}`, { method: 'GET' });
+
+    const rawList = Array.isArray(res.data) ? res.data : [];
+    return rawList.map((c) => normalizeCustomer(c));
   },
 
-  toggleStatus: async (id: string): Promise<Customer> => {
-    await delay(80);
-    const customer = mockCustomers.find((c) => c.id === id);
-    if (customer) {
-      customer.accountStatus = customer.accountStatus === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-      return customer;
-    }
-    throw new Error('Customer not found');
+  getSummary: async (): Promise<CustomerSummaryMetrics> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: CustomerSummaryMetrics;
+    }>(`/api/customers/summary`, { method: 'GET' });
+
+    return res.data || {
+      totalCustomers: 0,
+      activeCustomers: 0,
+      newCustomers: 0,
+      verifiedCustomers: 0,
+    };
   },
 
-  getPaginated: async (options: QueryOptions = {}): Promise<PaginatedResponse<Customer>> => {
-    await delay(80);
-    const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search, city, status } = options;
-    let results = [...mockCustomers];
+  getById: async (id: string): Promise<Customer> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/customers/${id}`, { method: 'GET' });
 
-    if (city && city !== 'All Cities') {
-      results = results.filter((c) => c.city === city);
-    }
-    if (status && status !== 'ALL') {
-      results = results.filter((c) => c.accountStatus === status);
-    }
-    if (search && search.trim()) {
-      const q = search.trim().toLowerCase();
-      results = results.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.email.toLowerCase().includes(q) ||
-          c.phone.includes(q) ||
-          c.address.toLowerCase().includes(q) ||
-          c.deliveryZone.toLowerCase().includes(q)
-      );
-    }
-
-    return paginateItems(results, page, pageSize);
+    if (!res.data) throw new Error('Customer not found');
+    return normalizeCustomer(res.data);
   },
 
-  bulkUpdateStatus: async (ids: string[], status: 'ACTIVE' | 'SUSPENDED'): Promise<number> => {
-    await delay(100);
-    let count = 0;
-    mockCustomers.forEach((c) => {
-      if (ids.includes(c.id)) {
-        c.accountStatus = status;
-        count++;
-      }
+  getOrders: async (id: string, params: { page?: number; pageSize?: number } = {}): Promise<{ items: any[]; pagination: any }> => {
+    const queryParts: string[] = [];
+    if (params.page) queryParts.push(`page=${params.page}`);
+    if (params.pageSize) queryParts.push(`pageSize=${params.pageSize}`);
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any[];
+      pagination: any;
+    }>(`/api/customers/${id}/orders${qs}`, { method: 'GET' });
+
+    return {
+      items: res.data || [],
+      pagination: res.pagination,
+    };
+  },
+
+  getActivity: async (id: string, params: { page?: number; pageSize?: number } = {}): Promise<{ items: CustomerActivityItem[]; pagination: any }> => {
+    const queryParts: string[] = [];
+    if (params.page) queryParts.push(`page=${params.page}`);
+    if (params.pageSize) queryParts.push(`pageSize=${params.pageSize}`);
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: CustomerActivityItem[];
+      pagination: any;
+    }>(`/api/customers/${id}/activity${qs}`, { method: 'GET' });
+
+    return {
+      items: res.data || [],
+      pagination: res.pagination,
+    };
+  },
+
+  toggleStatus: async (id: string, currentStatus?: string): Promise<Customer> => {
+    const targetStatus = currentStatus === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/customers/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: targetStatus }),
     });
-    return count;
+
+    return normalizeCustomer(res.data);
+  },
+
+  updateStatus: async (id: string, status: CustomerAccountStatus): Promise<Customer> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/customers/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+
+    return normalizeCustomer(res.data);
+  },
+
+  bulkUpdateStatus: async (ids: string[], status: CustomerAccountStatus): Promise<number> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: { affectedCount: number };
+    }>(`/api/customers/bulk-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ids, status }),
+    });
+
+    return res.data?.affectedCount || ids.length;
+  },
+
+  update: async (id: string, data: Partial<Customer>): Promise<Customer> => {
+    const payload: Record<string, any> = {};
+    if (data.fullName !== undefined) payload.fullName = data.fullName;
+    if (data.name !== undefined && !data.fullName) payload.fullName = data.name;
+    if (data.phone !== undefined) payload.phone = data.phone;
+    if (data.email !== undefined) payload.email = data.email;
+    if (data.city !== undefined) payload.city = data.city;
+    if (data.deliveryZone !== undefined) payload.deliveryZone = data.deliveryZone;
+    if (data.profileImageUrl !== undefined) payload.profileImageUrl = data.profileImageUrl;
+    if (data.verificationStatus !== undefined && data.verificationStatus !== 'UNVERIFIED') {
+      payload.verificationStatus = data.verificationStatus;
+    }
+
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/customers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+
+    return normalizeCustomer(res.data);
   },
 };
 
 // ==========================================
 // 4. Operations: Orders (GET/POST /api/orders)
 // ==========================================
+// 4. Operations: Orders (GET/POST /api/orders)
+// ==========================================
+function normalizeOrder(raw: any): Order {
+  if (!raw) throw new Error('Order data is missing');
+  return {
+    id: raw.id,
+    orderNumber: raw.orderNumber || raw.id,
+    customerId: raw.customerId,
+    customerName: raw.customerName || raw.customer?.fullName || 'Customer',
+    customerCode: raw.customerCode || raw.customer?.customerCode || '',
+    customerPhone: raw.customerPhone || raw.customer?.phone || '',
+    customerEmail: raw.customerEmail || raw.customer?.email || null,
+    city: raw.city,
+    deliveryZone: raw.deliveryZone || 'Standard Zone',
+    deliveryAddress: raw.deliveryAddress || '',
+    deliveryAddressSnapshot: raw.deliveryAddressSnapshot || null,
+    items: (raw.items || []).map((it: any) => ({
+      id: it.id,
+      productId: it.productId,
+      productName: it.productName || it.productNameSnapshot || 'Product',
+      itemCode: it.itemCode || it.itemCodeSnapshot || '',
+      unit: it.unit || it.unitSnapshot || '',
+      sellerId: it.sellerId || it.sellerIdSnapshot,
+      sellerName: it.sellerName || it.sellerNameSnapshot || 'Ardab Direct Hub',
+      quantity: Number(it.quantity || 1),
+      unitPriceEtb: Number(it.unitPriceEtb ?? it.unitPrice ?? 0),
+      totalPriceEtb: Number(it.totalPriceEtb ?? it.subtotal ?? 0),
+      unitWeightKg: Number(it.unitWeightKg ?? it.weightPerUnit ?? 0),
+      totalWeightKg: Number(it.totalWeightKg ?? it.totalWeight ?? 0),
+    })),
+    subtotalEtb: Number(raw.subtotalEtb ?? raw.subtotal ?? 0),
+    deliveryFeeEtb: Number(raw.deliveryFeeEtb ?? raw.deliveryFee ?? 0),
+    discountEtb: Number(raw.discountEtb ?? raw.discountAmount ?? 0),
+    taxEtb: Number(raw.taxEtb ?? raw.taxAmount ?? 0),
+    totalEtb: Number(raw.totalEtb ?? raw.totalAmount ?? 0),
+    totalWeightKg: Number(raw.totalWeightKg ?? raw.totalWeight ?? 0),
+    currency: raw.currency || 'ETB',
+    paymentMethod: raw.paymentMethod || 'CASH_ON_DELIVERY',
+    paymentStatus: raw.paymentStatus || 'PENDING',
+    orderStatus: (raw.status || raw.orderStatus || 'PENDING') as OrderStatus,
+    customerNote: raw.customerNote || null,
+    internalNote: raw.internalNote || null,
+    placedAt: raw.placedAt || raw.createdAt,
+    confirmedAt: raw.confirmedAt || null,
+    processingAt: raw.processingAt || null,
+    readyAt: raw.readyAt || null,
+    dispatchedAt: raw.dispatchedAt || null,
+    deliveredAt: raw.deliveredAt || null,
+    cancelledAt: raw.cancelledAt || null,
+    cancelledReason: raw.cancelledReason || null,
+    rejectedAt: raw.rejectedAt || null,
+    rejectedReason: raw.rejectedReason || null,
+    assignedTripId: raw.assignedTripId,
+    assignedVehicleId: raw.assignedVehicleId,
+    assignedDriverName: raw.assignedDriverName,
+    timeline: (raw.timeline || []).map((ev: any) => ({
+      id: ev.id,
+      status: (ev.status || 'PENDING') as OrderStatus,
+      timestamp: ev.timestamp || 'Just now',
+      description: ev.description || '',
+      actor: ev.actor || 'System',
+    })),
+    createdAt: raw.createdAt || new Date().toISOString(),
+    updatedAt: raw.updatedAt || new Date().toISOString(),
+  };
+}
+
 export const ordersApi = {
+  list: async (params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    city?: string;
+    deliveryZone?: string;
+    status?: string;
+    paymentStatus?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  } = {}): Promise<{ items: Order[]; pagination: any }> => {
+    const queryParts: string[] = [];
+    if (params.page) queryParts.push(`page=${params.page}`);
+    if (params.pageSize) queryParts.push(`pageSize=${params.pageSize}`);
+    if (params.search && params.search.trim()) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
+    if (params.city && params.city !== 'All Cities') queryParts.push(`city=${encodeURIComponent(params.city)}`);
+    if (params.deliveryZone && params.deliveryZone !== 'All Zones') queryParts.push(`deliveryZone=${encodeURIComponent(params.deliveryZone)}`);
+    if (params.status && params.status !== 'ALL') queryParts.push(`status=${params.status}`);
+    if (params.paymentStatus && params.paymentStatus !== 'ALL') queryParts.push(`paymentStatus=${params.paymentStatus}`);
+    if (params.sortBy) queryParts.push(`sortBy=${params.sortBy}`);
+    if (params.sortOrder) queryParts.push(`sortOrder=${params.sortOrder}`);
+
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any[];
+      pagination: any;
+    }>(`/api/orders${qs}`, { method: 'GET' });
+
+    return {
+      items: (res.data || []).map(normalizeOrder),
+      pagination: res.pagination,
+    };
+  },
+
   getAll: async (filterCity?: string, status?: OrderStatus | 'ALL'): Promise<Order[]> => {
-    await delay(100);
-    let results = [...mockOrders];
+    const queryParts: string[] = ['pageSize=100'];
     if (filterCity && filterCity !== 'All Cities') {
-      results = results.filter((o) => o.city === filterCity);
+      queryParts.push(`city=${encodeURIComponent(filterCity)}`);
     }
     if (status && status !== 'ALL') {
-      results = results.filter((o) => o.orderStatus === status);
+      queryParts.push(`status=${status}`);
     }
-    return results;
+    const qs = `?${queryParts.join('&')}`;
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any[];
+      pagination: any;
+    }>(`/api/orders${qs}`, { method: 'GET' });
+
+    return (res.data || []).map(normalizeOrder);
   },
 
-  getById: async (id: string): Promise<Order | undefined> => {
-    await delay(50);
-    return mockOrders.find((o) => o.id === id);
+  getSummary: async (city?: string): Promise<OrderSummaryMetrics> => {
+    const qs = city && city !== 'All Cities' ? `?city=${encodeURIComponent(city)}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: OrderSummaryMetrics;
+    }>(`/api/orders/summary${qs}`, { method: 'GET' });
+
+    return res.data || {
+      totalOrders: 0,
+      pendingOrders: 0,
+      processingOrders: 0,
+      todayOrders: 0,
+      confirmedOrders: 0,
+      readyOrders: 0,
+    };
   },
 
-  updateStatus: async (id: string, newStatus: OrderStatus): Promise<Order> => {
-    await delay(100);
-    const order = mockOrders.find((o) => o.id === id);
-    if (order) {
-      order.orderStatus = newStatus;
-      order.timeline.push({
-        status: newStatus,
-        timestamp: 'Just now',
-        description: `Order status updated to ${newStatus} by Super Admin`,
-        actor: 'Super Admin',
-      });
-      return order;
-    }
-    throw new Error('Order not found');
+  getById: async (id: string): Promise<Order> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/orders/${id}`, { method: 'GET' });
+
+    if (!res.data) throw new Error('Order not found');
+    return normalizeOrder(res.data);
+  },
+
+  getActivity: async (id: string): Promise<OrderTimelineEvent[]> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any[];
+    }>(`/api/orders/${id}/activity`, { method: 'GET' });
+
+    return (res.data || []).map((ev: any) => ({
+      id: ev.id,
+      status: ev.status || ev.toStatus || 'PENDING',
+      timestamp: ev.timestamp,
+      description: ev.description,
+      actor: ev.actor,
+    }));
+  },
+
+  updateStatus: async (id: string, newStatus: OrderStatus, reason?: string): Promise<Order> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/orders/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus, reason }),
+    });
+
+    return normalizeOrder(res.data);
+  },
+
+  confirm: async (id: string): Promise<Order> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/orders/${id}/confirm`, { method: 'POST' });
+
+    return normalizeOrder(res.data);
+  },
+
+  process: async (id: string): Promise<Order> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/orders/${id}/process`, { method: 'POST' });
+
+    return normalizeOrder(res.data);
+  },
+
+  ready: async (id: string): Promise<Order> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/orders/${id}/ready`, { method: 'POST' });
+
+    return normalizeOrder(res.data);
+  },
+
+  reject: async (id: string, reason: string): Promise<Order> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/orders/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+
+    return normalizeOrder(res.data);
+  },
+
+  cancel: async (id: string, reason: string): Promise<Order> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: any;
+    }>(`/api/orders/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+
+    return normalizeOrder(res.data);
+  },
+
+  bulkUpdateStatus: async (ids: string[], newStatus: OrderStatus, reason?: string): Promise<number> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: { count: number };
+    }>(`/api/orders/bulk-status`, {
+      method: 'POST',
+      body: JSON.stringify({ ids, status: newStatus, reason }),
+    });
+
+    return res.data?.count || 0;
   },
 
   getPaginated: async (options: QueryOptions = {}): Promise<PaginatedResponse<Order>> => {
-    await delay(90);
     const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search, city, status } = options;
-    let results = [...mockOrders];
+    const result = await ordersApi.list({
+      page,
+      pageSize,
+      search,
+      city,
+      status: status === 'ALL' ? undefined : status,
+    });
 
-    if (city && city !== 'All Cities') {
-      results = results.filter((o) => o.city === city);
-    }
-    if (status && status !== 'ALL') {
-      results = results.filter((o) => o.orderStatus === status);
-    }
-    if (search && search.trim()) {
-      const q = search.trim().toLowerCase();
-      results = results.filter(
-        (o) =>
-          o.id.toLowerCase().includes(q) ||
-          o.customerName.toLowerCase().includes(q) ||
-          o.customerPhone.includes(q) ||
-          o.deliveryAddress.toLowerCase().includes(q) ||
-          o.items.some((i) => i.productName.toLowerCase().includes(q))
-      );
-    }
+    return {
+      data: result.items,
+      pagination: {
+        page: result.pagination?.page || page,
+        pageSize: result.pagination?.pageSize || pageSize,
+        total: result.pagination?.total || result.items.length,
+        totalPages: result.pagination?.totalPages || 1,
+      },
+    };
+  },
+};
 
-    return paginateItems(results, page, pageSize);
+// ==========================================
+// 4.5. Delivery Fulfillment Operations (GET/POST /api/deliveries/*)
+// ==========================================
+export const deliveriesApi = {
+  list: async (params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    city?: string;
+    deliveryZone?: string;
+    status?: string;
+    tripId?: string;
+    driverId?: string;
+    vehicleId?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  } = {}): Promise<{ items: Delivery[]; pagination: any }> => {
+    const queryParts: string[] = [];
+    if (params.page) queryParts.push(`page=${params.page}`);
+    if (params.pageSize) queryParts.push(`pageSize=${params.pageSize}`);
+    if (params.search && params.search.trim()) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
+    if (params.city && params.city !== 'All Cities') queryParts.push(`city=${encodeURIComponent(params.city)}`);
+    if (params.deliveryZone && params.deliveryZone !== 'All Zones') queryParts.push(`deliveryZone=${encodeURIComponent(params.deliveryZone)}`);
+    if (params.status && params.status !== 'ALL') queryParts.push(`status=${params.status}`);
+    if (params.tripId && params.tripId !== 'ALL') queryParts.push(`tripId=${params.tripId}`);
+    if (params.driverId && params.driverId !== 'ALL') queryParts.push(`driverId=${params.driverId}`);
+    if (params.vehicleId && params.vehicleId !== 'ALL') queryParts.push(`vehicleId=${params.vehicleId}`);
+    if (params.sortBy) queryParts.push(`sortBy=${params.sortBy}`);
+    if (params.sortOrder) queryParts.push(`sortOrder=${params.sortOrder}`);
+
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery[];
+      pagination: any;
+    }>(`/api/deliveries${qs}`, { method: 'GET' });
+
+    return {
+      items: res.data || [],
+      pagination: res.pagination,
+    };
   },
 
-  bulkUpdateStatus: async (ids: string[], newStatus: OrderStatus): Promise<number> => {
-    await delay(140);
-    let count = 0;
-    mockOrders.forEach((o) => {
-      if (ids.includes(o.id)) {
-        o.orderStatus = newStatus;
-        o.timeline.push({
-          status: newStatus,
-          timestamp: 'Just now',
-          description: `Bulk status update to ${newStatus} by Super Admin`,
-          actor: 'Super Admin',
-        });
-        count++;
+  getSummary: async (city?: string): Promise<DeliverySummaryMetrics> => {
+    const qs = city && city !== 'All Cities' ? `?city=${encodeURIComponent(city)}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: DeliverySummaryMetrics;
+    }>(`/api/deliveries/summary${qs}`, { method: 'GET' });
+
+    return (
+      res.data || {
+        totalDeliveries: 0,
+        pendingDeliveries: 0,
+        readyDeliveries: 0,
+        assignedDeliveries: 0,
+        outForDelivery: 0,
+        deliveredToday: 0,
+        failedDeliveries: 0,
+        cancelledDeliveries: 0,
       }
+    );
+  },
+
+  getById: async (id: string): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>(`/api/deliveries/${id}`, { method: 'GET' });
+
+    if (!res.data) throw new Error('Delivery not found');
+    return res.data;
+  },
+
+  getActivity: async (id: string): Promise<DeliveryTimelineEvent[]> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: DeliveryTimelineEvent[];
+    }>(`/api/deliveries/${id}/activity`, { method: 'GET' });
+
+    return res.data || [];
+  },
+
+  create: async (data: { orderId: string; scheduledAt?: string; deliveryNotes?: string }): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>('/api/deliveries', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
-    return count;
+
+    if (!res.data) throw new Error('Failed to create delivery');
+    return res.data;
+  },
+
+  prepare: async (id: string): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>(`/api/deliveries/${id}/prepare`, { method: 'POST' });
+
+    if (!res.data) throw new Error('Failed to prepare delivery');
+    return res.data;
+  },
+
+  assignTrip: async (id: string, tripId: string, scheduledAt?: string): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>(`/api/deliveries/${id}/assign-trip`, {
+      method: 'POST',
+      body: JSON.stringify({ tripId, scheduledAt }),
+    });
+
+    if (!res.data) throw new Error('Failed to assign delivery to trip');
+    return res.data;
+  },
+
+  dispatch: async (id: string): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>(`/api/deliveries/${id}/dispatch`, { method: 'POST' });
+
+    if (!res.data) throw new Error('Failed to dispatch delivery');
+    return res.data;
+  },
+
+  complete: async (id: string, payload: { proofOfDeliveryUrl?: string; notes?: string } = {}): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>(`/api/deliveries/${id}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.data) throw new Error('Failed to complete delivery');
+    return res.data;
+  },
+
+  fail: async (id: string, reason: string, notes?: string): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>(`/api/deliveries/${id}/fail`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, notes }),
+    });
+
+    if (!res.data) throw new Error('Failed to record delivery failure');
+    return res.data;
+  },
+
+  cancel: async (id: string, reason: string): Promise<Delivery> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: Delivery;
+    }>(`/api/deliveries/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+
+    if (!res.data) throw new Error('Failed to cancel delivery');
+    return res.data;
+  },
+
+  getAvailableTrips: async (city?: string): Promise<AvailableTrip[]> => {
+    const qs = city && city !== 'All Cities' ? `?city=${encodeURIComponent(city)}` : '';
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: AvailableTrip[];
+    }>(`/api/deliveries/trips-available${qs}`, { method: 'GET' });
+
+    return res.data || [];
   },
 };
 
