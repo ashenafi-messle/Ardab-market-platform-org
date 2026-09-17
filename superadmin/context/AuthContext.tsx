@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { SuperAdminUser, LoginCredentials } from '@/types/auth';
-import { authApi } from '@/lib/api';
+import { authApi, setAuthToken } from '@/lib/api';
 
 interface AuthContextType {
   user: SuperAdminUser | null;
@@ -63,6 +63,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isSubscribed = false;
     };
   }, []);
+
+  // Listen for global session expiration dispatched by API gateway
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null);
+      setAuthToken(null);
+      const isPublicPath = PUBLIC_PATHS.includes(pathname);
+      if (!isPublicPath) {
+        router.push('/login?expired=true');
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth:session_expired', handleSessionExpired);
+      return () => {
+        window.removeEventListener('auth:session_expired', handleSessionExpired);
+      };
+    }
+  }, [pathname, router]);
 
   // Client-side route protection
   useEffect(() => {

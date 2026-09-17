@@ -53,8 +53,16 @@ export const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Accept'],
-  exposedHeaders: ['X-Request-ID', 'Content-Range', 'X-Total-Count'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Request-ID',
+    'X-Idempotency-Key',
+    'x-idempotency-key',
+    'Accept',
+    'X-Requested-With',
+  ],
+  exposedHeaders: ['X-Request-ID', 'X-Idempotency-Key', 'Content-Range', 'X-Total-Count'],
   maxAge: 86400, // 24 hours
 };
 

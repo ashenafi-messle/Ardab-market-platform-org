@@ -10,6 +10,7 @@ import {
   validateStatusTransition,
   getStatusTimestampUpdates,
 } from './order.status.service.js';
+import { createNotification } from './notification.service.js';
 
 const Decimal = Prisma.Decimal;
 
@@ -302,6 +303,22 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
 
     return updated;
   });
+
+  // Emit Operational Alert asynchronously on failure/cancellation
+  if (newStatus === 'CANCELLED' || newStatus === 'FAILED') {
+    createNotification({
+      type: 'OPERATIONAL_ALERT',
+      category: 'ORDER',
+      title: `Order ${existingOrder.orderNumber} ${newStatus}`,
+      message: `Order ${existingOrder.orderNumber} in ${existingOrder.city} was marked as ${newStatus}.${reason ? ` Reason: ${reason}` : ''}`,
+      severity: newStatus === 'FAILED' ? 'CRITICAL' : 'WARNING',
+      priority: 'HIGH',
+      isAlert: true,
+      entityType: 'ORDER',
+      entityId: id,
+      actionUrl: '/orders',
+    }, adminUser).catch(() => {});
+  }
 
   return formatOrderResponse(updatedOrder);
 }

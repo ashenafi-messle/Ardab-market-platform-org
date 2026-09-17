@@ -31,6 +31,9 @@ import customerRoutes from './admin/routes/customer.routes.js';
 import orderRoutes from './admin/routes/order.routes.js';
 import deliveryRoutes from './admin/routes/delivery.routes.js';
 import notificationRoutes from './admin/routes/notification.routes.js';
+import supportRoutes from './admin/routes/support.routes.js';
+import feedbackRoutes from './admin/routes/feedback.routes.js';
+import securityRoutes from './admin/routes/security.routes.js';
 import customerRouter from './customer/routes/index.js';
 import { getHealth, getLive, getReady } from './admin/controllers/health.controller.js';
 
@@ -112,6 +115,24 @@ export function createApp() {
   app.use('/api/v1/deliveries', deliveryRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/v1/notifications', notificationRoutes);
+
+  // Customer Support Management Aliases
+  app.use('/api/subadmin/support', supportRoutes);
+  app.use('/api/v1/subadmin/support', supportRoutes);
+  app.use('/api/support', supportRoutes);
+  app.use('/api/v1/support', supportRoutes);
+
+  // Feedback & Reputation Management Aliases
+  app.use('/api/subadmin/feedback', feedbackRoutes);
+  app.use('/api/v1/subadmin/feedback', feedbackRoutes);
+  app.use('/api/feedback', feedbackRoutes);
+  app.use('/api/v1/feedback', feedbackRoutes);
+
+  // Security & Super Admin Control Center Aliases
+  app.use('/api/subadmin/security', securityRoutes);
+  app.use('/api/v1/subadmin/security', securityRoutes);
+  app.use('/api/security', securityRoutes);
+  app.use('/api/v1/security', securityRoutes);
 
   // Customer Mobile App Routes
   app.use('/api/customer', customerRouter);

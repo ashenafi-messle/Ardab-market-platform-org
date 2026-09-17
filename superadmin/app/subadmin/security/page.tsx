@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import PageContainer from '@/components/layout/PageContainer';
+import { useAuth } from '@/context/AuthContext';
+import { hasPermission } from '@/lib/permissions';
 import { securityApi } from '@/lib/api';
 import {
   AdminUser,
@@ -11,12 +13,22 @@ import {
   IpBlockRule,
   AuditLog,
   FailedLoginLog,
+  SecurityStatistics,
 } from '@/types/security';
 
 type SecurityTab = 'SUPER_ADMINS' | 'SESSIONS' | 'ALERTS' | 'FIREWALL' | 'FAILED_LOGINS' | 'AUDIT';
 
 export default function SecurityManagementPage() {
+  const { user } = useAuth();
+
+  // Role-based permissions
+  const canManageAdmins = hasPermission(user?.role, 'security:manage_admins');
+  const canManageAlerts = hasPermission(user?.role, 'security:manage_alerts');
+  const canManageFirewall = hasPermission(user?.role, 'security:manage_firewall');
+  const canManageSessions = hasPermission(user?.role, 'security:sessions');
+
   const [activeTab, setActiveTab] = useState<SecurityTab>('SUPER_ADMINS');
+  const [statistics, setStatistics] = useState<SecurityStatistics | null>(null);
   const [superAdmins, setSuperAdmins] = useState<AdminUser[]>([]);
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
@@ -24,6 +36,7 @@ export default function SecurityManagementPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [failedLogins, setFailedLogins] = useState<FailedLoginLog[]>([]);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Super Admin Filtering
   const [adminSearch, setAdminSearch] = useState('');
@@ -57,17 +70,28 @@ export default function SecurityManagementPage() {
   const [newIpReason, setNewIpReason] = useState('');
   const [newIpStatus, setNewIpStatus] = useState<'BLOCKED' | 'WHITELISTED'>('BLOCKED');
 
+  const refreshStatistics = useCallback(async () => {
+    try {
+      const stats = await securityApi.getStatistics();
+      setStatistics(stats);
+    } catch {
+      // Non-critical fallback
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     Promise.all([
+      securityApi.getStatistics().catch(() => null),
       securityApi.getSuperAdminAccounts(),
       securityApi.getActiveSessions(),
       securityApi.getSecurityAlerts(),
       securityApi.getIpRules(),
       securityApi.getAuditLogs(),
       securityApi.getFailedLogins(),
-    ]).then(([admins, sess, alr, rules, audits, failed]) => {
+    ]).then(([stats, admins, sess, alr, rules, audits, failed]) => {
       if (isMounted) {
+        if (stats) setStatistics(stats);
         setSuperAdmins(admins);
         setSessions(sess);
         setAlerts(alr);
@@ -77,6 +101,9 @@ export default function SecurityManagementPage() {
       }
     }).catch((err) => {
       console.error('Failed to load security data:', err);
+      if (isMounted) {
+        setErrorMessage(err?.message || 'Failed to load some security telemetry data.');
+      }
     });
 
     return () => {
@@ -104,9 +131,12 @@ export default function SecurityManagementPage() {
       setAdminEmail('');
       setAdminPhone('');
       setActionMessage(`Super Admin account for ${created.name} (${created.email}) created successfully.`);
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 4000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to provision Super Admin account.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -134,9 +164,12 @@ export default function SecurityManagementPage() {
       setSuperAdmins((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
       setEditingAdmin(null);
       setActionMessage(`Super Admin account for ${updated.name} updated successfully.`);
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to update Super Admin account.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -145,9 +178,12 @@ export default function SecurityManagementPage() {
       const updated = await securityApi.toggleSuperAdminStatus(id);
       setSuperAdmins((prev) => prev.map((u) => (u.id === id ? updated : u)));
       setActionMessage(`Super Admin account ${updated.name} is now ${updated.status}.`);
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to update Super Admin status. Note that the last active Super Admin cannot be deactivated.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -161,8 +197,10 @@ export default function SecurityManagementPage() {
       });
       setActionMessage('Temporary security password generated and logged in audit trail.');
       setTimeout(() => setActionMessage(null), 3500);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to reset password.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -173,9 +211,12 @@ export default function SecurityManagementPage() {
       setSuperAdmins((prev) => prev.filter((u) => u.id !== deletingAdmin.id));
       setActionMessage(`Super Admin account for ${deletingAdmin.name} permanently deprovisioned.`);
       setDeletingAdmin(null);
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to delete Super Admin account.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -192,9 +233,12 @@ export default function SecurityManagementPage() {
       const revoked = await securityApi.revokeSession(sessionId);
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? revoked : s)));
       setActionMessage(`Session ${sessionId} successfully revoked.`);
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to revoke session.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -203,9 +247,12 @@ export default function SecurityManagementPage() {
       const resolved = await securityApi.resolveAlert(alertId);
       setAlerts((prev) => prev.map((a) => (a.id === alertId ? resolved : a)));
       setActionMessage(`Security alert ${alertId} resolved.`);
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to resolve security alert.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -218,7 +265,7 @@ export default function SecurityManagementPage() {
         ipAddress: newIp.trim(),
         reason: newIpReason.trim() || 'Manual administrative rule',
         blockedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        blockedBy: 'Eden Tilahun (Sub Admin)',
+        blockedBy: user?.name ? `${user.name} (${user.role.replace('_', ' ')})` : 'Administrative Authority',
         status: newIpStatus,
       });
       setIpRules((prev) => [rule, ...prev]);
@@ -226,9 +273,12 @@ export default function SecurityManagementPage() {
       setNewIp('');
       setNewIpReason('');
       setActionMessage(`Firewall rule for ${rule.ipAddress} created.`);
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to add firewall rule.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -237,9 +287,12 @@ export default function SecurityManagementPage() {
       await securityApi.deleteIpRule(id);
       setIpRules((prev) => prev.filter((r) => r.id !== id));
       setActionMessage('Firewall rule removed.');
+      refreshStatistics();
       setTimeout(() => setActionMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to remove firewall rule.');
+      setTimeout(() => setErrorMessage(null), 6000);
     }
   };
 
@@ -268,25 +321,40 @@ export default function SecurityManagementPage() {
         breadcrumbs={[{ label: 'Sub Admin' }, { label: 'Security & Super Admins' }]}
         actions={
           <div className="d-flex gap-2">
-            <button
-              type="button"
-              className="btn btn-sm btn-ardab-primary d-flex align-items-center gap-1 shadow-sm"
-              onClick={() => setShowCreateSuperAdminModal(true)}
-            >
-              <i className="bi bi-person-plus-fill"></i>
-              <span>Create Super Admin</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-ardab-outline d-flex align-items-center gap-1"
-              onClick={() => setShowAddIpModal(true)}
-            >
-              <i className="bi bi-shield-plus"></i>
-              <span>Add Firewall Rule</span>
-            </button>
+            {canManageAdmins && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ardab-primary d-flex align-items-center gap-1 shadow-sm"
+                onClick={() => setShowCreateSuperAdminModal(true)}
+              >
+                <i className="bi bi-person-plus-fill"></i>
+                <span>Create Super Admin</span>
+              </button>
+            )}
+            {canManageFirewall && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ardab-outline d-flex align-items-center gap-1"
+                onClick={() => setShowAddIpModal(true)}
+              >
+                <i className="bi bi-shield-plus"></i>
+                <span>Add Firewall Rule</span>
+              </button>
+            )}
           </div>
         }
       >
+        {/* Error Alert */}
+        {errorMessage && (
+          <div className="alert alert-danger alert-dismissible fade show d-flex align-items-center justify-content-between p-3 mb-4 rounded-3 shadow-sm border-0" role="alert">
+            <div className="d-flex align-items-center gap-2">
+              <i className="bi bi-exclamation-octagon-fill text-danger fs-5"></i>
+              <span className="fw-medium">{errorMessage}</span>
+            </div>
+            <button type="button" className="btn-close" onClick={() => setErrorMessage(null)}></button>
+          </div>
+        )}
+
         {/* Flash Message */}
         {actionMessage && (
           <div className="alert alert-success alert-dismissible fade show d-flex align-items-center justify-content-between p-3 mb-4 rounded-3 shadow-sm border-0" role="alert">
@@ -350,8 +418,10 @@ export default function SecurityManagementPage() {
                   <i className="bi bi-person-badge-fill"></i>
                 </div>
               </div>
-              <div className="fs-3 fw-bold text-dark">{superAdmins.length}</div>
-              <span className="badge badge-success-soft mt-1">{activeSuperAdminsCount} Active &bull; Managed by Sub Admin</span>
+              <div className="fs-3 fw-bold text-dark">{statistics?.totalSuperAdmins ?? superAdmins.length}</div>
+              <span className="badge badge-success-soft mt-1">
+                {statistics?.activeSuperAdmins ?? activeSuperAdminsCount} Active &bull; Managed by Sub Admin
+              </span>
             </div>
           </div>
           <div className="col-6 col-lg-3">
@@ -362,7 +432,7 @@ export default function SecurityManagementPage() {
                   <i className="bi bi-laptop"></i>
                 </div>
               </div>
-              <div className="fs-3 fw-bold text-primary">{activeSessionsCount}</div>
+              <div className="fs-3 fw-bold text-primary">{statistics?.activeSessions ?? activeSessionsCount}</div>
               <span className="text-muted small">Live Ingress Authenticated</span>
             </div>
           </div>
@@ -374,8 +444,10 @@ export default function SecurityManagementPage() {
                   <i className="bi bi-shield-exclamation"></i>
                 </div>
               </div>
-              <div className="fs-3 fw-bold text-danger">{unresolvedAlertsCount}</div>
-              <span className="badge badge-warning-soft mt-1">Awaiting Investigation</span>
+              <div className="fs-3 fw-bold text-danger">{statistics?.openAlerts ?? statistics?.unresolvedAlerts ?? unresolvedAlertsCount}</div>
+              <span className="badge badge-warning-soft mt-1">
+                {statistics?.criticalAlerts ? `${statistics.criticalAlerts} Critical &bull; ` : ''}Awaiting Investigation
+              </span>
             </div>
           </div>
           <div className="col-6 col-lg-3">
@@ -386,7 +458,7 @@ export default function SecurityManagementPage() {
                   <i className="bi bi-fire"></i>
                 </div>
               </div>
-              <div className="fs-3 fw-bold text-success">{ipRules.length}</div>
+              <div className="fs-3 fw-bold text-success">{statistics?.blockedIps ?? ipRules.length}</div>
               <span className="text-muted small">Active Protection Rules</span>
             </div>
           </div>
@@ -455,14 +527,16 @@ export default function SecurityManagementPage() {
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ardab-primary d-flex align-items-center gap-1 align-self-start align-self-md-center text-nowrap"
-                  onClick={() => setShowCreateSuperAdminModal(true)}
-                >
-                  <i className="bi bi-person-plus-fill"></i>
-                  <span>+ Create Super Admin</span>
-                </button>
+                {canManageAdmins && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ardab-primary d-flex align-items-center gap-1 align-self-start align-self-md-center text-nowrap"
+                    onClick={() => setShowCreateSuperAdminModal(true)}
+                  >
+                    <i className="bi bi-person-plus-fill"></i>
+                    <span>+ Create Super Admin</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -564,50 +638,54 @@ export default function SecurityManagementPage() {
                           </span>
                         </td>
                         <td className="text-end">
-                          <div className="d-inline-flex gap-1">
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-light border"
-                              onClick={() => handleOpenEditModal(admin)}
-                              title="Edit Super Admin details"
-                            >
-                              <i className="bi bi-pencil-square me-1"></i> Edit
-                            </button>
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${admin.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'}`}
-                              onClick={() => handleToggleSuperAdminStatus(admin.id)}
-                              title={admin.status === 'ACTIVE' ? 'Suspend Super Admin Account' : 'Reactivate Super Admin Account'}
-                            >
-                              {admin.status === 'ACTIVE' ? (
-                                <>
-                                  <i className="bi bi-lock me-1"></i> Suspend
-                                </>
-                              ) : (
-                                <>
-                                  <i className="bi bi-unlock me-1"></i> Activate
-                                </>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-light border"
-                              onClick={() => handleResetSuperAdminPassword(admin.id)}
-                              title="Generate temporary credential"
-                            >
-                              <i className="bi bi-key me-1"></i> Reset
-                            </button>
-                            {admin.id !== 'ADM-001' && (
+                          {canManageAdmins ? (
+                            <div className="d-inline-flex gap-1">
                               <button
                                 type="button"
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => setDeletingAdmin(admin)}
-                                title="Deprovision account"
+                                className="btn btn-sm btn-light border"
+                                onClick={() => handleOpenEditModal(admin)}
+                                title="Edit Super Admin details"
                               >
-                                <i className="bi bi-trash"></i>
+                                <i className="bi bi-pencil-square me-1"></i> Edit
                               </button>
-                            )}
-                          </div>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${admin.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'}`}
+                                onClick={() => handleToggleSuperAdminStatus(admin.id)}
+                                title={admin.status === 'ACTIVE' ? 'Suspend Super Admin Account' : 'Reactivate Super Admin Account'}
+                              >
+                                {admin.status === 'ACTIVE' ? (
+                                  <>
+                                    <i className="bi bi-lock me-1"></i> Suspend
+                                  </>
+                                ) : (
+                                  <>
+                                    <i className="bi bi-unlock me-1"></i> Activate
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-light border"
+                                onClick={() => handleResetSuperAdminPassword(admin.id)}
+                                title="Generate temporary credential"
+                              >
+                                <i className="bi bi-key me-1"></i> Reset
+                              </button>
+                              {admin.id !== 'ADM-001' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-danger"
+                                  onClick={() => setDeletingAdmin(admin)}
+                                  title="Deprovision account"
+                                >
+                                  <i className="bi bi-trash"></i>
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted small">View Only</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -650,38 +728,42 @@ export default function SecurityManagementPage() {
                     ))}
                   </div>
 
-                  <div className="d-flex gap-1 flex-wrap pt-2 border-top">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-light border flex-grow-1"
-                      onClick={() => handleOpenEditModal(admin)}
-                    >
-                      <i className="bi bi-pencil-square me-1"></i> Edit
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm flex-grow-1 ${admin.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'}`}
-                      onClick={() => handleToggleSuperAdminStatus(admin.id)}
-                    >
-                      {admin.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-light border flex-grow-1"
-                      onClick={() => handleResetSuperAdminPassword(admin.id)}
-                    >
-                      <i className="bi bi-key me-1"></i> Reset
-                    </button>
-                    {admin.id !== 'ADM-001' && (
+                  {canManageAdmins ? (
+                    <div className="d-flex gap-1 flex-wrap pt-2 border-top">
                       <button
                         type="button"
-                        className="btn btn-sm btn-outline-danger"
-                        onClick={() => setDeletingAdmin(admin)}
+                        className="btn btn-sm btn-light border flex-grow-1"
+                        onClick={() => handleOpenEditModal(admin)}
                       >
-                        <i className="bi bi-trash"></i>
+                        <i className="bi bi-pencil-square me-1"></i> Edit
                       </button>
-                    )}
-                  </div>
+                      <button
+                        type="button"
+                        className={`btn btn-sm flex-grow-1 ${admin.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'}`}
+                        onClick={() => handleToggleSuperAdminStatus(admin.id)}
+                      >
+                        {admin.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-light border flex-grow-1"
+                        onClick={() => handleResetSuperAdminPassword(admin.id)}
+                      >
+                        <i className="bi bi-key me-1"></i> Reset
+                      </button>
+                      {admin.id !== 'ADM-001' && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => setDeletingAdmin(admin)}
+                        >
+                          <i className="bi bi-trash"></i>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="pt-2 border-top text-muted small">View Only</div>
+                  )}
                 </div>
               ))}
               {filteredSuperAdmins.length === 0 && (
@@ -735,13 +817,17 @@ export default function SecurityManagementPage() {
                       </td>
                       <td className="text-end">
                         {s.status === 'ACTIVE' ? (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={() => handleRevokeSession(s.id)}
-                          >
-                            <i className="bi bi-door-closed me-1"></i> Revoke
-                          </button>
+                          canManageSessions ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => handleRevokeSession(s.id)}
+                            >
+                              <i className="bi bi-door-closed me-1"></i> Revoke
+                            </button>
+                          ) : (
+                            <span className="badge badge-success-soft">Active</span>
+                          )
                         ) : (
                           <span className="text-muted small">Revoked</span>
                         )}
@@ -792,7 +878,7 @@ export default function SecurityManagementPage() {
                     <span className="badge badge-success-soft">
                       <i className="bi bi-check-circle-fill me-1"></i> Resolved by {alert.resolvedBy}
                     </span>
-                  ) : (
+                  ) : canManageAlerts ? (
                     <button
                       type="button"
                       className="btn btn-sm btn-success"
@@ -800,6 +886,8 @@ export default function SecurityManagementPage() {
                     >
                       <i className="bi bi-check2 me-1"></i> Mark Resolved
                     </button>
+                  ) : (
+                    <span className="badge badge-warning-soft">Pending Investigation</span>
                   )}
                 </div>
               </div>
@@ -837,13 +925,15 @@ export default function SecurityManagementPage() {
                         </span>
                       </td>
                       <td className="text-end">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-danger"
-                          onClick={() => handleDeleteIpRule(rule.id)}
-                        >
-                          <i className="bi bi-trash"></i>
-                        </button>
+                        {canManageFirewall && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => handleDeleteIpRule(rule.id)}
+                          >
+                            <i className="bi bi-trash"></i>
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -16,6 +16,12 @@ import customerRoutes from './customer.routes.js';
 import orderRoutes from './order.routes.js';
 import deliveryRoutes from './delivery.routes.js';
 import notificationRoutes from './notification.routes.js';
+import supportRoutes from './support.routes.js';
+import feedbackRoutes from './feedback.routes.js';
+import securityRoutes from './security.routes.js';
+import maintenanceRoutes from './maintenance.routes.js';
+import citiesRoutes from './cities.routes.js';
+import searchRoutes from './search.routes.js';
 
 const adminRouter = Router();
 
@@ -25,8 +31,20 @@ adminRouter.use('/health', healthRoutes);
 // Shared Authentication routes for Super Admin & Sub Admin
 adminRouter.use('/auth', authRoutes);
 
+// Security & Super Admin Management
+adminRouter.use('/security', securityRoutes);
+
 // System & Operations: Notifications & Operational Alerts
 adminRouter.use('/notifications', notificationRoutes);
+
+// Maintenance & System Health Management
+adminRouter.use('/maintenance', maintenanceRoutes);
+
+// Operational Cities Management
+adminRouter.use('/cities', citiesRoutes);
+
+// Global Federated Search
+adminRouter.use('/search', searchRoutes);
 
 // Commercial Marketplace: Customers Management
 adminRouter.use('/customers', customerRoutes);
@@ -36,6 +54,12 @@ adminRouter.use('/orders', orderRoutes);
 
 // Delivery Operations & Fleet Logistics
 adminRouter.use('/deliveries', deliveryRoutes);
+
+// Customer Support Operations
+adminRouter.use('/support', supportRoutes);
+
+// Feedback & Reputation Management
+adminRouter.use('/feedback', feedbackRoutes);
 
 // Commercial Marketplace: Suppliers & Agricultural Producers
 adminRouter.use('/suppliers', supplierRoutes);

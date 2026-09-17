@@ -19,10 +19,12 @@ export type PermissionAction =
   | 'orders:update_status'
   | 'orders:bulk_status'
   | 'orders:cancel'
+  // Deliveries
   | 'deliveries:view'
   | 'deliveries:assign'
   | 'deliveries:update_status'
-  // Support, Maintenance & Security Governance (Sub Admin)
+  // Support, Maintenance & Security Governance (Sub Admin & Super Admin)
+  | 'support:view'
   | 'support:manage'
   | 'support:assign'
   | 'support:resolve'
@@ -30,10 +32,16 @@ export type PermissionAction =
   | 'security:manage_admins'
   | 'security:audit_logs'
   | 'security:sessions'
+  | 'security:manage_alerts'
+  | 'security:manage_firewall'
   | 'maintenance:manage'
   | 'maintenance:schedule'
   | 'feedback:view'
-  | 'feedback:respond';
+  | 'feedback:respond'
+  | 'feedback:moderate'
+  | 'feedback:manage_reports'
+  | 'feedback:manage_categories'
+  | 'feedback:view_reputation';
 
 const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
   SUPER_ADMIN: [
@@ -57,8 +65,25 @@ const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
     'deliveries:view',
     'deliveries:assign',
     'deliveries:update_status',
+    'support:view',
+    'support:manage',
+    'support:assign',
+    'support:resolve',
+    'feedback:view',
+    'feedback:respond',
+    'feedback:moderate',
+    'feedback:manage_reports',
+    'feedback:manage_categories',
+    'feedback:view_reputation',
+    'security:view',
+    'security:manage_admins',
+    'security:audit_logs',
+    'security:sessions',
+    'security:manage_alerts',
+    'security:manage_firewall',
   ],
   SUB_ADMIN: [
+    'support:view',
     'support:manage',
     'support:assign',
     'support:resolve',
@@ -66,10 +91,16 @@ const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
     'security:manage_admins',
     'security:audit_logs',
     'security:sessions',
+    'security:manage_alerts',
+    'security:manage_firewall',
     'maintenance:manage',
     'maintenance:schedule',
     'feedback:view',
     'feedback:respond',
+    'feedback:moderate',
+    'feedback:manage_reports',
+    'feedback:manage_categories',
+    'feedback:view_reputation',
   ],
   OPERATIONS_MANAGER: [
     'orders:manage',

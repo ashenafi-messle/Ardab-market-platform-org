@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import { useAuth } from '@/context/AuthContext';
@@ -18,7 +18,7 @@ import ConfirmationModal, { ConfirmationVariant } from '@/components/common/Conf
 import TableSkeleton from '@/components/common/TableSkeleton';
 import EmptyState from '@/components/common/EmptyState';
 import { formatCurrency, formatWeight } from '@/lib/formatters';
-import { STANDARD_FLEET_CAPACITY_KG, DEFAULT_PAGE_SIZE } from '@/lib/constants';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants';
 import { hasPermission } from '@/lib/permissions';
 
 const DELIVERY_STATUS_TABS: { label: string; value: DeliveryStatus | 'ALL'; countKey?: keyof DeliverySummaryMetrics }[] = [
@@ -134,7 +134,7 @@ export default function DeliveriesPage() {
   const [isConfirming, setIsConfirming] = useState(false);
 
   // Permissions
-  const canView = hasPermission(user?.role, 'deliveries:view');
+  const _canView = hasPermission(user?.role, 'deliveries:view');
   const canAssign = hasPermission(user?.role, 'deliveries:assign');
   const canUpdateStatus = hasPermission(user?.role, 'deliveries:update_status');
 

@@ -9,7 +9,7 @@ import { Driver } from '@/types/driver';
 import { Trip } from '@/types/trip';
 import { RevenueMetrics, Transaction } from '@/types/finance';
 import { SalesByCity, SalesByCategory, OperationalPerformance } from '@/types/report';
-import { NotificationItem } from '@/types/notification';
+import { Notification } from '@/types/notification';
 import { AdminUser, AuditLog, ActiveSession, SecurityAlert, IpBlockRule, FailedLoginLog } from '@/types/security';
 import { CityConfig, PlatformSettings } from '@/types/settings';
 import { SupportTicket } from '@/types/support';
@@ -1424,49 +1424,7 @@ export const mockOperationalPerformance: OperationalPerformance = {
   customerGrowthRate: 15.8,
 };
 
-// Notifications
-export const mockNotifications: NotificationItem[] = [
-  {
-    id: 'NOTIF-01',
-    category: 'FLEET',
-    title: 'High Vehicle Capacity Reached',
-    message: 'Vehicle ARD-002 reached 96% load capacity (4,800 KG / 5,000 KG). Ready for dispatch authorization.',
-    timestamp: '15 mins ago',
-    isRead: false,
-    priority: 'HIGH',
-    actionUrl: '/vehicles',
-  },
-  {
-    id: 'NOTIF-02',
-    category: 'DELIVERY',
-    title: 'Trip TRP-1042 In Transit',
-    message: 'Driver Bekele Tessema departed Gondar Hub with 12 orders destined for Arada & Maraki.',
-    timestamp: '45 mins ago',
-    isRead: false,
-    priority: 'NORMAL',
-    actionUrl: '/trips',
-  },
-  {
-    id: 'NOTIF-03',
-    category: 'ORDER',
-    title: 'Bulk Order Confirmed',
-    message: 'ORD-9402 for Almaz Tadesse (560 KG) verified with Telebirr confirmation.',
-    timestamp: '1 hour ago',
-    isRead: true,
-    priority: 'NORMAL',
-    actionUrl: '/orders',
-  },
-  {
-    id: 'NOTIF-04',
-    category: 'SECURITY',
-    title: 'Scheduled Audit Complete',
-    message: 'Role permissions verified. All Super Admin sessions encrypted with TLS 1.3.',
-    timestamp: 'Yesterday',
-    isRead: true,
-    priority: 'LOW',
-    actionUrl: '/subadmin/security',
-  },
-];
+export const mockNotifications: Notification[] = [];
 
 // Security & Super Admin Accounts
 export const mockAdminUsers: AdminUser[] = [

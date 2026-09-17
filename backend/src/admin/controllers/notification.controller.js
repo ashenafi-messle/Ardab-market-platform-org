@@ -15,13 +15,17 @@ import {
   bulkAcknowledgeAlerts,
 } from '../services/notification.service.js';
 
+function getRequestAdmin(req) {
+  return req.user || req.adminUser || req.admin || null;
+}
+
 /**
  * GET /api/notifications
  * Lists notifications and alerts with filters, pagination, and tabs.
  */
 export async function listNotificationsHandler(req, res) {
   const result = await listNotifications({
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
     query: req.query,
   });
 
@@ -39,7 +43,7 @@ export async function listNotificationsHandler(req, res) {
  */
 export async function getNotificationSummaryHandler(req, res) {
   const summary = await getNotificationSummary({
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
   });
 
   return ApiResponse.success(
@@ -56,7 +60,7 @@ export async function getNotificationSummaryHandler(req, res) {
 export async function getNotificationByIdHandler(req, res) {
   const notification = await getNotificationById({
     id: req.params.id,
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
   });
 
   return ApiResponse.success(res, notification, 'Notification retrieved successfully.');
@@ -67,7 +71,7 @@ export async function getNotificationByIdHandler(req, res) {
  * Creates a new notification or operational alert (Admin or system event).
  */
 export async function createNotificationHandler(req, res) {
-  const notification = await createNotification(req.body, req.adminUser);
+  const notification = await createNotification(req.body, getRequestAdmin(req));
 
   return ApiResponse.success(
     res,
@@ -84,7 +88,7 @@ export async function createNotificationHandler(req, res) {
 export async function markAsReadHandler(req, res) {
   const result = await markAsRead({
     id: req.params.id,
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
   });
 
   return ApiResponse.success(res, result, 'Notification marked as read.');
@@ -97,7 +101,7 @@ export async function markAsReadHandler(req, res) {
 export async function markAllAsReadHandler(req, res) {
   const { category } = req.body || {};
   const result = await markAllAsRead({
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
     category,
   });
 
@@ -116,7 +120,7 @@ export async function bulkMarkAsReadHandler(req, res) {
   const { notificationIds } = req.body;
   const result = await bulkMarkAsRead({
     notificationIds,
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
   });
 
   return ApiResponse.success(
@@ -134,7 +138,7 @@ export async function acknowledgeAlertHandler(req, res) {
   const ipAddress = req.ip || req.connection?.remoteAddress;
   const result = await acknowledgeAlert({
     id: req.params.id,
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
     notes: req.body?.notes,
     ipAddress,
   });
@@ -154,7 +158,7 @@ export async function bulkAcknowledgeAlertsHandler(req, res) {
   const ipAddress = req.ip || req.connection?.remoteAddress;
   const result = await bulkAcknowledgeAlerts({
     notificationIds: req.body.notificationIds,
-    adminUser: req.adminUser,
+    adminUser: getRequestAdmin(req),
     notes: req.body?.notes,
     ipAddress,
   });

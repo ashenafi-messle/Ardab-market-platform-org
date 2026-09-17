@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import { useAuth } from '@/context/AuthContext';
@@ -451,7 +451,7 @@ export default function OrdersPage() {
           <div className="col-12 col-sm-6 col-xl-3">
             <div className="ardab-card p-3 h-100 shadow-sm border-0 d-flex align-items-center justify-content-between">
               <div>
-                <span className="text-muted small fw-semibold text-uppercase d-block mb-1">Today's Orders</span>
+                <span className="text-muted small fw-semibold text-uppercase d-block mb-1">Today&apos;s Orders</span>
                 {isSummaryLoading ? (
                   <div className="placeholder-glow">
                     <span className="placeholder col-8 fs-4"></span>

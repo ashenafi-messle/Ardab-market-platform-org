@@ -10,8 +10,28 @@ import {
   getOtpTemplate,
   getPasswordChangedNotificationTemplate,
 } from './email.templates.js';
+import { getSupportReplyTemplate } from './templates/support-reply.template.js';
 
 export class EmailService {
+  /**
+   * Dispatches Support Ticket Reply to Customer's Registered Email
+   */
+  static async sendSupportReplyEmail({ toEmail, customerName, ticketNumber, subject, messageBody }) {
+    const { htmlContent, textContent } = getSupportReplyTemplate({
+      customerName,
+      ticketNumber,
+      subject,
+      messageBody,
+    });
+
+    return sendBrevoEmail({
+      toEmail,
+      toName: customerName,
+      subject: `Support Update [${ticketNumber}]: ${subject}`,
+      htmlContent,
+      textContent,
+    });
+  }
   /**
    * Dispatches Password Reset Email with frontend reset link
    */

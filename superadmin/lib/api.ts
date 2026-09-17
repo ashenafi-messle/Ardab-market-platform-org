@@ -9,8 +9,6 @@
  */
 
 import {
-  mockCustomers,
-  mockOrders,
   mockVehicles,
   mockDrivers,
   mockTrips,
@@ -19,12 +17,10 @@ import {
   mockSalesByCity,
   mockSalesByCategory,
   mockOperationalPerformance,
-  mockNotifications,
   mockAdminUsers,
   mockAuditLogs,
   mockCitiesConfig,
   mockPlatformSettings,
-  mockSupportTickets,
   mockSystemServices,
   mockMaintenanceWindows,
   mockMaintenanceTasks,
@@ -71,19 +67,25 @@ import { Driver } from '@/types/driver';
 import { Trip, TripStatus } from '@/types/trip';
 import {
   Delivery,
-  DeliveryStatus,
   DeliverySummaryMetrics,
   DeliveryTimelineEvent,
   AvailableTrip,
 } from '@/types/delivery';
 import { RevenueMetrics, Transaction } from '@/types/finance';
 import { SalesByCity, SalesByCategory, OperationalPerformance } from '@/types/report';
-import { NotificationItem } from '@/types/notification';
-import { AdminUser, AuditLog, ActiveSession, SecurityAlert, IpBlockRule, FailedLoginLog } from '@/types/security';
+import { Notification, NotificationSummary } from '@/types/notification';
+import { AdminUser, AuditLog, ActiveSession, SecurityAlert, IpBlockRule, FailedLoginLog, SecurityStatistics, SecurityEventItem } from '@/types/security';
 import { CityConfig, PlatformSettings } from '@/types/settings';
-import { SupportTicket, TicketStatus } from '@/types/support';
+import { SupportTicket, TicketStatus, SupportCategory, SupportStatistics } from '@/types/support';
 import { SystemService, MaintenanceWindow, MaintenanceTask, EquipmentServiceLog } from '@/types/maintenance';
-import { FeedbackItem, FeedbackMetrics, FeedbackStatus } from '@/types/feedback';
+import {
+  FeedbackItem,
+  FeedbackMetrics,
+  FeedbackStatus,
+  FeedbackCategory,
+  FeedbackModerationAction,
+  FeedbackReportItem,
+} from '@/types/feedback';
 
 import { PaginatedResponse, QueryOptions } from '@/types/api';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants';
@@ -202,13 +204,24 @@ async function fetchAuthApi<T = BackendAuthPayload>(endpoint: string, options: R
       credentials: 'include',
     });
   } catch {
-    throw new ApiResponseError('Unable to connect to Ardab Market authentication server. Please check your connection.', 503, 'NETWORK_ERROR');
+    throw new ApiResponseError('Unable to connect to Ardab Market server. Please check your connection.', 503, 'NETWORK_ERROR');
   }
 
   let data: BackendAuthPayload;
   try {
     data = (await response.json()) as BackendAuthPayload;
   } catch {
+    if (response.status === 401) {
+      setAuthToken(null);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('auth:session_expired', {
+            detail: { code: 'SESSION_EXPIRED', message: 'Your session has expired. Please sign in again.', status: 401 },
+          })
+        );
+      }
+      throw new ApiResponseError('Your session has expired. Please sign in again.', 401, 'SESSION_EXPIRED');
+    }
     throw new ApiResponseError('Server returned an invalid response format.', response.status, 'INVALID_RESPONSE');
   }
 
@@ -225,6 +238,23 @@ async function fetchAuthApi<T = BackendAuthPayload>(endpoint: string, options: R
       message = 'Too many attempts. Please wait and try again.';
     } else if (code === 'INVALID_RESET_TOKEN') {
       message = 'This password reset link is invalid or has expired.';
+    }
+
+    if (
+      response.status === 401 ||
+      code === 'SESSION_EXPIRED' ||
+      code === 'SESSION_REVOKED' ||
+      code === 'TOKEN_EXPIRED' ||
+      code === 'INVALID_TOKEN'
+    ) {
+      setAuthToken(null);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('auth:session_expired', {
+            detail: { code, message, status: response.status },
+          })
+        );
+      }
     }
 
     throw new ApiResponseError(message, response.status, code);
@@ -1602,129 +1632,107 @@ export const reportsApi = {
 // 7. System: Notifications, Security, Settings (GET/POST /api/system/*)
 // ==========================================
 export const notificationsApi = {
-  getAll: async (): Promise<NotificationItem[]> => {
-    await delay(50);
-    return [...mockNotifications];
+  getSummary: async (): Promise<NotificationSummary> => {
+    return fetchAuthApi<NotificationSummary>('/api/v1/admin/notifications/summary');
   },
 
-  markAsRead: async (id: string): Promise<void> => {
-    await delay(40);
-    const item = mockNotifications.find((n) => n.id === id);
-    if (item) item.isRead = true;
+  list: async (params?: Record<string, unknown>): Promise<PaginatedResponse<Notification>> => {
+    const queryStr = params
+      ? '?' +
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== null && v !== '')
+          .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+          .join('&')
+      : '';
+    return fetchAuthApi<PaginatedResponse<Notification>>(`/api/v1/admin/notifications${queryStr}`);
   },
 
-  markAllAsRead: async (): Promise<void> => {
-    await delay(60);
-    mockNotifications.forEach((n) => (n.isRead = true));
+  getById: async (id: string): Promise<Notification> => {
+    return fetchAuthApi<Notification>(`/api/v1/admin/notifications/${id}`);
   },
 
-  getPaginated: async (options: QueryOptions = {}): Promise<PaginatedResponse<NotificationItem>> => {
-    await delay(60);
-    const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search, status } = options;
-    let results = [...mockNotifications];
-
-    if (status === 'UNREAD') {
-      results = results.filter((n) => !n.isRead);
-    } else if (status === 'READ') {
-      results = results.filter((n) => n.isRead);
-    }
-
-    if (search && search.trim()) {
-      const q = search.trim().toLowerCase();
-      results = results.filter(
-        (n) => n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q)
-      );
-    }
-
-    return paginateItems(results, page, pageSize);
-  },
-
-  bulkMarkAsRead: async (ids: string[]): Promise<number> => {
-    await delay(70);
-    let count = 0;
-    mockNotifications.forEach((n) => {
-      if (ids.includes(n.id)) {
-        n.isRead = true;
-        count++;
-      }
+  create: async (data: Record<string, unknown>): Promise<Notification> => {
+    return fetchAuthApi<Notification>('/api/v1/admin/notifications', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
-    return count;
+  },
+
+  markAsRead: async (id: string): Promise<Notification> => {
+    return fetchAuthApi<Notification>(`/api/v1/admin/notifications/${id}/read`, {
+      method: 'PATCH',
+    });
+  },
+
+  markAllAsRead: async (category?: string): Promise<{ updatedCount: number }> => {
+    return fetchAuthApi<{ updatedCount: number }>('/api/v1/admin/notifications/mark-all-read', {
+      method: 'POST',
+      body: JSON.stringify({ category: category || 'ALL' }),
+    });
+  },
+
+  bulkMarkAsRead: async (notificationIds: string[]): Promise<{ updatedCount: number }> => {
+    return fetchAuthApi<{ updatedCount: number }>('/api/v1/admin/notifications/bulk-read', {
+      method: 'POST',
+      body: JSON.stringify({ notificationIds }),
+    });
+  },
+
+  acknowledgeAlert: async (id: string, notes?: string): Promise<Notification> => {
+    return fetchAuthApi<Notification>(`/api/v1/admin/notifications/${id}/acknowledge`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  },
+
+  bulkAcknowledgeAlerts: async (notificationIds: string[], notes?: string): Promise<{ updatedCount: number }> => {
+    return fetchAuthApi<{ updatedCount: number }>('/api/v1/admin/notifications/bulk-acknowledge', {
+      method: 'POST',
+      body: JSON.stringify({ notificationIds, notes }),
+    });
   },
 };
 
 export const securityApi = {
+  getStatistics: async (): Promise<SecurityStatistics> => {
+    const res = await fetchAuthApi<{ success: boolean; data: SecurityStatistics }>(
+      '/api/subadmin/security/statistics',
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
   getAdminUsers: async (): Promise<AdminUser[]> => {
-    await delay(60);
-    return [...mockAdminUsers];
+    const res = await fetchAuthApi<{ success: boolean; data: AdminUser[] }>(
+      '/api/subadmin/security/super-admins?limit=100',
+      { method: 'GET' }
+    );
+    return res.data || [];
   },
 
-  getAuditLogs: async (): Promise<AuditLog[]> => {
-    await delay(80);
-    return [...mockAuditLogs];
-  },
-
-  getActiveSessions: async (): Promise<ActiveSession[]> => {
-    await delay(60);
-    return [...mockActiveSessions];
-  },
-
-  revokeSession: async (id: string): Promise<ActiveSession> => {
-    await delay(80);
-    const session = mockActiveSessions.find((s) => s.id === id);
-    if (session) {
-      session.status = 'REVOKED';
-      return { ...session };
+  getSuperAdminAccounts: async (params?: Record<string, unknown>): Promise<AdminUser[]> => {
+    const sp = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          sp.append(k, String(v));
+        }
+      });
     }
-    throw new Error('Session not found');
+    const query = sp.toString() ? `?${sp.toString()}` : '?limit=100';
+    const res = await fetchAuthApi<{ success: boolean; data: AdminUser[] }>(
+      `/api/subadmin/security/super-admins${query}`,
+      { method: 'GET' }
+    );
+    return res.data || [];
   },
 
-  getSecurityAlerts: async (): Promise<SecurityAlert[]> => {
-    await delay(60);
-    return [...mockSecurityAlerts];
-  },
-
-  resolveAlert: async (id: string, adminName: string = 'Eden Tilahun'): Promise<SecurityAlert> => {
-    await delay(80);
-    const alert = mockSecurityAlerts.find((a) => a.id === id);
-    if (alert) {
-      alert.resolved = true;
-      alert.resolvedBy = adminName;
-      return { ...alert };
-    }
-    throw new Error('Alert not found');
-  },
-
-  getIpRules: async (): Promise<IpBlockRule[]> => {
-    await delay(50);
-    return [...mockIpBlockRules];
-  },
-
-  addIpRule: async (rule: Omit<IpBlockRule, 'id'>): Promise<IpBlockRule> => {
-    await delay(80);
-    const newRule: IpBlockRule = {
-      ...rule,
-      id: `IPR-${String(mockIpBlockRules.length + 1).padStart(3, '0')}`,
-    };
-    mockIpBlockRules.unshift(newRule);
-    return newRule;
-  },
-
-  deleteIpRule: async (id: string): Promise<void> => {
-    await delay(60);
-    const idx = mockIpBlockRules.findIndex((r) => r.id === id);
-    if (idx !== -1) {
-      mockIpBlockRules.splice(idx, 1);
-    }
-  },
-
-  getFailedLogins: async (): Promise<FailedLoginLog[]> => {
-    await delay(60);
-    return [...mockFailedLogins];
-  },
-
-  getSuperAdminAccounts: async (): Promise<AdminUser[]> => {
-    await delay(60);
-    return mockAdminUsers.filter((u) => u.role === 'SUPER_ADMIN');
+  getSuperAdminById: async (id: string): Promise<AdminUser> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AdminUser }>(
+      `/api/subadmin/security/super-admins/${id}`,
+      { method: 'GET' }
+    );
+    return res.data;
   },
 
   createSuperAdminAccount: async (data: {
@@ -1734,275 +1742,619 @@ export const securityApi = {
     assignedCities: string[];
     initialPassword?: string;
   }): Promise<AdminUser> => {
-    await delay(120);
-    const newAdmin: AdminUser = {
-      id: `ADM-${String(mockAdminUsers.length + 1).padStart(3, '0')}`,
-      name: data.name,
-      email: data.email,
-      phone: data.phone || '+251 91 000 0000',
-      role: 'SUPER_ADMIN',
-      status: 'ACTIVE',
-      lastLogin: 'Never (Newly Created)',
-      assignedCities: data.assignedCities.length > 0 ? data.assignedCities : ['All Cities'],
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    mockAdminUsers.unshift(newAdmin);
-
-    mockAuditLogs.unshift({
-      id: `LOG-${Date.now().toString().slice(-4)}`,
-      adminName: 'Eden Tilahun (Sub Admin)',
-      adminEmail: 'subadmin@ardabmarket.com',
-      action: 'CREATE_SUPER_ADMIN_ACCOUNT',
-      entity: 'SuperAdminUser',
-      entityId: newAdmin.id,
-      ipAddress: '197.156.98.12 (Internal Sub Admin)',
-      timestamp: 'Just now',
-      changesSummary: `Super Admin account created for ${newAdmin.name} (${newAdmin.email}) with cities: ${newAdmin.assignedCities.join(', ')}`,
-      status: 'SUCCESS',
-    });
-
-    return newAdmin;
-  },
-
-  toggleSuperAdminStatus: async (id: string): Promise<AdminUser> => {
-    await delay(90);
-    const user = mockAdminUsers.find((u) => u.id === id);
-    if (user) {
-      user.status = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-      mockAuditLogs.unshift({
-        id: `LOG-${Date.now().toString().slice(-4)}`,
-        adminName: 'Eden Tilahun (Sub Admin)',
-        adminEmail: 'subadmin@ardabmarket.com',
-        action: user.status === 'ACTIVE' ? 'REACTIVATE_SUPER_ADMIN' : 'SUSPEND_SUPER_ADMIN',
-        entity: 'SuperAdminUser',
-        entityId: user.id,
-        ipAddress: '197.156.98.12',
-        timestamp: 'Just now',
-        changesSummary: `Account status updated to ${user.status} for Super Admin ${user.name}`,
-        status: user.status === 'ACTIVE' ? 'SUCCESS' : 'WARNING',
-      });
-      return { ...user };
-    }
-    throw new Error('Super Admin user not found');
-  },
-
-  resetSuperAdminPassword: async (id: string): Promise<{ success: boolean; tempPassword: string }> => {
-    await delay(100);
-    const user = mockAdminUsers.find((u) => u.id === id);
-    if (user) {
-      const tempPassword = `Ardab@${Math.floor(1000 + Math.random() * 9000)}`;
-      mockAuditLogs.unshift({
-        id: `LOG-${Date.now().toString().slice(-4)}`,
-        adminName: 'Eden Tilahun (Sub Admin)',
-        adminEmail: 'subadmin@ardabmarket.com',
-        action: 'RESET_SUPER_ADMIN_PASSWORD',
-        entity: 'SuperAdminUser',
-        entityId: user.id,
-        ipAddress: '197.156.98.12',
-        timestamp: 'Just now',
-        changesSummary: `Temporary security credential generated and dispatched for ${user.email}`,
-        status: 'SUCCESS',
-      });
-      return { success: true, tempPassword };
-    }
-    throw new Error('Super Admin user not found');
+    const res = await fetchAuthApi<{ success: boolean; data: AdminUser }>(
+      '/api/subadmin/security/super-admins',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return res.data;
   },
 
   updateSuperAdminAccount: async (id: string, data: Partial<AdminUser>): Promise<AdminUser> => {
-    await delay(100);
-    const user = mockAdminUsers.find((u) => u.id === id);
-    if (user) {
-      if (data.name) user.name = data.name;
-      if (data.email) user.email = data.email;
-      if (data.phone) user.phone = data.phone;
-      if (data.assignedCities) user.assignedCities = data.assignedCities;
-      if (data.status) user.status = data.status;
+    const res = await fetchAuthApi<{ success: boolean; data: AdminUser }>(
+      `/api/subadmin/security/super-admins/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }
+    );
+    return res.data;
+  },
 
-      mockAuditLogs.unshift({
-        id: `LOG-${Date.now().toString().slice(-4)}`,
-        adminName: 'Eden Tilahun (Sub Admin)',
-        adminEmail: 'subadmin@ardabmarket.com',
-        action: 'UPDATE_SUPER_ADMIN_ACCOUNT',
-        entity: 'SuperAdminUser',
-        entityId: user.id,
-        ipAddress: '197.156.98.12',
-        timestamp: 'Just now',
-        changesSummary: `Super Admin account details updated for ${user.name} (${user.email})`,
-        status: 'SUCCESS',
-      });
-      return { ...user };
-    }
-    throw new Error('Super Admin user not found');
+  toggleSuperAdminStatus: async (id: string, reason?: string): Promise<AdminUser> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AdminUser }>(
+      `/api/subadmin/security/super-admins/${id}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      }
+    );
+    return res.data;
+  },
+
+  resetSuperAdminPassword: async (id: string): Promise<{ success: boolean; tempPassword: string }> => {
+    const res = await fetchAuthApi<{ success: boolean; data: { success: boolean; tempPassword: string } }>(
+      `/api/subadmin/security/super-admins/${id}/reset-password`,
+      { method: 'POST' }
+    );
+    return res.data;
   },
 
   deleteSuperAdminAccount: async (id: string): Promise<boolean> => {
-    await delay(100);
-    const idx = mockAdminUsers.findIndex((u) => u.id === id);
-    if (idx !== -1) {
-      const removed = mockAdminUsers.splice(idx, 1)[0];
-      mockAuditLogs.unshift({
-        id: `LOG-${Date.now().toString().slice(-4)}`,
-        adminName: 'Eden Tilahun (Sub Admin)',
-        adminEmail: 'subadmin@ardabmarket.com',
-        action: 'DELETE_SUPER_ADMIN_ACCOUNT',
-        entity: 'SuperAdminUser',
-        entityId: id,
-        ipAddress: '197.156.98.12',
-        timestamp: 'Just now',
-        changesSummary: `Super Admin account deleted for ${removed.name} (${removed.email})`,
-        status: 'WARNING',
+    await fetchAuthApi<{ success: boolean }>(
+      `/api/subadmin/security/super-admins/${id}`,
+      { method: 'DELETE' }
+    );
+    return true;
+  },
+
+  getActiveSessions: async (): Promise<ActiveSession[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: ActiveSession[] }>(
+      '/api/subadmin/security/sessions',
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  revokeSession: async (id: string): Promise<ActiveSession> => {
+    const res = await fetchAuthApi<{ success: boolean; data: ActiveSession }>(
+      `/api/subadmin/security/sessions/${id}/revoke`,
+      { method: 'POST' }
+    );
+    return res.data;
+  },
+
+  getSecurityAlerts: async (): Promise<SecurityAlert[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: SecurityAlert[] }>(
+      '/api/subadmin/security/alerts?limit=100',
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  resolveAlert: async (id: string, resolutionNotes?: string): Promise<SecurityAlert> => {
+    const res = await fetchAuthApi<{ success: boolean; data: SecurityAlert }>(
+      `/api/subadmin/security/alerts/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'RESOLVED', action: 'RESOLVE', resolutionNotes }),
+      }
+    );
+    return res.data;
+  },
+
+  getIpRules: async (): Promise<IpBlockRule[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: IpBlockRule[] }>(
+      '/api/subadmin/security/ip-rules',
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  addIpRule: async (rule: Omit<IpBlockRule, 'id'>): Promise<IpBlockRule> => {
+    const res = await fetchAuthApi<{ success: boolean; data: IpBlockRule }>(
+      '/api/subadmin/security/ip-rules',
+      {
+        method: 'POST',
+        body: JSON.stringify(rule),
+      }
+    );
+    return res.data;
+  },
+
+  deleteIpRule: async (id: string): Promise<void> => {
+    await fetchAuthApi<{ success: boolean }>(
+      `/api/subadmin/security/ip-rules/${id}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  getFailedLogins: async (): Promise<FailedLoginLog[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FailedLoginLog[] }>(
+      '/api/subadmin/security/failed-logins?limit=100',
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  getAuditLogs: async (): Promise<AuditLog[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AuditLog[] }>(
+      '/api/subadmin/security/audit-logs?limit=100',
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  getEvents: async (params?: Record<string, unknown>): Promise<PaginatedResponse<SecurityEventItem>> => {
+    const sp = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          sp.append(k, String(v));
+        }
       });
-      return true;
     }
-    return false;
+    const query = sp.toString() ? `?${sp.toString()}` : '';
+    const res = await fetchAuthApi<{ success: boolean; data: SecurityEventItem[]; pagination: any }>(
+      `/api/subadmin/security/events${query}`,
+      { method: 'GET' }
+    );
+    return {
+      data: res.data || [],
+      pagination: res.pagination || { page: 1, pageSize: 20, total: (res.data || []).length, totalPages: 1 },
+    };
   },
 };
 
 // ==========================================
 // 8. Sub Admin Services (Support, Maintenance, Feedback)
 // ==========================================
+export interface SupportListParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+  priority?: string;
+  category?: string;
+  assignedTo?: string;
+  city?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface SupportListResult {
+  items: SupportTicket[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
 export const supportApi = {
-  getAll: async (filterCity?: string, status?: string): Promise<SupportTicket[]> => {
-    await delay(80);
-    let results = [...mockSupportTickets];
-    if (filterCity && filterCity !== 'All Cities') {
-      results = results.filter((t) => t.city === filterCity);
+  getAll: async (params?: SupportListParams | string, statusParam?: string): Promise<SupportTicket[]> => {
+    let query = '';
+    if (typeof params === 'string') {
+      const sp = new URLSearchParams();
+      if (params && params !== 'All Cities') sp.append('city', params);
+      if (statusParam && statusParam !== 'ALL') sp.append('status', statusParam);
+      query = sp.toString() ? `?${sp.toString()}` : '';
+    } else if (params) {
+      const sp = new URLSearchParams();
+      if (params.page) sp.append('page', String(params.page));
+      if (params.pageSize) sp.append('pageSize', String(params.pageSize));
+      if (params.search) sp.append('search', params.search);
+      if (params.status && params.status !== 'ALL') sp.append('status', params.status);
+      if (params.priority && params.priority !== 'ALL') sp.append('priority', params.priority);
+      if (params.category && params.category !== 'ALL') sp.append('category', params.category);
+      if (params.assignedTo) sp.append('assignedTo', params.assignedTo);
+      if (params.city && params.city !== 'All Cities') sp.append('city', params.city);
+      if (params.sortBy) sp.append('sortBy', params.sortBy);
+      if (params.sortOrder) sp.append('sortOrder', params.sortOrder);
+      query = sp.toString() ? `?${sp.toString()}` : '';
     }
-    if (status && status !== 'ALL') {
-      results = results.filter((t) => t.status === status);
-    }
-    return results;
+
+    const res = await fetchAuthApi<{ success: boolean; data: SupportTicket[]; pagination?: any }>(
+      `/api/subadmin/support/tickets${query}`,
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  getList: async (params: SupportListParams): Promise<SupportListResult> => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.append('page', String(params.page));
+    if (params.pageSize) sp.append('pageSize', String(params.pageSize));
+    if (params.search) sp.append('search', params.search);
+    if (params.status && params.status !== 'ALL') sp.append('status', params.status);
+    if (params.priority && params.priority !== 'ALL') sp.append('priority', params.priority);
+    if (params.category && params.category !== 'ALL') sp.append('category', params.category);
+    if (params.assignedTo) sp.append('assignedTo', params.assignedTo);
+    if (params.city && params.city !== 'All Cities') sp.append('city', params.city);
+    if (params.sortBy) sp.append('sortBy', params.sortBy);
+    if (params.sortOrder) sp.append('sortOrder', params.sortOrder);
+    const query = sp.toString() ? `?${sp.toString()}` : '';
+
+    const res = await fetchAuthApi<{ success: boolean; data: SupportTicket[]; pagination: any }>(
+      `/api/subadmin/support/tickets${query}`,
+      { method: 'GET' }
+    );
+    return {
+      items: res.data || [],
+      pagination: res.pagination || { page: 1, pageSize: 20, total: (res.data || []).length, totalPages: 1 },
+    };
+  },
+
+  getStatistics: async (city?: string): Promise<SupportStatistics> => {
+    const query = city && city !== 'All Cities' ? `?city=${encodeURIComponent(city)}` : '';
+    const res = await fetchAuthApi<{ success: boolean; data: SupportStatistics }>(
+      `/api/subadmin/support/statistics${query}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
+  getCategories: async (): Promise<SupportCategory[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: SupportCategory[] }>(
+      '/api/subadmin/support/categories',
+      { method: 'GET' }
+    );
+    return res.data || [];
   },
 
   getById: async (id: string): Promise<SupportTicket | undefined> => {
-    await delay(50);
-    return mockSupportTickets.find((t) => t.id === id);
+    const res = await fetchAuthApi<{ success: boolean; data: SupportTicket }>(
+      `/api/subadmin/support/tickets/${id}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
+  create: async (payload: {
+    customerId: string;
+    subject: string;
+    description?: string;
+    categoryId?: string;
+    priority?: string;
+    city?: string;
+    orderId?: string;
+  }): Promise<SupportTicket> => {
+    const res = await fetchAuthApi<{ success: boolean; data: SupportTicket }>(
+      '/api/subadmin/support/tickets',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+    return res.data;
+  },
+
+  reply: async (ticketId: string, body: string, idempotencyKey?: string): Promise<{ message: any; emailDelivery: any }> => {
+    const res = await fetchAuthApi<{ success: boolean; data: { message: any; emailDelivery: any } }>(
+      `/api/subadmin/support/tickets/${ticketId}/reply`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ body, idempotencyKey }),
+      }
+    );
+    return res.data;
+  },
+
+  addInternalNote: async (ticketId: string, body: string): Promise<any> => {
+    const res = await fetchAuthApi<{ success: boolean; data: any }>(
+      `/api/subadmin/support/tickets/${ticketId}/internal-note`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      }
+    );
+    return res.data;
   },
 
   updateStatus: async (id: string, status: TicketStatus, notes?: string): Promise<SupportTicket> => {
-    await delay(80);
-    const ticket = mockSupportTickets.find((t) => t.id === id);
-    if (ticket) {
-      ticket.status = status;
-      ticket.updatedAt = new Date().toISOString();
-      if (notes) ticket.resolutionNotes = notes;
-      return { ...ticket };
-    }
-    throw new Error('Ticket not found');
+    const res = await fetchAuthApi<{ success: boolean; data: SupportTicket }>(
+      `/api/subadmin/support/tickets/${id}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status, notes }),
+      }
+    );
+    return res.data;
   },
 
-  addMessage: async (ticketId: string, message: string, senderName: string = 'Eden Tilahun'): Promise<SupportTicket> => {
-    await delay(80);
-    const ticket = mockSupportTickets.find((t) => t.id === ticketId);
-    if (ticket) {
-      ticket.messages.push({
-        id: `MSG-${String(ticket.messages.length + 1).padStart(2, '0')}`,
-        senderName,
-        senderType: 'SUB_ADMIN',
-        message,
-        timestamp: 'Just now',
-      });
-      ticket.updatedAt = new Date().toISOString();
-      return { ...ticket };
-    }
-    throw new Error('Ticket not found');
+  assign: async (id: string, assignedSubadminId: string | null): Promise<SupportTicket> => {
+    const res = await fetchAuthApi<{ success: boolean; data: SupportTicket }>(
+      `/api/subadmin/support/tickets/${id}/assign`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ assignedSubadminId }),
+      }
+    );
+    return res.data;
+  },
+
+  retryEmail: async (ticketId: string, emailLogId: string): Promise<{ success: boolean; attempts: number }> => {
+    const res = await fetchAuthApi<{ success: boolean; data: { success: boolean; attempts: number } }>(
+      `/api/subadmin/support/tickets/${ticketId}/emails/${emailLogId}/retry`,
+      {
+        method: 'POST',
+      }
+    );
+    return res.data;
+  },
+
+  // Backward compatibility wrapper for existing callers
+  addMessage: async (ticketId: string, message: string): Promise<SupportTicket> => {
+    await supportApi.reply(ticketId, message);
+    const updated = await supportApi.getById(ticketId);
+    return updated!;
   },
 };
 
 export const maintenanceApi = {
+  /**
+   * GET /api/admin/maintenance/services
+   * List system components (live health status).
+   */
   getServices: async (): Promise<SystemService[]> => {
-    await delay(60);
-    return [...mockSystemServices];
+    try {
+      const res = await fetchAuthApi<{ success: boolean; data: SystemService[] }>(
+        '/api/admin/maintenance/services',
+        { method: 'GET' }
+      );
+      return res.data || [];
+    } catch {
+      return [];
+    }
   },
 
-  getMaintenanceWindows: async (): Promise<MaintenanceWindow[]> => {
-    await delay(60);
-    return [...mockMaintenanceWindows];
+  /**
+   * GET /api/admin/maintenance/windows
+   * List maintenance windows with optional filters.
+   */
+  getMaintenanceWindows: async (params?: Record<string, unknown>): Promise<MaintenanceWindow[]> => {
+    try {
+      const sp = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '' && v !== 'ALL') sp.append(k, String(v));
+        });
+      }
+      sp.set('limit', '100');
+      const res = await fetchAuthApi<{ success: boolean; data: MaintenanceWindow[] }>(
+        `/api/admin/maintenance/windows?${sp.toString()}`,
+        { method: 'GET' }
+      );
+      return res.data || [];
+    } catch {
+      return [];
+    }
   },
 
+  /**
+   * POST /api/admin/maintenance/windows
+   * Create a new maintenance window.
+   */
   createWindow: async (window: Omit<MaintenanceWindow, 'id'>): Promise<MaintenanceWindow> => {
-    await delay(100);
-    const newWindow: MaintenanceWindow = {
-      ...window,
-      id: `MW-${String(mockMaintenanceWindows.length + 201)}`,
-    };
-    mockMaintenanceWindows.unshift(newWindow);
-    return newWindow;
+    const res = await fetchAuthApi<{ success: boolean; data: MaintenanceWindow }>(
+      '/api/admin/maintenance/windows',
+      { method: 'POST', body: JSON.stringify(window) }
+    );
+    return res.data;
   },
 
+  /**
+   * PATCH /api/admin/maintenance/windows/:id/status
+   * Update a maintenance window's status.
+   */
   updateWindowStatus: async (id: string, status: MaintenanceWindow['status']): Promise<MaintenanceWindow> => {
-    await delay(80);
-    const win = mockMaintenanceWindows.find((w) => w.id === id);
-    if (win) {
-      win.status = status;
-      return { ...win };
-    }
-    throw new Error('Maintenance window not found');
+    const res = await fetchAuthApi<{ success: boolean; data: MaintenanceWindow }>(
+      `/api/admin/maintenance/windows/${id}/status`,
+      { method: 'PATCH', body: JSON.stringify({ status }) }
+    );
+    return res.data;
   },
 
+  /**
+   * GET /api/admin/maintenance/tasks
+   * List all maintenance/optimization tasks.
+   */
   getTasks: async (): Promise<MaintenanceTask[]> => {
-    await delay(50);
-    return [...mockMaintenanceTasks];
+    try {
+      const res = await fetchAuthApi<{ success: boolean; data: MaintenanceTask[] }>(
+        '/api/admin/maintenance/tasks',
+        { method: 'GET' }
+      );
+      return res.data || [];
+    } catch {
+      return [];
+    }
   },
 
+  /**
+   * POST /api/admin/maintenance/tasks/:id/run
+   * Manually trigger a maintenance task.
+   */
   runTask: async (id: string): Promise<MaintenanceTask> => {
-    await delay(150);
-    const task = mockMaintenanceTasks.find((t) => t.id === id);
-    if (task) {
-      task.lastRun = 'Just now';
-      task.status = 'SUCCESS';
-      return { ...task };
-    }
-    throw new Error('Task not found');
+    const res = await fetchAuthApi<{ success: boolean; data: MaintenanceTask }>(
+      `/api/admin/maintenance/tasks/${id}/run`,
+      { method: 'POST' }
+    );
+    return res.data;
   },
 
+  /**
+   * GET /api/admin/maintenance/fleet
+   * List fleet equipment service logs, optionally filtered by city name.
+   */
   getEquipmentLogs: async (city?: string): Promise<EquipmentServiceLog[]> => {
-    await delay(70);
-    if (city && city !== 'All Cities') {
-      return mockEquipmentLogs.filter((l) => l.city === city);
+    try {
+      const sp = new URLSearchParams();
+      if (city && city !== 'All Cities') sp.set('cityName', city);
+      sp.set('limit', '100');
+      const res = await fetchAuthApi<{ success: boolean; data: EquipmentServiceLog[] }>(
+        `/api/admin/maintenance/fleet?${sp.toString()}`,
+        { method: 'GET' }
+      );
+      return res.data || [];
+    } catch {
+      return [];
     }
-    return [...mockEquipmentLogs];
+  },
+
+  /**
+   * GET /api/admin/maintenance/statistics
+   * Maintenance dashboard KPI statistics.
+   */
+  getStatistics: async () => {
+    try {
+      const res = await fetchAuthApi<{ success: boolean; data: Record<string, unknown> }>(
+        '/api/admin/maintenance/statistics',
+        { method: 'GET' }
+      );
+      return res.data || {};
+    } catch {
+      return {};
+    }
   },
 };
 
 export const feedbackApi = {
   getAll: async (type?: string, city?: string): Promise<FeedbackItem[]> => {
-    await delay(80);
-    let results = [...mockFeedbackItems];
-    if (type && type !== 'ALL') {
-      results = results.filter((f) => f.type === type);
-    }
-    if (city && city !== 'All Cities') {
-      results = results.filter((f) => f.city === city);
-    }
-    return results;
+    const sp = new URLSearchParams();
+    if (type && type !== 'ALL') sp.append('type', type);
+    if (city && city !== 'All Cities') sp.append('city', city);
+    sp.append('limit', '100');
+    const query = sp.toString() ? `?${sp.toString()}` : '';
+
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackItem[] }>(
+      `/api/subadmin/feedback${query}`,
+      { method: 'GET' }
+    );
+    return res.data || [];
   },
 
-  getMetrics: async (): Promise<FeedbackMetrics> => {
-    await delay(50);
-    return { ...mockFeedbackMetrics };
+  getList: async (params?: Record<string, unknown>): Promise<PaginatedResponse<FeedbackItem>> => {
+    const sp = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL' && v !== 'All Cities') {
+          sp.append(k, String(v));
+        }
+      });
+    }
+    const query = sp.toString() ? `?${sp.toString()}` : '';
+
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackItem[]; pagination: any }>(
+      `/api/subadmin/feedback${query}`,
+      { method: 'GET' }
+    );
+    return {
+      data: res.data || [],
+      pagination: res.pagination || { page: 1, pageSize: 20, total: (res.data || []).length, totalPages: 1 },
+    };
   },
 
-  updateStatus: async (id: string, status: FeedbackStatus): Promise<FeedbackItem> => {
-    await delay(70);
-    const item = mockFeedbackItems.find((f) => f.id === id);
-    if (item) {
-      item.status = status;
-      return { ...item };
-    }
-    throw new Error('Feedback item not found');
+  getById: async (id: string): Promise<FeedbackItem> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackItem }>(
+      `/api/subadmin/feedback/${id}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
+  getMetrics: async (city?: string): Promise<FeedbackMetrics> => {
+    const query = city && city !== 'All Cities' ? `?city=${encodeURIComponent(city)}` : '';
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackMetrics }>(
+      `/api/subadmin/feedback/statistics${query}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
+  getReputation: async (city?: string): Promise<FeedbackMetrics> => {
+    const query = city && city !== 'All Cities' ? `?city=${encodeURIComponent(city)}` : '';
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackMetrics }>(
+      `/api/subadmin/feedback/reputation${query}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
+  getCategories: async (): Promise<FeedbackCategory[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackCategory[] }>(
+      '/api/subadmin/feedback/categories',
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  create: async (payload: Record<string, unknown>): Promise<FeedbackItem> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackItem }>(
+      '/api/subadmin/feedback',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+    return res.data;
+  },
+
+  updateStatus: async (id: string, status: FeedbackStatus, reason?: string): Promise<FeedbackItem> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackItem }>(
+      `/api/subadmin/feedback/${id}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status, reason }),
+      }
+    );
+    return res.data;
   },
 
   replyToFeedback: async (id: string, reply: string): Promise<FeedbackItem> => {
-    await delay(90);
-    const item = mockFeedbackItems.find((f) => f.id === id);
-    if (item) {
-      item.adminReply = reply;
-      item.repliedAt = 'Just now';
-      item.status = 'REVIEWED';
-      return { ...item };
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackItem }>(
+      `/api/subadmin/feedback/${id}/responses`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ body: reply }),
+      }
+    );
+    return res.data;
+  },
+
+  moderate: async (id: string, action: FeedbackModerationAction, reason?: string): Promise<FeedbackItem> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackItem }>(
+      `/api/subadmin/feedback/${id}/moderate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ action, reason }),
+      }
+    );
+    return res.data;
+  },
+
+  report: async (id: string, payload: Record<string, unknown>): Promise<FeedbackReportItem> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackReportItem }>(
+      `/api/subadmin/feedback/${id}/reports`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+    return res.data;
+  },
+
+  getReports: async (params?: Record<string, unknown>): Promise<PaginatedResponse<FeedbackReportItem>> => {
+    const sp = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') sp.append(k, String(v));
+      });
     }
-    throw new Error('Feedback item not found');
+    const query = sp.toString() ? `?${sp.toString()}` : '';
+
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackReportItem[]; pagination: any }>(
+      `/api/subadmin/feedback/reports${query}`,
+      { method: 'GET' }
+    );
+    return {
+      data: res.data || [],
+      pagination: res.pagination || { page: 1, pageSize: 20, total: (res.data || []).length, totalPages: 1 },
+    };
+  },
+
+  reviewReport: async (reportId: string, action: 'DISMISS' | 'TAKE_ACTION', actionTaken?: string): Promise<FeedbackReportItem> => {
+    const res = await fetchAuthApi<{ success: boolean; data: FeedbackReportItem }>(
+      `/api/subadmin/feedback/reports/${reportId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ action, actionTaken }),
+      }
+    );
+    return res.data;
   },
 };
 
@@ -2021,5 +2373,120 @@ export const settingsApi = {
     await delay(120);
     Object.assign(mockPlatformSettings, settings);
     return { ...mockPlatformSettings };
+  },
+};
+
+// ==============================================================================
+// Operational Cities API
+// ==============================================================================
+
+export interface OperationalCity {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  isActive: boolean;
+  latitude?: number;
+  longitude?: number;
+  timezone: string;
+  openIncidents?: number;
+  activeMaintenance?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const citiesApi = {
+  /**
+   * GET /api/admin/cities
+   * List all operational cities.
+   */
+  list: async (includeInactive = false): Promise<OperationalCity[]> => {
+    try {
+      const query = includeInactive ? '?includeInactive=true' : '';
+      const res = await fetchAuthApi<{ success: boolean; data: OperationalCity[] }>(
+        `/api/admin/cities${query}`,
+        { method: 'GET' }
+      );
+      return res.data || [];
+    } catch {
+      // Fallback to static city list if backend unavailable
+      return [
+        { id: 'gdr', name: 'Gondar', code: 'GDR', isActive: true, timezone: 'Africa/Addis_Ababa' },
+        { id: 'bjr', name: 'Bahir Dar', code: 'BJR', isActive: true, timezone: 'Africa/Addis_Ababa' },
+        { id: 'add', name: 'Addis Ababa', code: 'ADD', isActive: true, timezone: 'Africa/Addis_Ababa' },
+      ];
+    }
+  },
+
+  /**
+   * GET /api/admin/cities/health
+   * Get incident + maintenance counts per city.
+   */
+  getHealthOverview: async (): Promise<OperationalCity[]> => {
+    try {
+      const res = await fetchAuthApi<{ success: boolean; data: OperationalCity[] }>(
+        '/api/admin/cities/health',
+        { method: 'GET' }
+      );
+      return res.data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Get city names as simple string array for dropdowns.
+   * Returns ['All Cities', 'Gondar', 'Bahir Dar', ...]
+   */
+  getCityNames: async (): Promise<string[]> => {
+    const cities = await citiesApi.list();
+    return ['All Cities', ...cities.filter((c) => c.isActive).map((c) => c.name)];
+  },
+};
+
+// ==============================================================================
+// Global Search API
+// ==============================================================================
+
+export interface SearchResultItem {
+  id: string;
+  type: string;
+  title: string;
+  subtitle?: string;
+  meta?: string;
+  href?: string;
+  createdAt?: string;
+}
+
+export interface GlobalSearchResponse {
+  query: string;
+  results: Record<string, SearchResultItem[]>;
+  totalMatches: number;
+}
+
+export const searchApi = {
+  /**
+   * GET /api/admin/search?q=<query>
+   * Federated global search across orders, customers, deliveries, etc.
+   */
+  search: async (query: string, options?: { limit?: number; types?: string[] }): Promise<GlobalSearchResponse> => {
+    if (!query || query.trim().length < 2) {
+      return { query, results: {}, totalMatches: 0 };
+    }
+
+    const sp = new URLSearchParams();
+    sp.set('q', query.trim());
+    if (options?.limit) sp.set('limit', String(options.limit));
+    if (options?.types?.length) sp.set('types', options.types.join(','));
+
+    try {
+      const res = await fetchAuthApi<{ success: boolean; data: GlobalSearchResponse }>(
+        `/api/admin/search?${sp.toString()}`,
+        { method: 'GET' }
+      );
+      return res.data || { query, results: {}, totalMatches: 0 };
+    } catch {
+      return { query, results: {}, totalMatches: 0 };
+    }
   },
 };

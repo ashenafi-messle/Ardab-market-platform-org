@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -16,6 +16,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('expired') === 'true') {
+        setSessionExpiredNotice(true);
+      }
+    }
+  }, []);
 
   const fillSuperAdmin = () => {
     setEmail('admin@ardabmarket.com');
@@ -149,6 +159,13 @@ export default function LoginPage() {
                   </button>
                 </div>
               </div>
+
+              {sessionExpiredNotice && !errorMessage && (
+                <div className="alert alert-warning d-flex align-items-center gap-2 p-3 rounded-3 mb-4 border-warning" role="alert">
+                  <i className="bi bi-clock-history flex-shrink-0 fs-5 text-warning"></i>
+                  <div className="small">Your session has expired. Please sign in again to continue.</div>
+                </div>
+              )}
 
               {errorMessage && (
                 <div className="alert alert-danger d-flex align-items-center gap-2 p-3 rounded-3 mb-4" role="alert">

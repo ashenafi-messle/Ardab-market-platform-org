@@ -70,6 +70,23 @@ export function formatNotificationResponse(notification, adminId = null) {
 }
 
 /**
+ * Validates and extracts admin ID from admin user object or string ID.
+ *
+ * @param {object|string} adminUser
+ * @returns {string}
+ */
+export function getAdminId(adminUser) {
+  if (!adminUser) {
+    throw ApiError.unauthorized('Authenticated admin user is required');
+  }
+  const id = typeof adminUser === 'string' ? adminUser : adminUser.id || adminUser.adminId;
+  if (!id) {
+    throw ApiError.unauthorized('Authenticated admin user identity is invalid or missing');
+  }
+  return String(id);
+}
+
+/**
  * Creates a notification or operational alert and distributes to recipient admins.
  *
  * @param {object} params
@@ -172,6 +189,7 @@ export async function createNotification(params, creatorAdmin = null) {
  * @returns {Promise<object>}
  */
 export async function listNotifications({ adminUser, query = {} }) {
+  const adminId = getAdminId(adminUser);
   const {
     page = 1,
     pageSize = 20,
@@ -195,7 +213,7 @@ export async function listNotifications({ adminUser, query = {} }) {
 
   // Recipient-level condition
   const recipientWhere = {
-    adminId: adminUser.id,
+    adminId,
   };
 
   if (typeof isRead === 'boolean') {
@@ -205,9 +223,8 @@ export async function listNotifications({ adminUser, query = {} }) {
     recipientWhere.isAcknowledged = isAcknowledged;
   }
 
-  // Notification-level condition
+  // Notification-level conditions
   const notificationWhere = {};
-
   if (category && category !== 'ALL') {
     notificationWhere.category = category;
   }
@@ -294,13 +311,13 @@ export async function listNotifications({ adminUser, query = {} }) {
     }),
     prisma.notificationRecipient.count({
       where: {
-        adminId: adminUser.id,
+        adminId,
         isRead: false,
       },
     }),
     prisma.notificationRecipient.count({
       where: {
-        adminId: adminUser.id,
+        adminId,
         notification: { isAlert: true },
         isAcknowledged: false,
       },
@@ -310,7 +327,7 @@ export async function listNotifications({ adminUser, query = {} }) {
   const items = recipientRecords.map((r) => {
     const notif = r.notification;
     notif.recipients = [r];
-    return formatNotificationResponse(notif, adminUser.id);
+    return formatNotificationResponse(notif, adminId);
   });
 
   const totalPages = Math.ceil(total / take) || 1;
@@ -336,36 +353,39 @@ export async function listNotifications({ adminUser, query = {} }) {
  * @param {object} options
  * @returns {Promise<object>}
  */
-export async function getNotificationSummary({ adminUser }) {
+export async function getNotificationSummary(options = {}) {
+  const adminUser = options?.adminUser || options;
+  const adminId = getAdminId(adminUser);
+
   const [total, unreadCount, alertCount, criticalCount, byCategoryRaw, recentAlertsRaw] =
     await Promise.all([
       prisma.notificationRecipient.count({
-        where: { adminId: adminUser.id },
+        where: { adminId },
       }),
       prisma.notificationRecipient.count({
-        where: { adminId: adminUser.id, isRead: false },
+        where: { adminId, isRead: false },
       }),
       prisma.notificationRecipient.count({
         where: {
-          adminId: adminUser.id,
+          adminId,
           notification: { isAlert: true },
           isAcknowledged: false,
         },
       }),
       prisma.notificationRecipient.count({
         where: {
-          adminId: adminUser.id,
+          adminId,
           notification: { isAlert: true, severity: 'CRITICAL' },
           isAcknowledged: false,
         },
       }),
       prisma.notificationRecipient.groupBy({
         by: ['notificationId'],
-        where: { adminId: adminUser.id },
+        where: { adminId },
       }),
       prisma.notificationRecipient.findMany({
         where: {
-          adminId: adminUser.id,
+          adminId,
           notification: { isAlert: true },
           isAcknowledged: false,
         },
@@ -393,7 +413,7 @@ export async function getNotificationSummary({ adminUser }) {
   const notificationCategories = await prisma.notification.findMany({
     where: {
       recipients: {
-        some: { adminId: adminUser.id },
+        some: { adminId },
       },
     },
     select: { category: true },
@@ -408,7 +428,7 @@ export async function getNotificationSummary({ adminUser }) {
   const recentAlerts = recentAlertsRaw.map((r) => {
     const notif = r.notification;
     notif.recipients = [r];
-    return formatNotificationResponse(notif, adminUser.id);
+    return formatNotificationResponse(notif, adminId);
   });
 
   return {
@@ -428,6 +448,7 @@ export async function getNotificationSummary({ adminUser }) {
  * @returns {Promise<object>}
  */
 export async function getNotificationById({ id, adminUser }) {
+  const adminId = getAdminId(adminUser);
   const notification = await prisma.notification.findUnique({
     where: { id },
     include: {
@@ -435,7 +456,7 @@ export async function getNotificationById({ id, adminUser }) {
         select: { id: true, name: true, email: true },
       },
       recipients: {
-        where: { adminId: adminUser.id },
+        where: { adminId },
       },
     },
   });
@@ -444,7 +465,7 @@ export async function getNotificationById({ id, adminUser }) {
     throw ApiError.notFound(`Notification with ID "${id}" not found`);
   }
 
-  return formatNotificationResponse(notification, adminUser.id);
+  return formatNotificationResponse(notification, adminId);
 }
 
 /**
@@ -454,6 +475,7 @@ export async function getNotificationById({ id, adminUser }) {
  * @returns {Promise<object>}
  */
 export async function markAsRead({ id, adminUser }) {
+  const adminId = getAdminId(adminUser);
   const notification = await prisma.notification.findUnique({
     where: { id },
   });
@@ -466,7 +488,7 @@ export async function markAsRead({ id, adminUser }) {
     where: {
       notificationId_adminId: {
         notificationId: id,
-        adminId: adminUser.id,
+        adminId,
       },
     },
     update: {
@@ -475,7 +497,7 @@ export async function markAsRead({ id, adminUser }) {
     },
     create: {
       notificationId: id,
-      adminId: adminUser.id,
+      adminId,
       isRead: true,
       readAt: new Date(),
       isAcknowledged: false,
@@ -483,7 +505,7 @@ export async function markAsRead({ id, adminUser }) {
   });
 
   notification.recipients = [recipient];
-  return formatNotificationResponse(notification, adminUser.id);
+  return formatNotificationResponse(notification, adminId);
 }
 
 /**
@@ -493,8 +515,9 @@ export async function markAsRead({ id, adminUser }) {
  * @returns {Promise<{ updatedCount: number }>}
  */
 export async function markAllAsRead({ adminUser, category = null }) {
+  const adminId = getAdminId(adminUser);
   const whereClause = {
-    adminId: adminUser.id,
+    adminId,
     isRead: false,
   };
 
@@ -520,13 +543,14 @@ export async function markAllAsRead({ adminUser, category = null }) {
  * @returns {Promise<{ updatedCount: number }>}
  */
 export async function bulkMarkAsRead({ notificationIds, adminUser }) {
+  const adminId = getAdminId(adminUser);
   if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
     throw ApiError.badRequest('notificationIds array is required');
   }
 
   const result = await prisma.notificationRecipient.updateMany({
     where: {
-      adminId: adminUser.id,
+      adminId,
       notificationId: { in: notificationIds },
       isRead: false,
     },
@@ -546,6 +570,7 @@ export async function bulkMarkAsRead({ notificationIds, adminUser }) {
  * @returns {Promise<object>}
  */
 export async function acknowledgeAlert({ id, adminUser, notes = null, ipAddress = null }) {
+  const adminId = getAdminId(adminUser);
   const notification = await prisma.notification.findUnique({
     where: { id },
   });
@@ -563,23 +588,23 @@ export async function acknowledgeAlert({ id, adminUser, notes = null, ipAddress 
     where: {
       notificationId_adminId: {
         notificationId: id,
-        adminId: adminUser.id,
+        adminId,
       },
     },
     update: {
       isAcknowledged: true,
       acknowledgedAt: now,
-      acknowledgedById: adminUser.id,
+      acknowledgedById: adminId,
       acknowledgementNotes: notes || null,
       isRead: true,
       readAt: now,
     },
     create: {
       notificationId: id,
-      adminId: adminUser.id,
+      adminId,
       isAcknowledged: true,
       acknowledgedAt: now,
-      acknowledgedById: adminUser.id,
+      acknowledgedById: adminId,
       acknowledgementNotes: notes || null,
       isRead: true,
       readAt: now,
@@ -590,13 +615,13 @@ export async function acknowledgeAlert({ id, adminUser, notes = null, ipAddress 
   try {
     await prisma.auditLog.create({
       data: {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId,
+        adminEmail: adminUser.email || 'system@ardabmarket.com',
         action: 'ACKNOWLEDGE_OPERATIONAL_ALERT',
         entity: 'NOTIFICATION_ALERT',
         entityId: id,
         ipAddress: ipAddress || null,
-        changesSummary: `Operational alert "${notification.title}" [${notification.severity}] acknowledged by ${adminUser.name} (${adminUser.email}). Notes: ${notes || 'None provided'}`,
+        changesSummary: `Operational alert "${notification.title}" [${notification.severity}] acknowledged by ${adminUser.name || adminId} (${adminUser.email || 'Admin'}). Notes: ${notes || 'None provided'}`,
         status: 'SUCCESS',
       },
     });
@@ -608,7 +633,7 @@ export async function acknowledgeAlert({ id, adminUser, notes = null, ipAddress 
   }
 
   notification.recipients = [recipient];
-  return formatNotificationResponse(notification, adminUser.id);
+  return formatNotificationResponse(notification, adminId);
 }
 
 /**
@@ -623,6 +648,7 @@ export async function bulkAcknowledgeAlerts({
   notes = null,
   ipAddress = null,
 }) {
+  const adminId = getAdminId(adminUser);
   if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
     throw ApiError.badRequest('notificationIds array is required');
   }
@@ -630,14 +656,14 @@ export async function bulkAcknowledgeAlerts({
   const now = new Date();
   const result = await prisma.notificationRecipient.updateMany({
     where: {
-      adminId: adminUser.id,
+      adminId,
       notificationId: { in: notificationIds },
       isAcknowledged: false,
     },
     data: {
       isAcknowledged: true,
       acknowledgedAt: now,
-      acknowledgedById: adminUser.id,
+      acknowledgedById: adminId,
       acknowledgementNotes: notes || null,
       isRead: true,
       readAt: now,
@@ -647,13 +673,13 @@ export async function bulkAcknowledgeAlerts({
   try {
     await prisma.auditLog.create({
       data: {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId,
+        adminEmail: adminUser.email || 'system@ardabmarket.com',
         action: 'BULK_ACKNOWLEDGE_OPERATIONAL_ALERTS',
         entity: 'NOTIFICATION_ALERT',
         entityId: notificationIds.join(', '),
         ipAddress: ipAddress || null,
-        changesSummary: `Bulk acknowledged ${result.count} operational alerts by ${adminUser.name}. Notes: ${notes || 'None provided'}`,
+        changesSummary: `Bulk acknowledged ${result.count} operational alerts by ${adminUser.name || adminId}. Notes: ${notes || 'None provided'}`,
         status: 'SUCCESS',
       },
     });

@@ -88,7 +88,7 @@ export interface Customer {
   totalSpendingEtb: number; // Mapped from metrics.totalSpent
   trustScore: number; // Mapped from metrics.totalScore
   addresses?: CustomerAddress[];
-  orders?: any[];
+  orders?: Record<string, unknown>[];
   activities?: CustomerActivityItem[];
   lastActivityAt?: string | null;
   createdAt?: string;

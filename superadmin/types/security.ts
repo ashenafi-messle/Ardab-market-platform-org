@@ -8,6 +8,7 @@ export interface AdminUser {
   lastLogin: string;
   assignedCities: string[];
   createdAt?: string;
+  initialPassword?: string;
 }
 
 export interface PermissionGroup {
@@ -57,6 +58,7 @@ export interface SecurityAlert {
   timestamp: string;
   resolved: boolean;
   resolvedBy?: string;
+  status?: string;
 }
 
 export interface IpBlockRule {
@@ -77,4 +79,29 @@ export interface FailedLoginLog {
   city: string;
   reason: string;
   blocked: boolean;
+}
+
+export interface SecurityStatistics {
+  activeSuperAdmins: number;
+  totalSuperAdmins: number;
+  activeSessions: number;
+  openAlerts: number;
+  unresolvedAlerts?: number;
+  criticalAlerts: number;
+  failedLogins24h: number;
+  blockedIps: number;
+  totalEvents: number;
+}
+
+export interface SecurityEventItem {
+  id: string;
+  eventType: string;
+  severity: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  source: string;
+  actorType: string;
+  actorEmail?: string;
+  ipAddress?: string;
+  endpoint?: string;
+  occurredAt: string;
+  metadata?: Record<string, unknown>;
 }

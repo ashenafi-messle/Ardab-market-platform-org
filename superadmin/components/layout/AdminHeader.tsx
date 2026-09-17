@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { mockNotifications } from '@/lib/mock-data';
+import { notificationsApi, citiesApi, searchApi, ApiResponseError } from '@/lib/api';
+import { NotificationSummary } from '@/types/notification';
 
 interface AdminHeaderProps {
   onToggleMobileMenu: () => void;
@@ -12,10 +13,96 @@ interface AdminHeaderProps {
 
 export default function AdminHeader({ onToggleMobileMenu }: AdminHeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, selectedCity, setSelectedCity, logout } = useAuth();
   const [showCityDropdown, setShowCityDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [cities, setCities] = useState<string[]>(['All Cities', 'Gondar', 'Bahir Dar', 'Addis Ababa']);
+
+  // Global search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Record<string, { id: string; title: string; subtitle?: string; meta?: string; href?: string }[]>>({});
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [notificationSummary, setNotificationSummary] = useState<NotificationSummary | null>(null);
+
+  // Load operational cities from API
+  useEffect(() => {
+    citiesApi.getCityNames().then(setCities).catch(() => {
+      // Keep default fallback already in state
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let isCancelled = false;
+    async function fetchNotifications() {
+      try {
+        const res = await notificationsApi.getSummary();
+        if (!isCancelled) {
+          setNotificationSummary(res);
+        }
+      } catch (err: unknown) {
+        if (
+          err instanceof ApiResponseError &&
+          (err.statusCode === 401 ||
+            err.code === 'SESSION_EXPIRED' ||
+            err.code === 'SESSION_REVOKED' ||
+            err.code === 'TOKEN_EXPIRED')
+        ) {
+          return;
+        }
+        console.error('Failed to load notifications', err);
+      }
+    }
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 60000); // refresh every minute
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  // Debounced global search
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    if (!q || q.trim().length < 2) {
+      setSearchResults({});
+      setSearchTotal(0);
+      setShowSearchResults(false);
+      return;
+    }
+
+    searchDebounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await searchApi.search(q, { limit: 4 });
+        setSearchResults(res.results);
+        setSearchTotal(res.totalMatches);
+        setShowSearchResults(true);
+      } catch {
+        setSearchResults({});
+        setSearchTotal(0);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 350);
+  }, []);
+
+  const handleSearchResultClick = (href?: string) => {
+    setShowSearchResults(false);
+    setSearchQuery('');
+    if (href) router.push(href);
+  };
 
   const isSubRoute = pathname?.startsWith('/subadmin');
   const isSubAdmin = user?.role === 'SUB_ADMIN' || (!user && isSubRoute);
@@ -48,13 +135,17 @@ export default function AdminHeader({ onToggleMobileMenu }: AdminHeaderProps) {
       if (userRef.current && !userRef.current.contains(event.target as Node)) {
         setShowUserDropdown(false);
       }
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSearchResults(false);
+      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const cities = ['All Cities', 'Gondar', 'Bahir Dar', 'Addis Ababa'];
-  const unreadCount = mockNotifications.filter((n) => !n.isRead).length;
+  const unreadCount = notificationSummary?.unreadCount || 0;
+  const recentAlerts = notificationSummary?.recentAlerts || [];
+  const allSearchResults = Object.values(searchResults).flat();
 
   return (
     <header className="ardab-header d-flex align-items-center justify-content-between px-3 px-lg-4">
@@ -111,14 +202,61 @@ export default function AdminHeader({ onToggleMobileMenu }: AdminHeaderProps) {
       {/* Right side: Search, Notifications & Admin Profile */}
       <div className="d-flex align-items-center gap-3">
         {/* Global Operational Search */}
-        <div className="d-none d-md-flex align-items-center position-relative" style={{ width: 260 }}>
-          <i className="bi bi-search position-absolute start-0 ms-3 text-muted" style={{ fontSize: '0.9rem' }}></i>
+        <div className="d-none d-md-flex align-items-center position-relative" style={{ width: 260 }} ref={searchRef}>
+          <i className="bi bi-search position-absolute start-0 ms-3 text-muted" style={{ fontSize: '0.9rem', zIndex: 2 }}></i>
+          {isSearching && (
+            <div className="position-absolute end-0 me-3" style={{ zIndex: 2 }}>
+              <div className="spinner-border spinner-border-sm text-secondary" style={{ width: 14, height: 14 }} role="status"><span className="visually-hidden">Searching...</span></div>
+            </div>
+          )}
           <input
             type="text"
             className="form-control form-control-sm ps-5 bg-light"
             placeholder="Search orders, trips, drivers..."
             style={{ borderRadius: 20 }}
+            value={searchQuery}
+            onChange={handleSearchChange}
+            onFocus={() => { if (searchQuery.length >= 2) setShowSearchResults(true); }}
           />
+
+          {/* Search Results Dropdown */}
+          {showSearchResults && allSearchResults.length > 0 && (
+            <div
+              className="position-absolute bg-white shadow-lg rounded-3 border py-1 mt-1 top-100 start-0"
+              style={{ zIndex: 1055, width: 340, maxHeight: 400, overflowY: 'auto' }}
+            >
+              <div className="px-3 py-1 border-bottom d-flex justify-content-between align-items-center">
+                <span className="text-muted small fw-semibold">{searchTotal} result{searchTotal !== 1 ? 's' : ''} for &quot;{searchQuery}&quot;</span>
+              </div>
+              {Object.entries(searchResults).map(([type, items]) =>
+                items.length > 0 ? (
+                  <div key={type}>
+                    <div className="px-3 pt-2 pb-1">
+                      <span className="text-muted" style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{type}</span>
+                    </div>
+                    {items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="w-100 text-start border-0 bg-transparent px-3 py-2 d-flex align-items-start gap-2 search-result-item"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => handleSearchResultClick(item.href)}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8f9fa')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        <i className="bi bi-arrow-right-circle text-success mt-1" style={{ fontSize: '0.8rem' }}></i>
+                        <div className="lh-sm">
+                          <div className="fw-semibold text-dark" style={{ fontSize: '0.82rem' }}>{item.title}</div>
+                          {item.subtitle && <div className="text-muted" style={{ fontSize: '0.72rem' }}>{item.subtitle}</div>}
+                          {item.meta && <div className="text-muted" style={{ fontSize: '0.68rem' }}>{item.meta}</div>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : null
+              )}
+            </div>
+          )}
         </div>
 
         {/* Notifications Dropdown */}
@@ -151,17 +289,21 @@ export default function AdminHeader({ onToggleMobileMenu }: AdminHeaderProps) {
                 <span className="badge badge-success-soft">{unreadCount} new</span>
               </div>
               <div className="overflow-y-auto" style={{ maxHeight: '280px' }}>
-                {mockNotifications.map((n) => (
-                  <div key={n.id} className={`p-3 border-bottom ${n.isRead ? 'bg-white' : 'bg-light'}`}>
-                    <div className="d-flex align-items-center justify-content-between mb-1">
-                      <span className="fw-semibold text-dark small">{n.title}</span>
-                      <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-                        {n.timestamp}
-                      </span>
+                {recentAlerts.length === 0 ? (
+                  <div className="p-4 text-center text-muted small">No recent alerts</div>
+                ) : (
+                  recentAlerts.map((n) => (
+                    <div key={n.id} className={`p-3 border-bottom ${n.isRead ? 'bg-white' : 'bg-light'}`}>
+                      <div className="d-flex align-items-center justify-content-between mb-1">
+                        <span className="fw-semibold text-dark small">{n.title}</span>
+                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
+                          {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-muted small mb-0 lh-sm">{n.message}</p>
                     </div>
-                    <p className="text-muted small mb-0 lh-sm">{n.message}</p>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
               <div className="p-2 text-center bg-light rounded-bottom">
                 <Link

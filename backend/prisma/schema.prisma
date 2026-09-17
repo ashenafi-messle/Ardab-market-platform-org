@@ -148,6 +148,123 @@ enum NotificationPriority {
   URGENT
 }
 
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportSenderType {
+  CUSTOMER
+  SUBADMIN
+  SYSTEM
+}
+
+enum SupportMessageType {
+  MESSAGE
+  INTERNAL_NOTE
+  SYSTEM_EVENT
+}
+
+enum SupportEmailStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum ComponentCategory {
+  CORE_API
+  DATABASE
+  GIS_ENGINE
+  CACHE
+  TELEMETRY
+  PAYMENTS
+}
+
+enum ServiceHealthStatus {
+  HEALTHY
+  DEGRADED
+  MAINTENANCE
+  OFFLINE
+}
+
+enum MaintenanceType {
+  SCHEDULED
+  EMERGENCY
+  PREVENTIVE
+  CORRECTIVE
+}
+
+enum MaintenanceStatus {
+  PLANNED
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum MaintenancePriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum MaintenanceScope {
+  PLATFORM
+  SERVICE
+  CITY
+  INFRASTRUCTURE
+  DATABASE
+  API
+}
+
+enum MaintenanceTaskCategory {
+  DATABASE
+  CACHE
+  STORAGE
+  SECURITY
+}
+
+enum TaskExecutionStatus {
+  SUCCESS
+  RUNNING
+  FAILED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  IDENTIFIED
+  MONITORING
+  RESOLVED
+  CLOSED
+}
+
+enum EquipmentServiceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+}
+
 // ------------------------------------------------------------------------------
 // Admin Authentication & Identity
 // ------------------------------------------------------------------------------
@@ -163,15 +280,37 @@ model AdminUser {
   phone          String?
   assignedCities String[]   @default(["All Cities"])
   lastLogin      DateTime?
+  failedLoginAttempts Int   @default(0)
+  lockedUntil         DateTime?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  sessions               AdminSession[]
-  passwordResetTokens    PasswordResetToken[]
-  otps                   AdminOtp[]
-  auditLogs              AuditLog[]
-  notifications          Notification[]
-  notificationRecipients NotificationRecipient[]
+  sessions                  AdminSession[]
+  passwordResetTokens       PasswordResetToken[]
+  otps                      AdminOtp[]
+  auditLogs                 AuditLog[]
+  notifications             Notification[]
+  notificationRecipients    NotificationRecipient[]
+  assignedSupportTickets    SupportTicket[]                  @relation("AssignedSubadmin")
+  supportStatusChanges      SupportTicketStatusHistory[]     @relation("StatusChangedBy")
+  supportAssignmentsFrom    SupportTicketAssignmentHistory[] @relation("AssignedFromSubadmin")
+  supportAssignmentsTo      SupportTicketAssignmentHistory[] @relation("AssignedToSubadmin")
+  supportAssignmentsChanged SupportTicketAssignmentHistory[] @relation("AssignmentChangedBy")
+  feedbackResponses         FeedbackResponse[]
+  reviewedFeedbackReports   FeedbackReport[]
+  moderatedFeedbacks        FeedbackModerationHistory[]
+  feedbackStatusChanges     FeedbackStatusHistory[]
+  securityAlertsAssigned    SecurityAlert[]                  @relation("AlertAssignedTo")
+  securityAlertsResolved    SecurityAlert[]                  @relation("AlertResolvedBy")
+  ipRulesCreated            IpBlockRule[]                    @relation("IpRuleCreatedBy")
+  securityAlertChanges      SecurityAlertHistory[]           @relation("AlertChangedBy")
+  maintenanceRecordsCreated MaintenanceRecord[]              @relation("MaintenanceCreatedBy")
+  maintenanceRecordsCompleted MaintenanceRecord[]            @relation("MaintenanceCompletedBy")
+  maintenanceStatusChanges   MaintenanceStatusHistory[]       @relation("MaintenanceStatusChangedBy")
+  maintenanceTasksTriggered MaintenanceTask[]                @relation("TaskTriggeredBy")
+  incidentsCreated           SystemIncident[]                 @relation("IncidentCreatedBy")
+  incidentsAssigned          SystemIncident[]                 @relation("IncidentAssignedTo")
+  incidentsResolved          SystemIncident[]                 @relation("IncidentResolvedBy")
 
   @@index([email])
   @@index([role])
@@ -315,6 +454,7 @@ model Supplier {
   paymentMethods     SupplierPaymentMethod[]
   sellerCategories   SellerMarketplaceCategory[]
   products           Product[]
+  feedbacks          Feedback[]
 
   @@index([companyName])
   @@index([name])
@@ -414,6 +554,7 @@ model Product {
   category              MarketplaceCategory @relation(fields: [marketplaceCategoryId], references: [id], onDelete: Restrict)
   images                ProductImage[]
   orderItems            OrderItem[]
+  feedbacks             Feedback[]
 
   @@index([itemCode])
   @@index([sellerId])
@@ -474,6 +615,8 @@ model Customer {
   scoreEvents        CustomerScoreEvent[]
   activities         CustomerActivity[]
   reviews            CustomerReview[]
+  supportTickets     SupportTicket[]
+  feedbacks          Feedback[]
 
   @@index([customerCode])
   @@index([phone])
@@ -557,6 +700,8 @@ model Order {
   deliveryAddressSnapshot OrderDeliveryAddress?
   activities              OrderActivity[]
   delivery                Delivery?
+  supportTickets          SupportTicket[]
+  feedbacks               Feedback[]
 
   @@index([customerId])
   @@index([customerId, status])
@@ -722,6 +867,7 @@ model Vehicle {
 
   trips        Trip[]
   deliveries   Delivery[]
+  equipmentLogs FleetEquipmentLog[]
 
   @@index([plateNumber])
   @@index([city])
@@ -829,6 +975,7 @@ model Delivery {
   driver               Driver?           @relation(fields: [driverId], references: [id], onDelete: SetNull)
   vehicle              Vehicle?          @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   activities           DeliveryActivity[]
+  feedbacks            Feedback[]
 
   @@index([deliveryNumber])
   @@index([orderId])
@@ -928,4 +1075,836 @@ model NotificationRecipient {
   @@index([createdAt])
   @@map("notification_recipients")
 }
+
+// ------------------------------------------------------------------------------
+// Customer Support Categories
+// ------------------------------------------------------------------------------
+
+model SupportCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tickets     SupportTicket[]
+
+  @@map("support_categories")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Support Tickets
+// ------------------------------------------------------------------------------
+
+model SupportTicket {
+  id                    String                @id @default(uuid())
+  ticketNumber          String                @unique
+  customerId            String
+  assignedSubadminId    String?
+  categoryId            String?
+  orderId               String?
+  city                  String                @default("Gondar")
+  status                SupportTicketStatus   @default(OPEN)
+  priority              SupportTicketPriority @default(NORMAL)
+  subject               String
+  description           String?
+  resolutionNotes       String?
+  lastMessageAt         DateTime              @default(now())
+  lastCustomerMessageAt DateTime?
+  lastAgentMessageAt    DateTime?
+  firstResponseAt       DateTime?
+  resolvedAt            DateTime?
+  closedAt              DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  customer              Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  assignedSubadmin      AdminUser?            @relation("AssignedSubadmin", fields: [assignedSubadminId], references: [id], onDelete: SetNull)
+  category              SupportCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  order                 Order?                @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  messages              SupportMessage[]
+  statusHistory         SupportTicketStatusHistory[]
+  assignmentHistory     SupportTicketAssignmentHistory[]
+  emailLogs             SupportEmailLog[]
+
+  @@index([ticketNumber])
+  @@index([customerId])
+  @@index([customerId, status])
+  @@index([assignedSubadminId])
+  @@index([assignedSubadminId, status])
+  @@index([categoryId])
+  @@index([status])
+  @@index([priority])
+  @@index([city])
+  @@index([lastMessageAt])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+// ------------------------------------------------------------------------------
+// Support Conversation & Messages (Customer Replies & Staff Internal Notes)
+// ------------------------------------------------------------------------------
+
+model SupportMessage {
+  id             String              @id @default(uuid())
+  ticketId       String
+  senderUserId   String
+  senderType     SupportSenderType
+  messageType    SupportMessageType  @default(MESSAGE)
+  body           String
+  isInternal     Boolean             @default(false)
+  emailStatus    SupportEmailStatus?
+  emailMessageId String?
+  idempotencyKey String?             @unique
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  ticket         SupportTicket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  emailLogs      SupportEmailLog[]
+
+  @@index([ticketId])
+  @@index([ticketId, createdAt])
+  @@index([senderUserId])
+  @@index([emailStatus])
+  @@index([createdAt])
+  @@map("support_messages")
+}
+
+// ------------------------------------------------------------------------------
+// Support Ticket Status Transition Audit Trail
+// ------------------------------------------------------------------------------
+
+model SupportTicketStatusHistory {
+  id          String               @id @default(uuid())
+  ticketId    String
+  changedById String
+  oldStatus   SupportTicketStatus?
+  newStatus   SupportTicketStatus
+  reason      String?
+  createdAt   DateTime             @default(now())
+
+  ticket      SupportTicket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  changedBy   AdminUser            @relation("StatusChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([ticketId])
+  @@index([changedById])
+  @@index([createdAt])
+  @@map("support_ticket_status_history")
+}
+
+// ------------------------------------------------------------------------------
+// Support Ticket Staff Assignment Audit Trail
+// ------------------------------------------------------------------------------
+
+model SupportTicketAssignmentHistory {
+  id             String        @id @default(uuid())
+  ticketId       String
+  assignedFromId String?
+  assignedToId   String?
+  changedById    String
+  createdAt      DateTime      @default(now())
+
+  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  assignedFrom   AdminUser?    @relation("AssignedFromSubadmin", fields: [assignedFromId], references: [id], onDelete: SetNull)
+  assignedTo     AdminUser?    @relation("AssignedToSubadmin", fields: [assignedToId], references: [id], onDelete: SetNull)
+  changedBy      AdminUser     @relation("AssignmentChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([ticketId])
+  @@index([assignedFromId])
+  @@index([assignedToId])
+  @@index([changedById])
+  @@index([createdAt])
+  @@map("support_ticket_assignment_history")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Support Transactional Email Delivery Logs
+// ------------------------------------------------------------------------------
+
+model SupportEmailLog {
+  id                String              @id @default(uuid())
+  ticketId          String?
+  messageId         String?
+  recipientEmail    String
+  recipientName     String?
+  subject           String
+  provider          String              @default("brevo")
+  providerMessageId String?
+  status            SupportEmailStatus  @default(QUEUED)
+  attemptCount      Int                 @default(0)
+  lastError         String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  failedAt          DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  ticket            SupportTicket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  message           SupportMessage?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+  @@index([messageId])
+  @@index([recipientEmail])
+  @@index([status])
+  @@index([createdAt])
+  @@map("support_email_logs")
+}
+
+// ------------------------------------------------------------------------------
+// Feedback & Reputation Management Enums
+// ------------------------------------------------------------------------------
+
+enum FeedbackType {
+  PRODUCT
+  DELIVERY
+  PLATFORM
+  SUPPLIER
+  ORDER
+  CUSTOMER_SERVICE
+}
+
+enum FeedbackStatus {
+  NEW
+  PENDING
+  PUBLISHED
+  UNDER_REVIEW
+  REVIEWED
+  RESOLVED
+  FLAGGED
+  HIDDEN
+  REJECTED
+  ARCHIVED
+}
+
+enum FeedbackVisibility {
+  PUBLIC
+  PRIVATE
+  HIDDEN
+}
+
+enum FeedbackSource {
+  ORDER
+  PRODUCT
+  SELLER
+  DELIVERY
+  SUPPORT
+  PLATFORM
+}
+
+enum FeedbackSentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+enum FeedbackResponderType {
+  SUBADMIN
+  ADMIN
+  SELLER
+  SYSTEM
+}
+
+enum FeedbackReportReason {
+  SPAM
+  ABUSIVE_LANGUAGE
+  HARASSMENT
+  FALSE_INFORMATION
+  INAPPROPRIATE_CONTENT
+  DUPLICATE
+  OTHER
+}
+
+enum FeedbackReportStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+  ACTION_TAKEN
+}
+
+enum FeedbackModerationAction {
+  PUBLISH
+  HIDE
+  REJECT
+  RESOLVE
+  ARCHIVE
+  RESTORE
+}
+
+// ------------------------------------------------------------------------------
+// Customer Feedback & Reputation Categories
+// ------------------------------------------------------------------------------
+
+model FeedbackCategory {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  description String?
+  type        FeedbackType  @default(PLATFORM)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  feedbacks   Feedback[]
+
+  @@index([type])
+  @@index([isActive])
+  @@map("feedback_categories")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Feedback, Ratings & Operational Reviews
+// ------------------------------------------------------------------------------
+
+model Feedback {
+  id               String               @id @default(uuid())
+  customerId       String?
+  authorName       String
+  authorRole       String               @default("CUSTOMER")
+  orderId          String?
+  productId        String?
+  sellerId         String?
+  deliveryId       String?
+  categoryId       String?
+  type             FeedbackType         @default(PLATFORM)
+  source           FeedbackSource       @default(PLATFORM)
+  city             String               @default("Gondar")
+  rating           Int                  // 1 to 5
+  title            String
+  comment          String
+  targetEntityName String?
+  sentiment        FeedbackSentiment    @default(NEUTRAL)
+  status           FeedbackStatus       @default(PUBLISHED)
+  visibility       FeedbackVisibility   @default(PUBLIC)
+  isVerified       Boolean              @default(false)
+  isAnonymous      Boolean              @default(false)
+  publishedAt      DateTime?
+  resolvedAt       DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  customer         Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  order            Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  product          Product?             @relation(fields: [productId], references: [id], onDelete: SetNull)
+  seller           Supplier?            @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  delivery         Delivery?            @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  category         FeedbackCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  responses        FeedbackResponse[]
+  reports          FeedbackReport[]
+  moderationHistory FeedbackModerationHistory[]
+  statusHistory    FeedbackStatusHistory[]
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([productId])
+  @@index([sellerId])
+  @@index([deliveryId])
+  @@index([categoryId])
+  @@index([type])
+  @@index([source])
+  @@index([city])
+  @@index([status])
+  @@index([visibility])
+  @@index([rating])
+  @@index([isVerified])
+  @@index([createdAt])
+  @@map("feedbacks")
+}
+
+// ------------------------------------------------------------------------------
+// Official Feedback Responses (Administrative & Merchant Engagement)
+// ------------------------------------------------------------------------------
+
+model FeedbackResponse {
+  id            String                @id @default(uuid())
+  feedbackId    String
+  responderId   String?
+  responderType FeedbackResponderType @default(SUBADMIN)
+  responderName String?
+  body          String
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  feedback      Feedback              @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  responder     AdminUser?            @relation(fields: [responderId], references: [id], onDelete: SetNull)
+
+  @@index([feedbackId])
+  @@index([responderId])
+  @@index([createdAt])
+  @@map("feedback_responses")
+}
+
+// ------------------------------------------------------------------------------
+// Customer & Staff Feedback Reports / Flags
+// ------------------------------------------------------------------------------
+
+model FeedbackReport {
+  id            String               @id @default(uuid())
+  feedbackId    String
+  reportedBy    String?
+  reporterEmail String?
+  reason        FeedbackReportReason @default(OTHER)
+  description   String?
+  status        FeedbackReportStatus @default(PENDING)
+  reviewedById  String?
+  reviewedAt    DateTime?
+  actionTaken   String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  feedback      Feedback             @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  reviewedBy    AdminUser?           @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([feedbackId])
+  @@index([status])
+  @@index([reviewedById])
+  @@index([createdAt])
+  @@map("feedback_reports")
+}
+
+// ------------------------------------------------------------------------------
+// Feedback Moderation History (Audit Trail)
+// ------------------------------------------------------------------------------
+
+model FeedbackModerationHistory {
+  id             String                   @id @default(uuid())
+  feedbackId     String
+  moderatorId    String?
+  action         FeedbackModerationAction
+  previousStatus FeedbackStatus
+  newStatus      FeedbackStatus
+  reason         String?
+  createdAt      DateTime                 @default(now())
+
+  feedback       Feedback                 @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  moderator      AdminUser?               @relation(fields: [moderatorId], references: [id], onDelete: SetNull)
+
+  @@index([feedbackId])
+  @@index([moderatorId])
+  @@index([createdAt])
+  @@map("feedback_moderation_history")
+}
+
+// ------------------------------------------------------------------------------
+// Feedback Status History (Lifecycle Transition Audit Trail)
+// ------------------------------------------------------------------------------
+
+model FeedbackStatusHistory {
+  id          String         @id @default(uuid())
+  feedbackId  String
+  changedById String?
+  oldStatus   FeedbackStatus
+  newStatus   FeedbackStatus
+  reason      String?
+  createdAt   DateTime       @default(now())
+
+  feedback    Feedback       @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  changedBy   AdminUser?     @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([feedbackId])
+  @@index([changedById])
+  @@index([createdAt])
+  @@map("feedback_status_history")
+}
+
+// ------------------------------------------------------------------------------
+// Security Control Center Enums
+// ------------------------------------------------------------------------------
+
+enum SecurityEventSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SecurityEventSource {
+  CUSTOMER_WEB
+  CUSTOMER_MOBILE
+  SELLER_WEB
+  SELLER_MOBILE
+  SUBADMIN_WEB
+  SUPERADMIN_WEB
+  API
+  AUTH_SERVICE
+  SYSTEM
+}
+
+enum SecurityActorType {
+  CUSTOMER
+  SELLER
+  SUBADMIN
+  SUPER_ADMIN
+  SYSTEM
+  ANONYMOUS
+}
+
+enum SecurityAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+enum IpRuleStatus {
+  BLOCKED
+  WHITELISTED
+}
+
+// ------------------------------------------------------------------------------
+// Platform Security Events (Centralized Multi-App Telemetry & Audit Stream)
+// ------------------------------------------------------------------------------
+
+model SecurityEvent {
+  id         String                @id @default(uuid())
+  eventType  String
+  severity   SecurityEventSeverity @default(INFO)
+  source     SecurityEventSource   @default(SYSTEM)
+  actorType  SecurityActorType     @default(SYSTEM)
+  actorId    String?
+  actorEmail String?
+  targetType String?
+  targetId   String?
+  ipAddress  String?
+  userAgent  String?
+  deviceId   String?
+  sessionId  String?
+  requestId  String?
+  endpoint   String?
+  httpMethod String?
+  metadata   Json?
+  occurredAt DateTime              @default(now())
+  createdAt  DateTime              @default(now())
+
+  alerts     SecurityAlert[]
+
+  @@index([eventType])
+  @@index([severity])
+  @@index([source])
+  @@index([actorType])
+  @@index([actorId])
+  @@index([ipAddress])
+  @@index([occurredAt])
+  @@index([requestId])
+  @@map("security_events")
+}
+
+// ------------------------------------------------------------------------------
+// Security Alerts (Flagged Security Detections Requiring Triage)
+// ------------------------------------------------------------------------------
+
+model SecurityAlert {
+  id              String                @id @default(uuid())
+  alertType       String
+  severity        SecurityEventSeverity @default(MEDIUM)
+  title           String
+  description     String
+  status          SecurityAlertStatus   @default(OPEN)
+  source          SecurityEventSource   @default(SYSTEM)
+  eventId         String?
+  ipAddress       String?
+  assignedToId    String?
+  detectedAt      DateTime              @default(now())
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  resolvedById    String?
+  resolutionNotes String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  event           SecurityEvent?        @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  assignedTo      AdminUser?            @relation("AlertAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  resolvedBy      AdminUser?            @relation("AlertResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  history         SecurityAlertHistory[]
+
+  @@index([status])
+  @@index([severity])
+  @@index([detectedAt])
+  @@index([assignedToId])
+  @@index([resolvedById])
+  @@index([ipAddress])
+  @@map("security_alerts")
+}
+
+// ------------------------------------------------------------------------------
+// Security Alert History (State Transition Audit Trail)
+// ------------------------------------------------------------------------------
+
+model SecurityAlertHistory {
+  id          String              @id @default(uuid())
+  alertId     String
+  changedById String?
+  oldStatus   SecurityAlertStatus
+  newStatus   SecurityAlertStatus
+  action      String
+  notes       String?
+  createdAt   DateTime            @default(now())
+
+  alert       SecurityAlert       @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  changedBy   AdminUser?          @relation("AlertChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([alertId])
+  @@index([changedById])
+  @@index([createdAt])
+  @@map("security_alert_history")
+}
+
+// ------------------------------------------------------------------------------
+// IP Firewall & Blocking Rules
+// ------------------------------------------------------------------------------
+
+model IpBlockRule {
+  id          String       @id @default(uuid())
+  ipAddress   String       @unique
+  reason      String
+  status      IpRuleStatus @default(BLOCKED)
+  blockedBy   String
+  createdById String?
+  expiresAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  createdBy   AdminUser?   @relation("IpRuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([ipAddress])
+  @@index([status])
+  @@index([createdAt])
+  @@map("ip_block_rules")
+}
+
+// ------------------------------------------------------------------------------
+// Configurable Security Detection Rules
+// ------------------------------------------------------------------------------
+
+model SecurityDetectionRule {
+  id                String                @id @default(uuid())
+  name              String                @unique
+  description       String?
+  eventType         String
+  threshold         Int                   @default(5)
+  timeWindowSeconds Int                   @default(600)
+  severity          SecurityEventSeverity @default(HIGH)
+  isActive          Boolean               @default(true)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([eventType])
+  @@index([isActive])
+  @@map("security_detection_rules")
+}
+
+// ------------------------------------------------------------------------------
+// Operational Cities Management
+// ------------------------------------------------------------------------------
+
+model OperationalCity {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  latitude    Decimal? @db.Decimal(10, 8)
+  longitude   Decimal? @db.Decimal(11, 8)
+  timezone    String   @default("Africa/Addis_Ababa")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  maintenanceRecords MaintenanceRecord[]
+  systemHealthChecks SystemHealthCheck[]
+  systemIncidents    SystemIncident[]
+  equipmentLogs      FleetEquipmentLog[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("operational_cities")
+}
+
+// ------------------------------------------------------------------------------
+// System Health Monitoring & Core Services
+// ------------------------------------------------------------------------------
+
+model SystemComponent {
+  id               String              @id @default(uuid())
+  name             String              @unique
+  code             String              @unique
+  category         ComponentCategory   @default(CORE_API)
+  description      String?
+  serverNode       String              @default("node-eth-east-1")
+  status           ServiceHealthStatus @default(HEALTHY)
+  latencyMs        Int                 @default(12)
+  uptimePercentage Decimal             @default(99.98) @db.Decimal(5, 2)
+  lastCheckedAt    DateTime            @default(now())
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  healthChecks     SystemHealthCheck[]
+  incidents        SystemIncident[]
+
+  @@index([code])
+  @@index([category])
+  @@index([status])
+  @@index([isActive])
+  @@map("system_components")
+}
+
+model SystemHealthCheck {
+  id          String              @id @default(uuid())
+  componentId String
+  component   SystemComponent     @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  cityId      String?
+  city        OperationalCity?    @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  status      ServiceHealthStatus @default(HEALTHY)
+  latencyMs   Int                 @default(0)
+  httpStatus  Int?
+  message     String?
+  metadata    Json?
+  checkedAt   DateTime            @default(now())
+  createdAt   DateTime            @default(now())
+
+  @@index([componentId])
+  @@index([cityId])
+  @@index([status])
+  @@index([checkedAt])
+  @@map("system_health_checks")
+}
+
+// ------------------------------------------------------------------------------
+// Maintenance Windows, Tasks & History
+// ------------------------------------------------------------------------------
+
+model MaintenanceRecord {
+  id               String              @id @default(uuid())
+  title            String
+  description      String?
+  maintenanceType  MaintenanceType     @default(SCHEDULED)
+  status           MaintenanceStatus   @default(SCHEDULED)
+  priority         MaintenancePriority @default(NORMAL)
+  scope            MaintenanceScope    @default(SERVICE)
+  affectedServices String[]            @default([])
+  announcedToUsers Boolean             @default(true)
+  cityId           String?
+  city             OperationalCity?    @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  scheduledStart   DateTime
+  scheduledEnd     DateTime?
+  actualStart      DateTime?
+  actualEnd        DateTime?
+  createdById      String?
+  createdByAdmin   AdminUser?          @relation("MaintenanceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdByName    String?
+  completedById    String?
+  completedByAdmin AdminUser?          @relation("MaintenanceCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  completedAt      DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  statusHistory    MaintenanceStatusHistory[]
+
+  @@index([status])
+  @@index([maintenanceType])
+  @@index([priority])
+  @@index([cityId])
+  @@index([scheduledStart])
+  @@index([scheduledEnd])
+  @@map("maintenance_records")
+}
+
+model MaintenanceStatusHistory {
+  id             String            @id @default(uuid())
+  maintenanceId  String
+  maintenance    MaintenanceRecord @relation(fields: [maintenanceId], references: [id], onDelete: Cascade)
+  previousStatus MaintenanceStatus
+  newStatus      MaintenanceStatus
+  changedById    String?
+  changedByAdmin AdminUser?        @relation("MaintenanceStatusChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  reason         String?
+  createdAt      DateTime          @default(now())
+
+  @@index([maintenanceId])
+  @@index([createdAt])
+  @@map("maintenance_status_history")
+}
+
+model MaintenanceTask {
+  id                  String                  @id @default(uuid())
+  name                String
+  category            MaintenanceTaskCategory @default(DATABASE)
+  description         String?
+  frequency           String                  @default("Daily at 03:00 AM")
+  status              TaskExecutionStatus     @default(SUCCESS)
+  lastRunAt           DateTime?
+  lastDurationMs      Int                     @default(0)
+  lastTriggeredById   String?
+  lastTriggeredByAdmin AdminUser?             @relation("TaskTriggeredBy", fields: [lastTriggeredById], references: [id], onDelete: SetNull)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@map("maintenance_tasks")
+}
+
+model SystemIncident {
+  id              String           @id @default(uuid())
+  title           String
+  description     String?
+  incidentType    String           @default("SERVICE_DEGRADATION")
+  severity        IncidentSeverity @default(MEDIUM)
+  status          IncidentStatus   @default(OPEN)
+  componentId     String?
+  component       SystemComponent? @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  cityId          String?
+  city            OperationalCity? @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  detectedAt      DateTime         @default(now())
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  resolutionNotes String?
+  createdById     String?
+  createdByAdmin  AdminUser?       @relation("IncidentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignedToId    String?
+  assignedToAdmin AdminUser?       @relation("IncidentAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  resolvedById    String?
+  resolvedByAdmin AdminUser?       @relation("IncidentResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status])
+  @@index([severity])
+  @@index([cityId])
+  @@index([componentId])
+  @@index([detectedAt])
+  @@map("system_incidents")
+}
+
+model FleetEquipmentLog {
+  id               String                 @id @default(uuid())
+  vehicleId        String
+  vehicle          Vehicle                @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleReg       String
+  serviceType      String
+  cityId           String?
+  city             OperationalCity?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  cityName         String                 @default("Gondar")
+  workshopLocation String
+  costEtb          Decimal                @default(0.00) @db.Decimal(12, 2)
+  scheduledDate    DateTime
+  status           EquipmentServiceStatus @default(SCHEDULED)
+  technicianNotes  String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([vehicleId])
+  @@index([cityId])
+  @@index([cityName])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("fleet_equipment_logs")
+}
+
+
+
+
 

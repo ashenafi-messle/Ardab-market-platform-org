@@ -10,6 +10,7 @@ import {
   validateStatusTransition,
   getStatusTimestampUpdates,
 } from './delivery.status.service.js';
+import { createNotification } from './notification.service.js';
 import { STANDARD_VEHICLE_CAPACITY_KG } from '../constants/deliveryConstants.js';
 
 const Decimal = Prisma.Decimal;
@@ -949,6 +950,20 @@ export async function completeDelivery(id, payload = {}, adminUser = null, ipAdd
     return updated;
   });
 
+  // Emit Success Notification
+  createNotification({
+    type: 'NOTIFICATION',
+    category: 'DELIVERY',
+    title: `Delivery ${updatedDelivery.deliveryNumber} Completed`,
+    message: `Delivery ${updatedDelivery.deliveryNumber} for order ${updatedDelivery.order?.orderNumber} has been successfully completed in ${updatedDelivery.city}.`,
+    severity: 'SUCCESS',
+    priority: 'NORMAL',
+    isAlert: false,
+    entityType: 'DELIVERY',
+    entityId: id,
+    actionUrl: '/deliveries',
+  }, adminUser).catch(() => {});
+
   return formatDeliveryResponse(updatedDelivery);
 }
 
@@ -1049,6 +1064,20 @@ export async function failDelivery(id, reason, notes = null, adminUser = null, i
 
     return updated;
   });
+
+  // Emit Operational Alert
+  createNotification({
+    type: 'OPERATIONAL_ALERT',
+    category: 'DELIVERY',
+    title: `Delivery ${updatedDelivery.deliveryNumber} Failed`,
+    message: `Delivery ${updatedDelivery.deliveryNumber} in ${updatedDelivery.city} failed. Reason: ${reason}.`,
+    severity: 'CRITICAL',
+    priority: 'HIGH',
+    isAlert: true,
+    entityType: 'DELIVERY',
+    entityId: id,
+    actionUrl: '/deliveries',
+  }, adminUser).catch(() => {});
 
   return formatDeliveryResponse(updatedDelivery);
 }
@@ -1165,6 +1194,20 @@ export async function cancelDelivery(id, reason, adminUser = null, ipAddress = n
 
     return updated;
   });
+
+  // Emit Operational Alert
+  createNotification({
+    type: 'OPERATIONAL_ALERT',
+    category: 'DELIVERY',
+    title: `Delivery ${updatedDelivery.deliveryNumber} Cancelled`,
+    message: `Delivery ${updatedDelivery.deliveryNumber} was cancelled. Reason: ${reason}.`,
+    severity: 'WARNING',
+    priority: 'NORMAL',
+    isAlert: true,
+    entityType: 'DELIVERY',
+    entityId: id,
+    actionUrl: '/deliveries',
+  }, adminUser).catch(() => {});
 
   return formatDeliveryResponse(updatedDelivery);
 }
