@@ -138,19 +138,16 @@ export default function LoginPage() {
                   <label className="form-label small fw-semibold text-dark mb-1" htmlFor="email">
                     Administrator Email Address
                   </label>
-                  <div className="position-relative">
-                    <i className="bi bi-envelope position-absolute start-0 top-50 translate-middle-y ms-3 text-muted"></i>
-                    <input
-                      type="email"
-                      id="email"
-                      className="form-control ps-5"
-                      placeholder="Enter administrator email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      autoComplete="email"
-                      required
-                    />
-                  </div>
+                  <input
+                    type="email"
+                    id="email"
+                    className="form-control"
+                    placeholder="Enter administrator email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    required
+                  />
                 </div>
 
                 <div className="mb-3">
@@ -167,7 +164,6 @@ export default function LoginPage() {
                     </Link>
                   </div>
                   <div className="position-relative">
-                    <i className="bi bi-lock position-absolute start-0 top-50 translate-middle-y ms-3 text-muted"></i>
                     <input
                       type={showPassword ? 'text' : 'password'}
                       id="password"
