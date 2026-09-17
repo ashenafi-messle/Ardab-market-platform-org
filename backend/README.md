@@ -151,7 +151,7 @@ backend/
 | `BREVO_API_KEY` | Brevo Transactional Email API Key | Backend secret |
 | `BREVO_SENDER_EMAIL` | Sender email address | `no-reply@ardabmarket.com` |
 | `BREVO_SENDER_NAME` | Sender display name | `Ardab Market` |
-| `ADMIN_FRONTEND_URL` | Base URL for password reset links | `http://localhost:3000` |
+| `FRONTEND_URL` | Public frontend base URL for password reset links | `http://localhost:3000` |
 
 ---
 

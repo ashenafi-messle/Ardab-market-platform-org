@@ -229,7 +229,7 @@ export async function requestPasswordReset({ email, ipAddress }) {
     },
   });
 
-  const resetUrl = `${env.ADMIN_FRONTEND_URL.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
+  const resetUrl = `${env.FRONTEND_URL.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
   
   // Asynchronous email dispatch via EmailService (Brevo)
   EmailService.sendPasswordResetEmail({

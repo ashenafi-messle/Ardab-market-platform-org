@@ -10,8 +10,8 @@ export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState('admin@ardabmarket.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -26,18 +26,6 @@ export default function LoginPage() {
       }
     }
   }, []);
-
-  const fillSuperAdmin = () => {
-    setEmail('admin@ardabmarket.com');
-    setPassword('admin123');
-    setErrorMessage('');
-  };
-
-  const fillSubAdmin = () => {
-    setEmail('ashurack664@gmail.com');
-    setPassword('subadmin123');
-    setErrorMessage('');
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,35 +119,6 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              {/* Demo Quick Role Switcher Chips */}
-              <div className="p-2 mb-3 bg-light rounded-3 border d-flex align-items-center justify-content-between gap-2">
-                <span className="small text-muted fw-semibold ps-1" style={{ fontSize: '0.75rem' }}>
-                  Demo Accounts:
-                </span>
-                <div className="d-flex gap-2">
-                  <button
-                    type="button"
-                    className={`btn btn-xs px-2 py-1 rounded-pill ${
-                      !isSubAdminEmail ? 'btn-success text-white fw-bold shadow-sm' : 'btn-outline-secondary bg-white'
-                    }`}
-                    style={{ fontSize: '0.75rem' }}
-                    onClick={fillSuperAdmin}
-                  >
-                    <i className="bi bi-shield-fill-check me-1"></i> Super Admin
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-xs px-2 py-1 rounded-pill ${
-                      isSubAdminEmail ? 'btn-info text-white fw-bold shadow-sm' : 'btn-outline-secondary bg-white'
-                    }`}
-                    style={{ fontSize: '0.75rem' }}
-                    onClick={fillSubAdmin}
-                  >
-                    <i className="bi bi-person-gear me-1"></i> Sub Admin
-                  </button>
-                </div>
-              </div>
-
               {sessionExpiredNotice && !errorMessage && (
                 <div className="alert alert-warning d-flex align-items-center gap-2 p-3 rounded-3 mb-4 border-warning" role="alert">
                   <i className="bi bi-clock-history flex-shrink-0 fs-5 text-warning"></i>
@@ -185,7 +144,7 @@ export default function LoginPage() {
                       type="email"
                       id="email"
                       className="form-control ps-5"
-                      placeholder="admin@ardabmarket.com or ashurack664@gmail.com"
+                      placeholder="Enter administrator email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       autoComplete="email"
@@ -264,25 +223,6 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              {/* Credentials Reference Box */}
-              <div className="mt-4 p-3 bg-light rounded-3 border">
-                <div className="d-flex align-items-center gap-2 text-muted small fw-semibold mb-2">
-                  <i className="bi bi-info-circle-fill text-primary"></i>
-                  <span>Test Credentials Reference:</span>
-                </div>
-                <div className="row g-2 small text-muted" style={{ fontSize: '0.75rem' }}>
-                  <div className="col-12 col-sm-6 p-2 bg-white rounded border">
-                    <strong className="text-dark d-block">Super Admin:</strong>
-                    <div><code>admin@ardabmarket.com</code></div>
-                    <div>Pass: <code>admin123</code></div>
-                  </div>
-                  <div className="col-12 col-sm-6 p-2 bg-white rounded border">
-                    <strong className="text-dark d-block">Sub Admin:</strong>
-                    <div><code>ashurack664@gmail.com</code></div>
-                    <div>Pass: <code>subadmin123</code></div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

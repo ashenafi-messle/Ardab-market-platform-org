@@ -42,8 +42,12 @@ const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'no-reply@ardabmark
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Ardab Market';
 const BREVO_API_BASE_URL = process.env.BREVO_API_BASE_URL || 'https://api.brevo.com/v3';
 
-// Frontend URL for password reset links
-const ADMIN_FRONTEND_URL = process.env.ADMIN_FRONTEND_URL || 'http://localhost:3000';
+// Public frontend URL for password reset links. Keep the legacy variable as a
+// fallback so existing deployments can migrate without breaking reset emails.
+const FRONTEND_URL =
+  process.env.FRONTEND_URL ||
+  process.env.ADMIN_FRONTEND_URL ||
+  'http://localhost:3000';
 
 // Cloudinary Image Storage Configuration
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || '';
@@ -88,7 +92,7 @@ export const env = {
   BREVO_SENDER_EMAIL,
   BREVO_SENDER_NAME,
   BREVO_API_BASE_URL,
-  ADMIN_FRONTEND_URL,
+  FRONTEND_URL,
   CLOUDINARY_CLOUD_NAME,
   CLOUDINARY_API_KEY,
   CLOUDINARY_API_SECRET,
