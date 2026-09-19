@@ -41,7 +41,13 @@ export type PermissionAction =
   | 'feedback:moderate'
   | 'feedback:manage_reports'
   | 'feedback:manage_categories'
-  | 'feedback:view_reputation';
+  | 'feedback:view_reputation'
+  // Categories (Sub Admin & Super Admin)
+  | 'categories:view'
+  | 'categories:manage'
+  | 'categories:create'
+  | 'categories:edit'
+  | 'categories:delete';
 
 const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
   SUPER_ADMIN: [
@@ -81,8 +87,18 @@ const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
     'security:sessions',
     'security:manage_alerts',
     'security:manage_firewall',
+    'categories:view',
+    'categories:manage',
+    'categories:create',
+    'categories:edit',
+    'categories:delete',
   ],
   SUB_ADMIN: [
+    'categories:view',
+    'categories:manage',
+    'categories:create',
+    'categories:edit',
+    'categories:delete',
     'support:view',
     'support:manage',
     'support:assign',

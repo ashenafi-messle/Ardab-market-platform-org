@@ -10,6 +10,7 @@ import supplierRoutes from './supplier.routes.js';
 import paymentMethodRoutes from './paymentMethod.routes.js';
 import productRoutes from './product.routes.js';
 import categoryRoutes from './category.routes.js';
+import attributeRoutes from './attribute.routes.js';
 import sellerCategoryRoutes from './sellerCategory.routes.js';
 
 import customerRoutes from './customer.routes.js';
@@ -72,6 +73,9 @@ adminRouter.use('/products', productRoutes);
 
 // Commercial Marketplace: Marketplace Categories
 adminRouter.use('/categories', categoryRoutes);
+
+// Commercial Marketplace: Category Attributes Library
+adminRouter.use('/attributes', attributeRoutes);
 
 // Commercial Marketplace: Seller Marketplace Categories
 adminRouter.use('/sellers', sellerCategoryRoutes);

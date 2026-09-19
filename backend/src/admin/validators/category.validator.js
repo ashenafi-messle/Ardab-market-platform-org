@@ -16,6 +16,11 @@ export const createCategorySchema = z.object({
     .min(2)
     .max(100)
     .optional(),
+  parentId: z
+    .string()
+    .uuid('Invalid parent category ID format')
+    .optional()
+    .nullable(),
   icon: z
     .string()
     .trim()
@@ -28,6 +33,17 @@ export const createCategorySchema = z.object({
     .max(500)
     .optional()
     .nullable(),
+  imageUrl: z
+    .string()
+    .url('Invalid image URL format')
+    .optional()
+    .nullable(),
+  sortOrder: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .default(0),
   isActive: z.boolean().optional().default(true),
 });
 
@@ -44,6 +60,11 @@ export const updateCategorySchema = z.object({
     .min(2)
     .max(100)
     .optional(),
+  parentId: z
+    .string()
+    .uuid('Invalid parent category ID format')
+    .optional()
+    .nullable(),
   icon: z
     .string()
     .trim()
@@ -56,7 +77,29 @@ export const updateCategorySchema = z.object({
     .max(500)
     .optional()
     .nullable(),
+  imageUrl: z
+    .string()
+    .url('Invalid image URL format')
+    .optional()
+    .nullable(),
+  sortOrder: z
+    .number()
+    .int()
+    .min(0)
+    .optional(),
   isActive: z.boolean().optional(),
+});
+
+export const updateCategoryStatusSchema = z.object({
+  isActive: z.boolean({ required_error: 'isActive boolean flag is required' }),
+});
+
+export const moveCategorySchema = z.object({
+  targetParentId: z
+    .string()
+    .uuid('Invalid target parent category ID format')
+    .optional()
+    .nullable(),
 });
 
 export const categoryParamsSchema = z.object({
@@ -75,3 +118,4 @@ export const sellerCategoryParamsSchema = z.object({
   sellerId: z.string().uuid('Invalid seller ID format'),
   categoryId: z.string().uuid('Invalid category ID format'),
 });
+

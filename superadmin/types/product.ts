@@ -2,15 +2,30 @@
 // Ardab Market - Product & Marketplace Category TypeScript Definitions
 // ==============================================================================
 
-export interface Category {
+export interface CategoryPathItem {
   id: string;
   name: string;
   slug: string;
-  icon: string;
+  isActive?: boolean;
+}
+
+export interface Category {
+  id: string;
+  parentId?: string | null;
+  parent?: { id: string; name: string; slug: string } | null;
+  name: string;
+  slug: string;
+  icon?: string;
   description?: string;
+  imageUrl?: string | null;
   productCount: number;
+  sellerCount?: number;
+  childrenCount?: number;
+  sortOrder?: number;
   status: 'ACTIVE' | 'INACTIVE';
   isActive?: boolean;
+  children?: Category[];
+  path?: CategoryPathItem[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -49,6 +64,98 @@ export interface ProductImageItem {
   updatedAt?: string;
 }
 
+export type AttributeType = 'TEXT' | 'NUMBER' | 'BOOLEAN' | 'SELECT' | 'MULTI_SELECT' | 'DATE';
+export type AttributeStatus = 'ACTIVE' | 'INACTIVE' | 'DEPRECATED';
+export type LogisticsFieldMode = 'NOT_USED' | 'OPTIONAL' | 'REQUIRED';
+
+export interface AttributeOption {
+  id: string;
+  attributeDefinitionId?: string;
+  label: string;
+  value: string;
+  sortOrder: number;
+  status?: AttributeStatus;
+}
+
+export interface AttributeDefinition {
+  id: string;
+  name: string;
+  slug: string;
+  type: AttributeType;
+  description?: string | null;
+  status: AttributeStatus;
+  isSystem?: boolean;
+  unit?: string | null;
+  validationRules?: any;
+  options: AttributeOption[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CategoryAttributeItem {
+  id: string;
+  attributeDefinitionId: string;
+  name: string;
+  slug: string;
+  type: AttributeType;
+  description?: string | null;
+  unit?: string | null;
+  isRequired: boolean;
+  isVisible: boolean;
+  sortOrder: number;
+  configuration?: any;
+  source?: 'LOCAL' | 'INHERITED';
+  originCategoryId?: string;
+  originCategoryName?: string;
+  options: AttributeOption[];
+}
+
+export interface CategoryLogisticsConfig {
+  weightMode: LogisticsFieldMode;
+  unitOfMeasureMode: LogisticsFieldMode;
+  defaultUnit?: string | null;
+}
+
+export interface EffectiveCategoryAttributes {
+  categoryId: string;
+  categoryName: string;
+  categoryPath: CategoryPathItem[];
+  attributes: CategoryAttributeItem[];
+  logistics: CategoryLogisticsConfig;
+}
+
+export interface CategoryLocalAttributesResponse {
+  categoryId: string;
+  categoryName: string;
+  attributes: CategoryAttributeItem[];
+  logistics: CategoryLogisticsConfig;
+}
+
+export interface ProductAttributeValueInput {
+  attributeDefinitionId: string;
+  optionId?: string | null;
+  valueText?: string | null;
+  valueNumber?: number | null;
+  valueBoolean?: boolean | null;
+  valueDate?: string | null;
+}
+
+export interface ProductAttributeValueItem {
+  id: string;
+  attributeDefinitionId: string;
+  name?: string | null;
+  slug?: string | null;
+  type?: AttributeType | null;
+  unit?: string | null;
+  optionId?: string | null;
+  optionLabel?: string | null;
+  optionValue?: string | null;
+  valueText?: string | null;
+  valueNumber?: number | null;
+  valueBoolean?: boolean | null;
+  valueDate?: string | null;
+}
+
 export interface Product {
   id: string;
   itemCode?: string; // Auto-generated server-side: ARDAB-XXXXXX (strictly immutable)
@@ -61,12 +168,13 @@ export interface Product {
   marketplaceCategoryId?: string;
   categoryId?: string; // Legacy alias mapping to marketplaceCategoryId
   category?: ProductCategoryRelation | string;
+  categoryPath?: CategoryPathItem[];
   images?: (string | ProductImageItem)[];
   productImages?: ProductImageItem[];
   primaryImage?: ProductImageItem | null;
   imageUrl?: string; // Display alias mapping to primaryImage.url or images[0]
-  unit: string; // e.g. "kg", "bag", "quintal", "liter", "piece"
-  weight?: number; // in KG
+  unit?: string | null; // e.g. "kg", "bag", "quintal", "liter", "piece"
+  weight?: number | null; // in KG
   weightKg?: number; // Legacy alias mapping to weight
   costPrice?: number | null;
   sellingPrice: number; // Final active selling price in ETB
@@ -76,20 +184,21 @@ export interface Product {
   availability?: 'IN_STOCK' | 'OUT_OF_STOCK' | 'LIMITED';
   cityAvailability: string[]; // e.g. ['All Cities'] or ['Gondar', 'Bahir Dar']
   status: ProductStatus;
+  attributeValues?: ProductAttributeValueItem[];
   createdAt: string;
   updatedAt: string;
 }
-
 
 export interface CreateProductInput {
   name: string;
   description?: string | null;
   sellerId: string;
   marketplaceCategoryId: string;
-  unit: string;
-  weight: number;
+  unit?: string | null;
+  weight?: number | null;
   costPrice?: number | null;
   sellingPrice: number;
+  attributeValues?: ProductAttributeValueInput[];
   images?: string[];
   cityAvailability?: string[];
   status?: ProductStatus;
@@ -100,10 +209,11 @@ export interface UpdateProductInput {
   description?: string | null;
   sellerId?: string;
   marketplaceCategoryId?: string;
-  unit?: string;
-  weight?: number;
+  unit?: string | null;
+  weight?: number | null;
   costPrice?: number | null;
   sellingPrice?: number;
+  attributeValues?: ProductAttributeValueInput[];
   images?: string[];
   cityAvailability?: string[];
   status?: ProductStatus;

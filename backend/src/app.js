@@ -26,6 +26,7 @@ import supplierRoutes from './admin/routes/supplier.routes.js';
 import paymentMethodRoutes from './admin/routes/paymentMethod.routes.js';
 import productRoutes from './admin/routes/product.routes.js';
 import categoryRoutes from './admin/routes/category.routes.js';
+import attributeRoutes from './admin/routes/attribute.routes.js';
 import sellerCategoryRoutes from './admin/routes/sellerCategory.routes.js';
 import customerRoutes from './admin/routes/customer.routes.js';
 import orderRoutes from './admin/routes/order.routes.js';
@@ -99,6 +100,8 @@ export function createApp() {
   app.use('/api/v1/products', productRoutes);
   app.use('/api/categories', categoryRoutes);
   app.use('/api/v1/categories', categoryRoutes);
+  app.use('/api/attributes', attributeRoutes);
+  app.use('/api/v1/attributes', attributeRoutes);
   app.use('/api/sellers', sellerCategoryRoutes);
   app.use('/api/v1/sellers', sellerCategoryRoutes);
   app.use('/api/suppliers', sellerCategoryRoutes);

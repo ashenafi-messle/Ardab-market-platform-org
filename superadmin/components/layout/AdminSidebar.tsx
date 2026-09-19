@@ -52,6 +52,12 @@ export const SUB_ADMIN_NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    groupTitle: 'MARKETPLACE TAXONOMY',
+    items: [
+      { label: 'Product Categories', href: '/subadmin/categories', icon: 'bi-diagram-3', badge: 'Tree' },
+    ],
+  },
+  {
     groupTitle: 'CLIENT CARE',
     items: [
       { label: 'Customer Support', href: '/subadmin/support', icon: 'bi-headset', badge: 'Queue' },

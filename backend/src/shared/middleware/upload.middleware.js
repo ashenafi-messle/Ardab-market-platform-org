@@ -153,3 +153,4 @@ export function handleUpload(multerMiddleware) {
 // Pre-configured middlewares for routes
 export const uploadProductImages = handleUpload(upload.array('images', MAX_FILES_COUNT));
 export const uploadSingleProductImage = handleUpload(upload.single('image'));
+export const uploadSingleCategoryImage = handleUpload(upload.single('image'));

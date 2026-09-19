@@ -5,7 +5,15 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import { useAuth } from '@/context/AuthContext';
 import { productsApi, categoriesApi, suppliersApi } from '@/lib/api';
-import { Product, Category, ProductStatus, ProductImageItem } from '@/types/product';
+import {
+  Product,
+  Category,
+  ProductStatus,
+  ProductImageItem,
+  EffectiveCategoryAttributes,
+  CategoryAttributeItem,
+  ProductAttributeValueInput,
+} from '@/types/product';
 import { Supplier } from '@/types/supplier';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import Pagination from '@/components/common/Pagination';
@@ -15,6 +23,7 @@ import EmptyState from '@/components/common/EmptyState';
 import { formatCurrency, formatWeight } from '@/lib/formatters';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants';
 import { hasPermission } from '@/lib/permissions';
+import HierarchicalCategorySelector from '@/components/products/HierarchicalCategorySelector';
 
 export interface StagedFile {
   id: string;
@@ -84,6 +93,23 @@ export default function ProductsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Category-driven attributes and logistics state
+  const [effectiveCategoryConfig, setEffectiveCategoryConfig] = useState<EffectiveCategoryAttributes | null>(null);
+  const [isLoadingEffectiveAttributes, setIsLoadingEffectiveAttributes] = useState(false);
+  // Map of attributeDefinitionId -> values
+  const [attributeFormValues, setAttributeFormValues] = useState<Record<string, {
+    optionId?: string | null;
+    valueText?: string;
+    valueNumber?: number | '';
+    valueBoolean?: boolean;
+    valueDate?: string;
+  }>>({});
+  // Safeguard modal state when switching category with existing entered attribute data
+  const [categorySwitchWarningModal, setCategorySwitchWarningModal] = useState<{
+    isOpen: boolean;
+    newCategoryId: string;
+  }>({ isOpen: false, newCategoryId: '' });
+
   // Form State with Seller / Owner FIRST, sequential itemCode read-only, and packagingUnit removed
   const [formData, setFormData] = useState({
     name: '',
@@ -96,8 +122,8 @@ export default function ProductsPage() {
     sellingPrice: 5000,
     originalPrice: 5000,
     discountPercent: 0,
-    weight: 25,
-    unit: 'bag',
+    weight: null as number | null,
+    unit: null as string | null,
     cityAvailability: ['All Cities'],
     status: 'ACTIVE' as ProductStatus,
   });
@@ -175,17 +201,46 @@ export default function ProductsPage() {
     }
   };
 
+  // Fast lookup map for full category breadcrumb path derivation
+  const categoriesMap = useMemo(() => {
+    const map = new Map<string, Category>();
+    allCategories.forEach((c) => map.set(c.id, c));
+    return map;
+  }, [allCategories]);
+
+  const getFullCategoryPathName = useCallback(
+    (catId?: string) => {
+      if (!catId || !categoriesMap.has(catId)) return null;
+      const path: string[] = [];
+      let curId: string | null | undefined = catId;
+      const visited = new Set<string>();
+
+      while (curId && categoriesMap.has(curId) && !visited.has(curId)) {
+        visited.add(curId);
+        const catItem: Category | undefined = categoriesMap.get(curId);
+        if (!catItem) break;
+        path.unshift(catItem.name);
+        curId = catItem.parentId;
+      }
+
+      return path.length > 0 ? path.join(' / ') : null;
+    },
+    [categoriesMap]
+  );
+
   // Filtered in-memory records
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       const q = debouncedSearch.toLowerCase().trim();
       const code = p.itemCode || p.sku || '';
+      const fullPath = getFullCategoryPathName(p.marketplaceCategoryId) || '';
       const catName = typeof p.category === 'string' ? p.category : p.category?.name || '';
       const matchesSearch =
         !q ||
         p.name.toLowerCase().includes(q) ||
         code.toLowerCase().includes(q) ||
         catName.toLowerCase().includes(q) ||
+        fullPath.toLowerCase().includes(q) ||
         (p.sellerName && p.sellerName.toLowerCase().includes(q));
 
       const matchesStatus = selectedStatus === 'ALL' || p.status === selectedStatus;
@@ -194,7 +249,7 @@ export default function ProductsPage() {
 
       return matchesSearch && matchesStatus && matchesSeller && matchesCategory;
     });
-  }, [products, debouncedSearch, selectedStatus, selectedSeller, selectedCategory]);
+  }, [products, debouncedSearch, selectedStatus, selectedSeller, selectedCategory, getFullCategoryPathName]);
 
   // Paginated records
   const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
@@ -420,12 +475,48 @@ export default function ProductsPage() {
     setIsModalOpen(false);
   };
 
+  // Load effective attributes and logistics configuration whenever a category is chosen
+  const loadEffectiveCategoryAttributes = useCallback(async (catId: string, existingAttrValues?: any[]) => {
+    if (!catId) {
+      setEffectiveCategoryConfig(null);
+      setAttributeFormValues({});
+      return;
+    }
+    setIsLoadingEffectiveAttributes(true);
+    try {
+      const config = await categoriesApi.getEffectiveAttributes(catId);
+      setEffectiveCategoryConfig(config);
+
+      // Populate attribute form values if existing, or default
+      const initialValues: Record<string, any> = {};
+      if (existingAttrValues && existingAttrValues.length > 0) {
+        existingAttrValues.forEach((av: any) => {
+          initialValues[av.attributeDefinitionId] = {
+            optionId: av.optionId || null,
+            valueText: av.valueText || '',
+            valueNumber: av.valueNumber !== null && av.valueNumber !== undefined ? av.valueNumber : '',
+            valueBoolean: av.valueBoolean !== null && av.valueBoolean !== undefined ? av.valueBoolean : false,
+            valueDate: av.valueDate ? av.valueDate.substring(0, 10) : '',
+          };
+        });
+      }
+      setAttributeFormValues(initialValues);
+    } catch (err) {
+      console.error('Failed to load effective category attributes:', err);
+      setEffectiveCategoryConfig(null);
+    } finally {
+      setIsLoadingEffectiveAttributes(false);
+    }
+  }, []);
+
   const handleOpenAdd = () => {
     stagedFiles.forEach((f) => URL.revokeObjectURL(f.preview));
     setStagedFiles([]);
     setExistingImages([]);
     setEditingProduct(null);
     setFormError(null);
+    setEffectiveCategoryConfig(null);
+    setAttributeFormValues({});
     const activeSuppliers = suppliers.filter((s) => s.status === 'ACTIVE');
     const defaultSup = activeSuppliers[0] || suppliers[0];
     const initialSellerId = defaultSup ? defaultSup.id : '';
@@ -441,8 +532,8 @@ export default function ProductsPage() {
       sellingPrice: 1000,
       originalPrice: 1000,
       discountPercent: 0,
-      weight: 25,
-      unit: 'kg',
+      weight: null,
+      unit: null,
       cityAvailability: ['All Cities'],
       status: 'ACTIVE',
     });
@@ -456,7 +547,7 @@ export default function ProductsPage() {
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = (product: Product) => {
+  const handleOpenEdit = async (product: Product) => {
     stagedFiles.forEach((f) => URL.revokeObjectURL(f.preview));
     setStagedFiles([]);
     setExistingImages(product.productImages || []);
@@ -476,8 +567,8 @@ export default function ProductsPage() {
       sellingPrice: product.sellingPrice,
       originalPrice: product.originalPrice || product.sellingPrice,
       discountPercent: product.discountPercent || 0,
-      weight: product.weight || product.weightKg || 25,
-      unit: product.unit || 'kg',
+      weight: product.weight !== null && product.weight !== undefined ? Number(product.weight) : null,
+      unit: product.unit || null,
       cityAvailability: product.cityAvailability || ['All Cities'],
       status: product.status,
     });
@@ -486,7 +577,52 @@ export default function ProductsPage() {
       loadSellerCategories(sellerId, categoryId);
     }
 
+    if (categoryId) {
+      // Also fetch detailed product by ID if attributeValues are not yet populated on list view
+      let attrValues = product.attributeValues;
+      if (!attrValues) {
+        try {
+          const detailed = await productsApi.getById(product.id);
+          attrValues = detailed.attributeValues;
+        } catch (e) {
+          console.error('Failed to get product attributes by ID:', e);
+        }
+      }
+      loadEffectiveCategoryAttributes(categoryId, attrValues);
+    }
+
     setIsModalOpen(true);
+  };
+
+  // Safe category selection with warning if existing attributes were modified
+  const handleCategorySelectionAttempt = (newCategoryId: string) => {
+    if (newCategoryId === formData.categoryId) return;
+
+    // Check if user already entered attribute data for the current category
+    const hasEnteredAttributeData = Object.values(attributeFormValues).some(
+      (v) => v.optionId || (v.valueText && v.valueText.trim().length > 0) || (v.valueNumber !== '' && v.valueNumber !== undefined)
+    );
+
+    if (hasEnteredAttributeData) {
+      // Trigger confirmation modal
+      setCategorySwitchWarningModal({
+        isOpen: true,
+        newCategoryId,
+      });
+      return;
+    }
+
+    // Direct switch
+    applyCategoryChange(newCategoryId);
+  };
+
+  const applyCategoryChange = (newCategoryId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      categoryId: newCategoryId,
+    }));
+    loadEffectiveCategoryAttributes(newCategoryId);
+    setCategorySwitchWarningModal({ isOpen: false, newCategoryId: '' });
   };
 
   const handleSellerChange = (newSellerId: string) => {
@@ -495,9 +631,7 @@ export default function ProductsPage() {
       ...prev,
       sellerId: newSellerId,
       sellerName: selected ? selected.companyName : '',
-      categoryId: '', // Reset category when seller changes
     }));
-    loadSellerCategories(newSellerId);
   };
 
   const handlePriceChange = (orig: number, disc: number) => {
@@ -524,20 +658,77 @@ export default function ProductsPage() {
       return;
     }
 
-    if (!formData.unit || formData.unit.trim().length === 0) {
-      setFormError('Commodity unit is required (e.g. kg, bag, quintal).');
-      return;
-    }
-
-    if (formData.weight <= 0) {
-      setFormError('Unit weight in KG must be greater than 0.');
-      return;
-    }
+    // Logistics: Unit & Weight removed from Super Admin product creation/edit
+    let finalWeight: number | null = editingProduct && editingProduct.weight !== null ? Number(editingProduct.weight) : null;
+    let finalUnit: string | null = editingProduct && editingProduct.unit ? editingProduct.unit : null;
 
     if (formData.sellingPrice <= 0) {
       setFormError('Marketplace selling price must be greater than 0.');
       return;
     }
+
+    // Validate Required Category Attributes
+    const activeAttributes = effectiveCategoryConfig?.attributes || [];
+    for (const attr of activeAttributes) {
+      if (attr.isRequired) {
+        const val = attributeFormValues[attr.id];
+        const hasVal = val && (
+          val.optionId ||
+          (val.valueText && val.valueText.trim().length > 0) ||
+          (val.valueNumber !== '' && val.valueNumber !== undefined) ||
+          val.valueBoolean !== undefined ||
+          val.valueDate
+        );
+        if (!hasVal) {
+          setFormError(`Required category attribute "${attr.name}" must be specified.`);
+          return;
+        }
+      }
+    }
+
+    // Package attributeValues payload
+    const preparedAttributeValues: ProductAttributeValueInput[] = [];
+    activeAttributes.forEach((attr) => {
+      const val = attributeFormValues[attr.id];
+      if (!val) return;
+
+      if (attr.type === 'SELECT' || attr.type === 'MULTI_SELECT') {
+        if (val.optionId) {
+          preparedAttributeValues.push({
+            attributeDefinitionId: attr.id,
+            optionId: val.optionId,
+          });
+        }
+      } else if (attr.type === 'TEXT') {
+        if (val.valueText && val.valueText.trim().length > 0) {
+          preparedAttributeValues.push({
+            attributeDefinitionId: attr.id,
+            valueText: val.valueText.trim(),
+          });
+        }
+      } else if (attr.type === 'NUMBER') {
+        if (val.valueNumber !== '' && val.valueNumber !== undefined && !isNaN(Number(val.valueNumber))) {
+          preparedAttributeValues.push({
+            attributeDefinitionId: attr.id,
+            valueNumber: Number(val.valueNumber),
+          });
+        }
+      } else if (attr.type === 'BOOLEAN') {
+        if (val.valueBoolean !== undefined && val.valueBoolean !== null) {
+          preparedAttributeValues.push({
+            attributeDefinitionId: attr.id,
+            valueBoolean: Boolean(val.valueBoolean),
+          });
+        }
+      } else if (attr.type === 'DATE') {
+        if (val.valueDate) {
+          preparedAttributeValues.push({
+            attributeDefinitionId: attr.id,
+            valueDate: new Date(val.valueDate).toISOString(),
+          });
+        }
+      }
+    });
 
     setIsSaving(true);
     try {
@@ -548,12 +739,13 @@ export default function ProductsPage() {
           description: formData.description.trim() || null,
           sellerId: formData.sellerId,
           marketplaceCategoryId: formData.categoryId,
-          unit: formData.unit.trim(),
-          weight: Number(formData.weight),
+          unit: finalUnit,
+          weight: finalWeight,
           costPrice: formData.costPrice > 0 ? Number(formData.costPrice) : null,
           sellingPrice: Number(formData.sellingPrice),
           cityAvailability: formData.cityAvailability,
           status: formData.status,
+          attributeValues: preparedAttributeValues,
         });
 
         // Upload any staged images for the existing product
@@ -571,8 +763,8 @@ export default function ProductsPage() {
         }
         formPayload.append('sellerId', formData.sellerId);
         formPayload.append('marketplaceCategoryId', formData.categoryId);
-        formPayload.append('unit', formData.unit.trim());
-        formPayload.append('weight', String(formData.weight));
+        if (finalUnit) formPayload.append('unit', finalUnit);
+        if (finalWeight !== null) formPayload.append('weight', String(finalWeight));
         if (formData.costPrice > 0) {
           formPayload.append('costPrice', String(formData.costPrice));
         }
@@ -581,6 +773,9 @@ export default function ProductsPage() {
         formData.cityAvailability.forEach((city) => {
           formPayload.append('cityAvailability', city);
         });
+        if (preparedAttributeValues.length > 0) {
+          formPayload.append('attributeValues', JSON.stringify(preparedAttributeValues));
+        }
 
         const sortedFiles = [...stagedFiles].sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0));
         sortedFiles.forEach((item) => {
@@ -823,7 +1018,8 @@ export default function ProductsPage() {
                             <div>
                               <div className="fw-bold text-dark">{p.name}</div>
                               <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
-                                <code className="text-primary fw-semibold">{code}</code> &bull; Unit: {p.unit}
+                                <code className="text-primary fw-semibold">{code}</code>
+                                {p.unit ? ` • Unit: ${p.unit}` : ''}
                               </div>
                             </div>
                           </div>
@@ -835,7 +1031,20 @@ export default function ProductsPage() {
                           </div>
                         </td>
                         <td>
-                          <span className="text-dark fw-medium small">{catName}</span>
+                          {(() => {
+                            const fullPath = getFullCategoryPathName(p.marketplaceCategoryId);
+                            return (
+                              <div>
+                                <span className="text-dark fw-medium small">{catName}</span>
+                                {fullPath && fullPath !== catName && (
+                                  <div className="text-muted small text-truncate" style={{ fontSize: '0.7rem', maxWidth: 180 }} title={fullPath}>
+                                    <i className="bi bi-diagram-2 me-1 text-secondary"></i>
+                                    {fullPath}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td>
                           {p.discountPercent && p.discountPercent > 0 ? (
@@ -1146,47 +1355,22 @@ export default function ProductsPage() {
                           ))}
                         </select>
                         <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-                          Selecting a seller automatically activates and filters available marketplace categories
+                          Assign this product to any active seller or enterprise partner
                         </span>
                       </div>
 
-                      {/* 2. CASCADING MARKETPLACE CATEGORY (DISABLED UNTIL SELLER SELECTED) */}
-                      <div className="col-md-6">
+                      {/* 2. DYNAMIC HIERARCHICAL MARKETPLACE CATEGORY SELECTOR */}
+                      <div className="col-12 col-md-6">
                         <label className="form-label fw-semibold">
-                          Marketplace Category <span className="text-danger">*</span>
+                          Marketplace Category Hierarchy <span className="text-danger">*</span>
                         </label>
-                        <div className="position-relative">
-                          <select
-                            className={`form-select ${!formData.sellerId ? 'bg-light' : ''}`}
-                            required
-                            disabled={!formData.sellerId || isLoadingSellerCategories}
-                            value={formData.categoryId}
-                            onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                          >
-                            {!formData.sellerId ? (
-                              <option value="">Select a seller first to enable categories</option>
-                            ) : isLoadingSellerCategories ? (
-                              <option value="">Loading assigned categories...</option>
-                            ) : sellerCategories.length === 0 ? (
-                              <option value="">No categories assigned to this seller</option>
-                            ) : (
-                              <>
-                                <option value="">-- Select Category --</option>
-                                {sellerCategories.map((cat) => (
-                                  <option key={cat.id} value={cat.id}>
-                                    {cat.name}
-                                  </option>
-                                ))}
-                              </>
-                            )}
-                          </select>
-                        </div>
-                        {formData.sellerId && !isLoadingSellerCategories && sellerCategories.length === 0 && (
-                          <div className="text-warning small mt-1" style={{ fontSize: '0.72rem' }}>
-                            <i className="bi bi-exclamation-triangle me-1"></i>
-                            This seller currently has no marketplace categories assigned. Assign categories in Supplier Management.
-                          </div>
-                        )}
+                        <HierarchicalCategorySelector
+                          selectedCategoryId={formData.categoryId}
+                          disabled={!formData.sellerId}
+                          onSelectCategory={(chosenId) => {
+                            handleCategorySelectionAttempt(chosenId);
+                          }}
+                        />
                       </div>
 
                       {/* 3. PRODUCT NAME */}
@@ -1237,7 +1421,196 @@ export default function ProductsPage() {
                         ></textarea>
                       </div>
 
-                      {/* 6. PRICING & VALUATION */}
+                      {/* 6. DYNAMIC CATEGORY ATTRIBUTES & VARIANTS */}
+                      {formData.categoryId && (
+                        <div className="col-12">
+                          <div className="p-3 bg-light rounded-3 border">
+                            <div className="d-flex align-items-center justify-content-between mb-3">
+                              <h6 className="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                                <i className="bi bi-tags-fill text-primary"></i>
+                                Category Specifications & Attributes
+                              </h6>
+                              {effectiveCategoryConfig && (
+                                <span className="badge bg-white text-dark border small">
+                                  {effectiveCategoryConfig.categoryName}
+                                </span>
+                              )}
+                            </div>
+
+                            {isLoadingEffectiveAttributes ? (
+                              <div className="text-center py-3 text-muted small">
+                                <div className="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                Loading category attributes...
+                              </div>
+                            ) : effectiveCategoryConfig && effectiveCategoryConfig.attributes.length > 0 ? (
+                              <div className="row g-3">
+                                {effectiveCategoryConfig.attributes.map((attr) => {
+                                  const currentVal = attributeFormValues[attr.id] || {};
+                                  return (
+                                    <div key={attr.id} className="col-12 col-md-6">
+                                      <label className="form-label fw-semibold small d-flex align-items-center justify-content-between">
+                                        <span>
+                                          {attr.name}
+                                          {attr.unit ? ` (${attr.unit})` : ''}
+                                          {attr.isRequired && <span className="text-danger ms-1">*</span>}
+                                        </span>
+                                        {attr.source === 'INHERITED' && (
+                                          <span className="badge bg-light text-muted border" style={{ fontSize: '0.65rem' }}>
+                                            Inherited
+                                          </span>
+                                        )}
+                                      </label>
+
+                                      {/* SELECT TYPE */}
+                                      {attr.type === 'SELECT' && (
+                                        <select
+                                          className="form-select form-select-sm"
+                                          required={attr.isRequired}
+                                          value={currentVal.optionId || ''}
+                                          onChange={(e) =>
+                                            setAttributeFormValues((prev) => ({
+                                              ...prev,
+                                              [attr.id]: { ...prev[attr.id], optionId: e.target.value || null },
+                                            }))
+                                          }
+                                        >
+                                          <option value="">-- Select {attr.name} --</option>
+                                          {attr.options.map((opt) => (
+                                            <option key={opt.id} value={opt.id}>
+                                              {opt.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      )}
+
+                                      {/* MULTI_SELECT TYPE */}
+                                      {attr.type === 'MULTI_SELECT' && (
+                                        <div className="p-2 bg-white rounded border">
+                                          <div className="d-flex flex-wrap gap-2">
+                                            {attr.options.map((opt) => {
+                                              const isChecked = currentVal.optionId === opt.id;
+                                              return (
+                                                <div key={opt.id} className="form-check form-check-inline mb-0">
+                                                  <input
+                                                    className="form-check-input"
+                                                    type="radio"
+                                                    name={`attr_${attr.id}`}
+                                                    id={`opt_${opt.id}`}
+                                                    checked={isChecked}
+                                                    onChange={() =>
+                                                      setAttributeFormValues((prev) => ({
+                                                        ...prev,
+                                                        [attr.id]: { ...prev[attr.id], optionId: opt.id },
+                                                      }))
+                                                    }
+                                                  />
+                                                  <label className="form-check-label small" htmlFor={`opt_${opt.id}`}>
+                                                    {opt.label}
+                                                  </label>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* TEXT TYPE */}
+                                      {attr.type === 'TEXT' && (
+                                        <input
+                                          type="text"
+                                          className="form-control form-control-sm"
+                                          required={attr.isRequired}
+                                          placeholder={`Enter ${attr.name.toLowerCase()}`}
+                                          value={currentVal.valueText || ''}
+                                          onChange={(e) =>
+                                            setAttributeFormValues((prev) => ({
+                                              ...prev,
+                                              [attr.id]: { ...prev[attr.id], valueText: e.target.value },
+                                            }))
+                                          }
+                                        />
+                                      )}
+
+                                      {/* NUMBER TYPE */}
+                                      {attr.type === 'NUMBER' && (
+                                        <div className="input-group input-group-sm">
+                                          <input
+                                            type="number"
+                                            className="form-control"
+                                            required={attr.isRequired}
+                                            placeholder="0"
+                                            value={currentVal.valueNumber ?? ''}
+                                            onChange={(e) =>
+                                              setAttributeFormValues((prev) => ({
+                                                ...prev,
+                                                [attr.id]: {
+                                                  ...prev[attr.id],
+                                                  valueNumber: e.target.value === '' ? '' : Number(e.target.value),
+                                                },
+                                              }))
+                                            }
+                                          />
+                                          {attr.unit && <span className="input-group-text">{attr.unit}</span>}
+                                        </div>
+                                      )}
+
+                                      {/* BOOLEAN TYPE */}
+                                      {attr.type === 'BOOLEAN' && (
+                                        <div className="form-check form-switch mt-1">
+                                          <input
+                                            className="form-check-input"
+                                            type="checkbox"
+                                            id={`switch_${attr.id}`}
+                                            checked={Boolean(currentVal.valueBoolean)}
+                                            onChange={(e) =>
+                                              setAttributeFormValues((prev) => ({
+                                                ...prev,
+                                                [attr.id]: { ...prev[attr.id], valueBoolean: e.target.checked },
+                                              }))
+                                            }
+                                          />
+                                          <label className="form-check-label small" htmlFor={`switch_${attr.id}`}>
+                                            {currentVal.valueBoolean ? 'Yes / Enabled' : 'No / Disabled'}
+                                          </label>
+                                        </div>
+                                      )}
+
+                                      {/* DATE TYPE */}
+                                      {attr.type === 'DATE' && (
+                                        <input
+                                          type="date"
+                                          className="form-control form-control-sm"
+                                          required={attr.isRequired}
+                                          value={currentVal.valueDate || ''}
+                                          onChange={(e) =>
+                                            setAttributeFormValues((prev) => ({
+                                              ...prev,
+                                              [attr.id]: { ...prev[attr.id], valueDate: e.target.value },
+                                            }))
+                                          }
+                                        />
+                                      )}
+
+                                      {attr.description && (
+                                        <div className="text-muted mt-1" style={{ fontSize: '0.68rem' }}>
+                                          {attr.description}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-center py-2 text-muted small">
+                                <i className="bi bi-info-circle me-1"></i>
+                                No custom attribute specifications defined for this category.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 7. PRICING & VALUATION */}
                       <div className="col-12">
                         <div className="p-3 bg-light rounded-3 border">
                           <h6 className="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
@@ -1306,47 +1679,6 @@ export default function ProductsPage() {
                             </div>
                           </div>
                         </div>
-                      </div>
-
-                      {/* 7. LOGISTICS SPECIFICATION: UNIT & WEIGHT (PACKAGING UNIT REMOVED) */}
-                      <div className="col-md-6">
-                        <label className="form-label fw-semibold">
-                          Unit Weight (KG) <span className="text-danger">*</span>
-                        </label>
-                        <div className="input-group">
-                          <input
-                            type="number"
-                            className="form-control"
-                            required
-                            min={0.1}
-                            step={0.1}
-                            value={formData.weight}
-                            onChange={(e) =>
-                              setFormData({ ...formData, weight: Number(e.target.value) })
-                            }
-                          />
-                          <span className="input-group-text small">KG</span>
-                        </div>
-                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-                          Physical commodity weight used for vehicle logistics calculation
-                        </span>
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label fw-semibold">
-                          Unit of Measure <span className="text-danger">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          required
-                          placeholder="e.g. kg, bag, quintal, liter, piece"
-                          value={formData.unit}
-                          onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                        />
-                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-                          Standard trade trading unit for quoting and consumer display
-                        </span>
                       </div>
 
                       {/* 8. STATUS LIFECYCLE */}
@@ -1714,10 +2046,44 @@ export default function ProductsPage() {
                         </div>
                       </div>
                     ) : null}
+                    {/* Product Attribute Values Display */}
+                    {viewProduct.attributeValues && viewProduct.attributeValues.length > 0 && (
+                      <div className="col-12 border-top pt-3">
+                        <div className="text-muted small fw-semibold mb-2">Category Specifications & Custom Attributes:</div>
+                        <div className="row g-2">
+                          {viewProduct.attributeValues.map((av) => (
+                            <div key={av.id} className="col-6 col-md-4">
+                              <div className="p-2 bg-light rounded-2 border">
+                                <span className="text-muted d-block" style={{ fontSize: '0.7rem' }}>
+                                  {av.name || av.slug || 'Specification'}
+                                </span>
+                                <span className="fw-semibold text-dark small">
+                                  {av.optionLabel ||
+                                    av.optionValue ||
+                                    av.valueText ||
+                                    (av.valueNumber !== null && av.valueNumber !== undefined ? `${av.valueNumber} ${av.unit || ''}` : null) ||
+                                    (av.valueBoolean !== null && av.valueBoolean !== undefined ? (av.valueBoolean ? 'Yes' : 'No') : null) ||
+                                    (av.valueDate ? new Date(av.valueDate).toLocaleDateString() : '—')}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="col-6 col-md-4">
                       <div className="text-muted small">Logistics Unit Weight</div>
                       <div className="fw-bold fs-5 text-dark">
-                        {formatWeight(viewProduct.weight || viewProduct.weightKg || 0)} / {viewProduct.unit}
+                        {viewProduct.weight !== null && viewProduct.weight !== undefined
+                          ? `${formatWeight(viewProduct.weight || viewProduct.weightKg || 0)} / ${viewProduct.unit || 'unit'}`
+                          : 'Not Applicable (N/A)'}
+                      </div>
+                    </div>
+                    <div className="col-6 col-md-4">
+                      <div className="text-muted small">Unit of Measure</div>
+                      <div className="fw-bold fs-5 text-dark">
+                        {viewProduct.unit ? viewProduct.unit : 'Not Applicable'}
                       </div>
                     </div>
                     <div className="col-6 col-md-4">
@@ -1727,11 +2093,12 @@ export default function ProductsPage() {
                       </div>
                     </div>
                     <div className="col-6 col-md-4">
-                      <div className="text-muted small">Category</div>
+                      <div className="text-muted small">Category Hierarchy</div>
                       <div className="text-dark fw-medium small">
-                        {typeof viewProduct.category === 'string'
-                          ? viewProduct.category
-                          : viewProduct.category?.name || 'General'}
+                        {getFullCategoryPathName(viewProduct.marketplaceCategoryId) ||
+                          (typeof viewProduct.category === 'string'
+                            ? viewProduct.category
+                            : viewProduct.category?.name || 'General')}
                       </div>
                     </div>
                     <div className="col-6 col-md-4">
@@ -1772,6 +2139,18 @@ export default function ProductsPage() {
             </div>
           </div>
         )}
+
+        {/* Category Switch Warning Confirmation Modal */}
+        <ConfirmationModal
+          isOpen={categorySwitchWarningModal.isOpen}
+          title="Switch Product Category?"
+          message="Switching categories will reset previously entered category-specific attributes because the new category uses a different specification schema. Are you sure you want to proceed?"
+          variant="warning"
+          confirmLabel="Yes, Switch Category"
+          isLoading={false}
+          onConfirm={() => applyCategoryChange(categorySwitchWarningModal.newCategoryId)}
+          onCancel={() => setCategorySwitchWarningModal({ isOpen: false, newCategoryId: '' })}
+        />
 
         {/* Destructive / Status Confirmation Modal */}
         <ConfirmationModal

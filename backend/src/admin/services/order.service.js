@@ -477,7 +477,7 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
     const product = productMap.get(item.productId);
     const qty = item.quantity;
     const unitPrice = new Decimal(product.sellingPrice);
-    const weightPerUnit = new Decimal(product.weight);
+    const weightPerUnit = product.weight !== null && product.weight !== undefined ? new Decimal(product.weight) : new Decimal(0);
 
     const itemSubtotal = unitPrice.mul(qty);
     const itemTotalWeight = weightPerUnit.mul(qty);
@@ -489,7 +489,7 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
       productId: product.id,
       productNameSnapshot: product.name,
       itemCodeSnapshot: product.itemCode,
-      unitSnapshot: product.unit,
+      unitSnapshot: product.unit || 'pc',
       unitPrice: unitPrice,
       quantity: qty,
       weightPerUnit: weightPerUnit,

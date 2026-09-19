@@ -1068,7 +1068,7 @@ export default function SuppliersPage() {
                         />
                       </div>
 
-                      <div className="col-md-4">
+                      <div className="col-md-6">
                         <label className="form-label">Operational City Hub *</label>
                         <input
                           type="text"
@@ -1091,27 +1091,7 @@ export default function SuppliersPage() {
                         </datalist>
                       </div>
 
-                      <div className="col-md-4">
-                        <label className="form-label">Commodity Category (Optional)</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          list="category-suggestions"
-                          placeholder="e.g. Grains & Teff, Coffee, Oilseeds"
-                          value={formData.category}
-                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                        />
-                        <datalist id="category-suggestions">
-                          <option value="Grains & Teff" />
-                          <option value="Edible Oils & Seeds" />
-                          <option value="Coffee & Spices" />
-                          <option value="Honey & Natural Sweeteners" />
-                          <option value="Pulses & Legumes" />
-                          <option value="Fresh Dairy & Butter" />
-                        </datalist>
-                      </div>
-
-                      <div className="col-md-4">
+                      <div className="col-md-6">
                         <label className="form-label">TIN Number (Tax ID)</label>
                         <input
                           type="text"
@@ -1341,7 +1321,7 @@ export default function SuppliersPage() {
                         />
                       </div>
 
-                      <div className="col-md-4">
+                      <div className="col-md-6">
                         <label className="form-label">City Hub *</label>
                         <input
                           type="text"
@@ -1353,18 +1333,7 @@ export default function SuppliersPage() {
                         />
                       </div>
 
-                      <div className="col-md-4">
-                        <label className="form-label">Commodity Category (Optional)</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          list="category-suggestions"
-                          value={editFormData.category}
-                          onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
-                        />
-                      </div>
-
-                      <div className="col-md-4">
+                      <div className="col-md-6">
                         <label className="form-label">TIN Number</label>
                         <input
                           type="text"
@@ -1554,10 +1523,6 @@ export default function SuppliersPage() {
                     <div className="col-6">
                       <span className="text-muted small">City Hub</span>
                       <div className="fw-semibold text-dark">{viewSupplier.city}</div>
-                    </div>
-                    <div className="col-6">
-                      <span className="text-muted small">Commodity Category</span>
-                      <div className="fw-semibold text-dark">{viewSupplier.category || '—'}</div>
                     </div>
                     <div className="col-6">
                       <span className="text-muted small">TIN (Tax ID)</span>

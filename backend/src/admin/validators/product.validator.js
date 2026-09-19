@@ -12,6 +12,17 @@ const numericPreprocess = (val) => {
   return isNaN(num) ? val : num;
 };
 
+const jsonPreprocess = (val) => {
+  if (typeof val === 'string') {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }
+  return val;
+};
+
 export const createProductSchema = z
   .object({
     name: z
@@ -33,15 +44,19 @@ export const createProductSchema = z
       .string({ required_error: 'Marketplace category ID is required' })
       .uuid('Invalid marketplace category ID format'),
     unit: z
-      .string({ required_error: 'Commodity unit is required (e.g. kg, bag, quintal, liter, piece)' })
+      .string()
       .trim()
       .min(1, 'Unit must not be empty')
-      .max(50, 'Unit string cannot exceed 50 characters'),
+      .max(50, 'Unit string cannot exceed 50 characters')
+      .optional()
+      .nullable(),
     weight: z.preprocess(
       numericPreprocess,
       z
-        .number({ required_error: 'Product weight in KG is required' })
+        .number()
         .positive('Product weight must be greater than 0')
+        .optional()
+        .nullable()
     ),
     costPrice: z.preprocess(
       numericPreprocess,
@@ -56,6 +71,22 @@ export const createProductSchema = z
       z
         .number({ required_error: 'Marketplace selling price is required' })
         .min(0, 'Selling price cannot be negative')
+    ),
+    attributeValues: z.preprocess(
+      jsonPreprocess,
+      z
+        .array(
+          z.object({
+            attributeDefinitionId: z.string().uuid('Invalid attribute definition ID'),
+            optionId: z.string().uuid().optional().nullable(),
+            valueText: z.string().trim().max(1000).optional().nullable(),
+            valueNumber: z.preprocess(numericPreprocess, z.number().optional().nullable()),
+            valueBoolean: z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean().optional().nullable()),
+            valueDate: z.string().optional().nullable(),
+          })
+        )
+        .optional()
+        .default([])
     ),
     images: z
       .array(z.string().trim())
@@ -119,13 +150,15 @@ export const updateProductSchema = z
       .trim()
       .min(1)
       .max(50)
-      .optional(),
+      .optional()
+      .nullable(),
     weight: z.preprocess(
       numericPreprocess,
       z
         .number()
         .positive('Product weight must be greater than 0')
         .optional()
+        .nullable()
     ),
     costPrice: z.preprocess(
       numericPreprocess,
@@ -140,6 +173,21 @@ export const updateProductSchema = z
       z
         .number()
         .min(0, 'Selling price cannot be negative')
+        .optional()
+    ),
+    attributeValues: z.preprocess(
+      jsonPreprocess,
+      z
+        .array(
+          z.object({
+            attributeDefinitionId: z.string().uuid('Invalid attribute definition ID'),
+            optionId: z.string().uuid().optional().nullable(),
+            valueText: z.string().trim().max(1000).optional().nullable(),
+            valueNumber: z.preprocess(numericPreprocess, z.number().optional().nullable()),
+            valueBoolean: z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean().optional().nullable()),
+            valueDate: z.string().optional().nullable(),
+          })
+        )
         .optional()
     ),
     images: z

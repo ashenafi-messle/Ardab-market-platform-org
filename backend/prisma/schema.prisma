@@ -265,6 +265,27 @@ enum EquipmentServiceStatus {
   COMPLETED
 }
 
+enum AttributeType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  SELECT
+  MULTI_SELECT
+  DATE
+}
+
+enum AttributeStatus {
+  ACTIVE
+  INACTIVE
+  DEPRECATED
+}
+
+enum LogisticsFieldMode {
+  NOT_USED
+  OPTIONAL
+  REQUIRED
+}
+
 // ------------------------------------------------------------------------------
 // Admin Authentication & Identity
 // ------------------------------------------------------------------------------
@@ -494,21 +515,152 @@ model SupplierPaymentMethod {
 
 model MarketplaceCategory {
   id               String                      @id @default(uuid())
-  name             String                      @unique
+  parentId         String?
+  name             String
   slug             String                      @unique
   icon             String?
   description      String?
+  imageUrl         String?
   isActive         Boolean                     @default(true)
+  sortOrder        Int                         @default(0)
   createdAt        DateTime                    @default(now())
   updatedAt        DateTime                    @updatedAt
 
+  parent           MarketplaceCategory?        @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children         MarketplaceCategory[]       @relation("CategoryHierarchy")
+
   sellerCategories SellerMarketplaceCategory[]
   products         Product[]
+  categoryAttributes CategoryAttribute[]
+  logisticsConfig  CategoryLogisticsConfig?
 
+  @@index([parentId])
   @@index([name])
   @@index([slug])
   @@index([isActive])
+  @@index([sortOrder])
+  @@index([parentId, isActive, sortOrder])
   @@map("marketplace_categories")
+}
+
+// ------------------------------------------------------------------------------
+// Category Logistics Configuration (Weight & Unit of Measure Rules)
+// ------------------------------------------------------------------------------
+
+model CategoryLogisticsConfig {
+  id                String             @id @default(uuid())
+  categoryId        String             @unique
+  weightMode        LogisticsFieldMode @default(NOT_USED)
+  unitOfMeasureMode LogisticsFieldMode @default(NOT_USED)
+  defaultUnit       String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  category          MarketplaceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("category_logistics_configs")
+}
+
+// ------------------------------------------------------------------------------
+// Attribute Definitions (Reusable Across Categories)
+// ------------------------------------------------------------------------------
+
+model AttributeDefinition {
+  id                     String                  @id @default(uuid())
+  name                   String
+  slug                   String                  @unique
+  type                   AttributeType
+  description            String?
+  status                 AttributeStatus         @default(ACTIVE)
+  isSystem               Boolean                 @default(false)
+  unit                   String?
+  validationRules        Json?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  options                AttributeOption[]
+  categoryAttributes     CategoryAttribute[]
+  productAttributeValues ProductAttributeValue[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([type])
+  @@map("attribute_definitions")
+}
+
+// ------------------------------------------------------------------------------
+// Attribute Options (Predefined Options for SELECT & MULTI_SELECT)
+// ------------------------------------------------------------------------------
+
+model AttributeOption {
+  id                    String                  @id @default(uuid())
+  attributeDefinitionId String
+  label                 String
+  value                 String
+  sortOrder             Int                     @default(0)
+  status                AttributeStatus         @default(ACTIVE)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  attributeDefinition   AttributeDefinition     @relation(fields: [attributeDefinitionId], references: [id], onDelete: Cascade)
+  productAttributeValues ProductAttributeValue[]
+
+  @@unique([attributeDefinitionId, value])
+  @@index([attributeDefinitionId])
+  @@index([attributeDefinitionId, status, sortOrder])
+  @@map("attribute_options")
+}
+
+// ------------------------------------------------------------------------------
+// Category Attributes (Mapping Category to Reusable Attribute Definition)
+// ------------------------------------------------------------------------------
+
+model CategoryAttribute {
+  id                    String              @id @default(uuid())
+  categoryId            String
+  attributeDefinitionId String
+  isRequired            Boolean             @default(false)
+  isVisible             Boolean             @default(true)
+  sortOrder             Int                 @default(0)
+  configuration         Json?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  category              MarketplaceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  attributeDefinition   AttributeDefinition @relation(fields: [attributeDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, attributeDefinitionId])
+  @@index([categoryId])
+  @@index([categoryId, isVisible, sortOrder])
+  @@index([attributeDefinitionId])
+  @@map("category_attributes")
+}
+
+// ------------------------------------------------------------------------------
+// Product Attribute Values (Normalized Category-Driven Attributes)
+// ------------------------------------------------------------------------------
+
+model ProductAttributeValue {
+  id                    String              @id @default(uuid())
+  productId             String
+  attributeDefinitionId String
+  optionId              String?
+  valueText             String?
+  valueNumber           Decimal?            @db.Decimal(14, 4)
+  valueBoolean          Boolean?
+  valueDate             DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  product               Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attributeDefinition   AttributeDefinition @relation(fields: [attributeDefinitionId], references: [id], onDelete: Restrict)
+  option                AttributeOption?    @relation(fields: [optionId], references: [id], onDelete: SetNull)
+
+  @@unique([productId, attributeDefinitionId, optionId])
+  @@index([productId])
+  @@index([attributeDefinitionId])
+  @@index([optionId])
+  @@map("product_attribute_values")
 }
 
 // ------------------------------------------------------------------------------
@@ -535,26 +687,27 @@ model SellerMarketplaceCategory {
 // ------------------------------------------------------------------------------
 
 model Product {
-  id                    String              @id @default(uuid())
-  itemCode              String              @unique
+  id                    String                  @id @default(uuid())
+  itemCode              String                  @unique
   name                  String
   description           String?
   sellerId              String
   marketplaceCategoryId String
-  unit                  String
-  weight                Decimal             @db.Decimal(10, 2)
-  costPrice             Decimal?            @db.Decimal(12, 2)
-  sellingPrice          Decimal             @db.Decimal(12, 2)
-  status                ProductStatus       @default(ACTIVE)
-  cityAvailability      String[]            @default(["All Cities"])
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
+  unit                  String?
+  weight                Decimal?                @db.Decimal(10, 2)
+  costPrice             Decimal?                @db.Decimal(12, 2)
+  sellingPrice          Decimal                 @db.Decimal(12, 2)
+  status                ProductStatus           @default(ACTIVE)
+  cityAvailability      String[]                @default(["All Cities"])
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
-  seller                Supplier            @relation(fields: [sellerId], references: [id], onDelete: Restrict)
-  category              MarketplaceCategory @relation(fields: [marketplaceCategoryId], references: [id], onDelete: Restrict)
+  seller                Supplier                @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  category              MarketplaceCategory     @relation(fields: [marketplaceCategoryId], references: [id], onDelete: Restrict)
   images                ProductImage[]
   orderItems            OrderItem[]
   feedbacks             Feedback[]
+  attributeValues       ProductAttributeValue[]
 
   @@index([itemCode])
   @@index([sellerId])

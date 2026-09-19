@@ -20,9 +20,46 @@ export const searchService = {
     }
 
     const limit = Math.min(Number(options.limit) || DEFAULT_LIMIT, 20);
-    const types = options.types || ['orders', 'customers', 'deliveries', 'suppliers', 'maintenance', 'incidents'];
+    const types = options.types || ['orders', 'customers', 'deliveries', 'suppliers', 'categories', 'maintenance', 'incidents'];
 
     const tasks = [];
+
+    if (types.includes('categories')) {
+      tasks.push(
+        prisma.marketplaceCategory
+          .findMany({
+            where: {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' } },
+                { slug: { contains: q, mode: 'insensitive' } },
+                { description: { contains: q, mode: 'insensitive' } },
+              ],
+            },
+            take: limit,
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              icon: true,
+              isActive: true,
+              createdAt: true,
+            },
+            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          })
+          .then((rows) => [
+            'categories',
+            rows.map((r) => ({
+              id: r.id,
+              type: 'category',
+              title: r.name,
+              subtitle: `Slug: ${r.slug}`,
+              meta: r.isActive ? 'ACTIVE' : 'INACTIVE',
+              href: `/subadmin/categories`,
+              createdAt: r.createdAt,
+            })),
+          ])
+      );
+    }
 
     if (types.includes('orders')) {
       tasks.push(

@@ -43,6 +43,9 @@ import {
   ProductListResult,
   ProductStatus,
   ProductImageItem,
+  AttributeDefinition,
+  EffectiveCategoryAttributes,
+  CategoryLocalAttributesResponse,
 } from '@/types/product';
 import {
   Supplier,
@@ -176,6 +179,7 @@ interface BackendAuthPayload {
   error?: {
     code?: string;
     message?: string;
+    details?: any[];
   };
 }
 
@@ -255,6 +259,12 @@ async function fetchAuthApi<T = BackendAuthPayload>(endpoint: string, options: R
           })
         );
       }
+    }
+
+    const details = errorObj.details;
+    if (code === 'VALIDATION_ERROR' && Array.isArray(details) && details.length > 0) {
+      const fieldErrors = details.map((d: any) => `${d.field ? `${d.field}: ` : ''}${d.message}`).join(', ');
+      message = `${message} (${fieldErrors})`;
     }
 
     throw new ApiResponseError(message, response.status, code);
@@ -505,10 +515,11 @@ export const productsApi = {
         description: p.description?.trim() || null,
         sellerId: p.sellerId,
         marketplaceCategoryId: p.marketplaceCategoryId,
-        unit: p.unit.trim(),
-        weight: Number(p.weight),
+        unit: p.unit !== undefined && p.unit !== null ? p.unit.trim() : null,
+        weight: p.weight !== undefined && p.weight !== null ? Number(p.weight) : null,
         costPrice: p.costPrice !== undefined && p.costPrice !== null ? Number(p.costPrice) : null,
         sellingPrice: Number(p.sellingPrice),
+        attributeValues: p.attributeValues || [],
         images: p.images || [],
         cityAvailability: p.cityAvailability && p.cityAvailability.length > 0 ? p.cityAvailability : ['All Cities'],
         status: p.status || 'ACTIVE',
@@ -567,10 +578,11 @@ export const productsApi = {
     if (input.description !== undefined) payload.description = input.description ? input.description.trim() : null;
     if (input.sellerId !== undefined) payload.sellerId = input.sellerId;
     if (input.marketplaceCategoryId !== undefined) payload.marketplaceCategoryId = input.marketplaceCategoryId;
-    if (input.unit !== undefined) payload.unit = input.unit.trim();
-    if (input.weight !== undefined) payload.weight = Number(input.weight);
+    if (input.unit !== undefined) payload.unit = input.unit !== null ? input.unit.trim() : null;
+    if (input.weight !== undefined) payload.weight = input.weight !== null ? Number(input.weight) : null;
     if (input.costPrice !== undefined) payload.costPrice = input.costPrice !== null ? Number(input.costPrice) : null;
     if (input.sellingPrice !== undefined) payload.sellingPrice = Number(input.sellingPrice);
+    if (input.attributeValues !== undefined) payload.attributeValues = input.attributeValues;
     if (input.images !== undefined) payload.images = input.images;
     if (input.cityAvailability !== undefined) payload.cityAvailability = input.cityAvailability;
     if (input.status !== undefined) payload.status = input.status;
@@ -631,8 +643,19 @@ export const productsApi = {
 };
 
 export const categoriesApi = {
-  getAll: async (): Promise<Category[]> => {
-    const res = await fetchAuthApi<{ success: boolean; data: Category[] }>('/api/categories', {
+  getAll: async (params?: { parentId?: string | null; activeOnly?: boolean; search?: string }): Promise<Category[]> => {
+    const query = new URLSearchParams();
+    if (params?.parentId !== undefined) {
+      query.append('parentId', params.parentId === null ? 'null' : params.parentId);
+    }
+    if (params?.activeOnly !== undefined) {
+      query.append('activeOnly', String(params.activeOnly));
+    }
+    if (params?.search) {
+      query.append('search', params.search);
+    }
+    const url = `/api/categories${query.toString() ? `?${query.toString()}` : ''}`;
+    const res = await fetchAuthApi<{ success: boolean; data: Category[] }>(url, {
       method: 'GET',
     });
     return (res.data || []).map((c) => ({
@@ -640,8 +663,41 @@ export const categoriesApi = {
       icon: c.icon || 'bi-box-seam',
       status: c.isActive !== false ? 'ACTIVE' : 'INACTIVE',
       productCount: c.productCount || 0,
+      sellerCount: c.sellerCount || 0,
+      childrenCount: c.childrenCount || 0,
       createdAt: c.createdAt || new Date().toISOString().split('T')[0],
     }));
+  },
+
+  getTree: async (status?: 'ACTIVE' | 'ALL'): Promise<Category[]> => {
+    const url = `/api/categories/tree${status === 'ACTIVE' ? '?status=ACTIVE' : ''}`;
+    const res = await fetchAuthApi<{ success: boolean; data: Category[] }>(url, {
+      method: 'GET',
+    });
+    return res.data || [];
+  },
+
+  getById: async (id: string): Promise<Category> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Category }>(`/api/categories/${id}`, {
+      method: 'GET',
+    });
+    return res.data;
+  },
+
+  getChildren: async (id: string, activeOnly?: boolean): Promise<Category[]> => {
+    const url = `/api/categories/${id}/children${activeOnly ? '?activeOnly=true' : ''}`;
+    const res = await fetchAuthApi<{ success: boolean; data: Category[] }>(url, {
+      method: 'GET',
+    });
+    return res.data || [];
+  },
+
+  getBreadcrumbs: async (id: string): Promise<{ id: string; name: string; slug: string }[]> => {
+    const res = await fetchAuthApi<{ success: boolean; data: { id: string; name: string; slug: string }[] }>(
+      `/api/categories/${id}/breadcrumbs`,
+      { method: 'GET' }
+    );
+    return res.data || [];
   },
 
   getBySeller: async (sellerId: string): Promise<Category[]> => {
@@ -661,18 +717,177 @@ export const categoriesApi = {
     }));
   },
 
-  create: async (category: Omit<Category, 'id' | 'createdAt' | 'productCount'>): Promise<Category> => {
+  create: async (category: Partial<Category>): Promise<Category> => {
     const res = await fetchAuthApi<{ success: boolean; data: Category }>('/api/categories', {
       method: 'POST',
       body: JSON.stringify({
         name: category.name,
         slug: category.slug,
+        parentId: category.parentId || null,
         icon: category.icon,
         description: category.description,
-        isActive: category.status !== 'INACTIVE',
+        imageUrl: category.imageUrl,
+        sortOrder: category.sortOrder || 0,
+        isActive: category.status !== 'INACTIVE' && category.isActive !== false,
       }),
     });
     if (!res.data) throw new Error('Failed to create category');
+    return res.data;
+  },
+
+  update: async (id: string, updates: Partial<Category>): Promise<Category> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Category }>(`/api/categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    if (!res.data) throw new Error('Failed to update category');
+    return res.data;
+  },
+
+  updateStatus: async (id: string, isActive: boolean): Promise<Category> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Category }>(`/api/categories/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    });
+    if (!res.data) throw new Error('Failed to update category status');
+    return res.data;
+  },
+
+  move: async (id: string, targetParentId: string | null): Promise<Category> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Category }>(`/api/categories/${id}/move`, {
+      method: 'PATCH',
+      body: JSON.stringify({ targetParentId }),
+    });
+    if (!res.data) throw new Error('Failed to move category');
+    return res.data;
+  },
+
+  delete: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const res = await fetchAuthApi<{ success: boolean; message: string }>(`/api/categories/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  uploadImage: async (file: File): Promise<{ url: string; publicId: string }> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await fetchAuthApi<{ success: boolean; data: { url: string; publicId: string } }>(
+      '/api/categories/upload-image',
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+    if (!res.data?.url) throw new Error('Failed to upload category image to storage');
+    return res.data;
+  },
+
+  getAttributes: async (id: string): Promise<CategoryLocalAttributesResponse> => {
+    const res = await fetchAuthApi<{ success: boolean; data: CategoryLocalAttributesResponse }>(
+      `/api/categories/${id}/attributes`,
+      { method: 'GET' }
+    );
+    if (!res.data) throw new Error('Failed to fetch category attributes');
+    return res.data;
+  },
+
+  updateAttributes: async (
+    id: string,
+    payload: {
+      attributes?: { attributeDefinitionId: string; isRequired?: boolean; isVisible?: boolean; sortOrder?: number; configuration?: any }[];
+      logistics?: { weightMode?: string; unitOfMeasureMode?: string; defaultUnit?: string | null };
+    }
+  ): Promise<CategoryLocalAttributesResponse> => {
+    const res = await fetchAuthApi<{ success: boolean; data: CategoryLocalAttributesResponse }>(
+      `/api/categories/${id}/attributes`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!res.data) throw new Error('Failed to update category attributes');
+    return res.data;
+  },
+
+  getEffectiveAttributes: async (id: string): Promise<EffectiveCategoryAttributes> => {
+    const res = await fetchAuthApi<{ success: boolean; data: EffectiveCategoryAttributes }>(
+      `/api/categories/${id}/effective-attributes`,
+      { method: 'GET' }
+    );
+    if (!res.data) throw new Error('Failed to fetch effective category attributes');
+    return res.data;
+  },
+};
+
+export const attributesApi = {
+  getAll: async (params?: { search?: string; type?: string; status?: string }): Promise<AttributeDefinition[]> => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.type) query.set('type', params.type);
+    if (params?.status) query.set('status', params.status);
+
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchAuthApi<{ success: boolean; data: AttributeDefinition[] }>(
+      `/api/attributes${queryString}`,
+      { method: 'GET' }
+    );
+    return res.data || [];
+  },
+
+  getById: async (id: string): Promise<AttributeDefinition> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AttributeDefinition }>(
+      `/api/attributes/${id}`,
+      { method: 'GET' }
+    );
+    if (!res.data) throw new Error('Failed to fetch attribute definition');
+    return res.data;
+  },
+
+  create: async (payload: {
+    name: string;
+    type: string;
+    description?: string | null;
+    unit?: string | null;
+    options?: { label: string; value: string; sortOrder?: number }[];
+  }): Promise<AttributeDefinition> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AttributeDefinition }>(
+      '/api/attributes',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!res.data) throw new Error('Failed to create attribute definition');
+    return res.data;
+  },
+
+  update: async (
+    id: string,
+    payload: {
+      name?: string;
+      description?: string | null;
+      unit?: string | null;
+      options?: { id?: string; label: string; value: string; sortOrder?: number; status?: string }[];
+    }
+  ): Promise<AttributeDefinition> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AttributeDefinition }>(
+      `/api/attributes/${id}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!res.data) throw new Error('Failed to update attribute definition');
+    return res.data;
+  },
+
+  deactivate: async (id: string): Promise<AttributeDefinition> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AttributeDefinition }>(
+      `/api/attributes/${id}`,
+      { method: 'DELETE' }
+    );
+    if (!res.data) throw new Error('Failed to deactivate attribute definition');
     return res.data;
   },
 };
