@@ -1,0 +1,67 @@
+{
+  "cart": {
+    "title": "የግዢ ጋሪዎ",
+    "emptyTitle": "ጋሪዎ ባዶ ነው",
+    "emptyDesc": "እስካሁን ምንም ምርት አልጨመሩም። ገበያችንን በመጎብኘት ይሸምቱ!",
+    "itemsCount": "ምርቶች",
+    "seller": "የተሸጠው በ",
+    "price": "ዋጋ",
+    "quantity": "ብዛት",
+    "subtotal": "ጠቅላላ ዋጋ",
+    "remove": "አስወግድ",
+    "moveToWishlist": "ወደ ምኞት ዝርዝር ውሰድ",
+    "orderSummary": "የትዕዛዝ ማጠቃለያ",
+    "deliveryFee": "የማድረሻ ክፍያ",
+    "estimatedTotal": "የመጨረሻ ድምር",
+    "proceedToCheckout": "ወደ ክፍያ ሂድ"
+  },
+  "checkout": {
+    "title": "ማዘዣ እና ክፍያ",
+    "step1": "1. የማድረሻ አድራሻ",
+    "step2": "2. የክፍያ ዘዴ",
+    "step3": "3. ማረጋገጫ እና ትዕዛዝ",
+    "recipientName": "የተቀባይ ስም",
+    "phone": "ስልክ ቁጥር",
+    "city": "ከተማ",
+    "deliveryZone": "የማድረሻ ዞን / ወረዳ",
+    "addressLine": "የቤት ቁጥር / አድራሻ ወይም ልዩ ምልክት",
+    "notes": "ለአሽከርካሪው ልዩ መልዕክት",
+    "paymentMethod": "የክፍያ ዘዴ ይምረጡ",
+    "placeOrder": "ትዕዛዝ አረጋግጥና ላክ",
+    "orderSuccess": "ትዕዛዝዎ በተሳካ ሁኔታ ተቀምጧል!",
+    "orderNumber": "የትዕዛዝ ቁጥር",
+    "trackDelivery": "የማድረሻ ሁኔታውን ተከታተል"
+  },
+  "orders": {
+    "title": "ትዕዛዞቼ",
+    "emptyTitle": "ምንም ትዕዛዝ አልተገኘም",
+    "emptyDesc": "እስካሁን ያዘዙት ምርት የለም።",
+    "orderNumber": "የትዕዛዝ ቁጥር",
+    "placedOn": "የታዘዘበት ቀን",
+    "total": "ጠቅላላ",
+    "status": "ሁኔታ",
+    "details": "ዝርዝር እይ",
+    "timeline": "የማድረሻ ሂደት ደረጃ",
+    "steps": {
+      "placed": "ትዕዛዝ ተቀምጧል",
+      "confirmed": "ትዕዛዝ ተረጋግጧል",
+      "processing": "በዝግጅት ላይ",
+      "ready": "ለማድረስ ዝግጁ ነው",
+      "outForDelivery": "ወደ እርስዎ በመጓዝ ላይ",
+      "delivered": "ተረክበዋል"
+    }
+  },
+  "account": {
+    "title": "የደንበኛ መለያ",
+    "profile": "የግል መረጃ",
+    "security": "ደህንነት እና የይለፍ ቃል",
+    "orders": "የትዕዛዝ ታሪክ",
+    "wishlist": "የተወደዱ ምርቶች",
+    "reviews": "የሰጧቸው አስተያየቶች",
+    "displayName": "የመጠሪያ ስም",
+    "email": "ኢሜይል",
+    "phone": "ስልክ",
+    "city": "ከተማ",
+    "saveChanges": "ለውጦችን አስቀምጥ"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "brand": {
+    "name": "አርዳብ ገበያ",
+    "tagline": "የከተማዎ ፈጣን የገበያ እና የማድረሻ መድረክ"
+  },
+  "nav": {
+    "home": "መነሻ",
+    "categories": "ምድቦች",
+    "products": "ምርቶች",
+    "sellers": "ሻጮች",
+    "deals": "ልዩ ቅናሾች",
+    "newArrivals": "አዳዲስ ምርቶች",
+    "popular": "ተወዳጅ ምርቶች",
+    "about": "ስለ እኛ",
+    "search": "ምርቶችን፣ ምድቦችን፣ መደብሮችን ይፈልጉ...",
+    "cart": "ጋሪ",
+    "wishlist": "የምኞት ዝርዝር",
+    "account": "መለያዬ",
+    "signIn": "ይግቡ",
+    "signUp": "ይመዝገቡ",
+    "register": "ይመዝገቡ",
+    "logout": "ውጣ",
+    "city": "ከተማ"
+
+  },
+  "footer": {
+    "about": "ስለ አርዳብ ገበያ",
+    "aboutDesc": "አርዳብ ገበያ ጥራት ያላቸውን ምርቶች ከታመኑ ሻጮች በቀጥታ እስከ ደጃፍዎ በፍጥነት እና በደህንነት የሚያደርስ ዘመናዊ የኢ-ኮሜርስ መድረክ ነው።",
+    "quickLinks": "ፈጣን አገናኞች",
+    "customerCare": "የደንበኞች አገልግሎት",
+    "contact": "አግኙን",
+    "privacy": "የግላዊነት ፖሊሲ",
+    "terms": "የአገልግሎት ውሎች",
+    "support": "የእርዳታ ማዕከል",
+    "deliveryFleet": "የአርዳብ ማድረሻ አገልግሎት",
+    "rights": "መብቱ በህግ የተጠበቀ ነው።"
+  },
+  "actions": {
+    "addToCart": "ወደ ጋሪ ጨምር",
+    "buyNow": "አሁን ግዛ",
+    "viewDetails": "ዝርዝሩን እይ",
+    "filter": "አጣራ",
+    "sort": "አስተካክል",
+    "clearAll": "ሁሉንም አጽዳ",
+    "apply": "ተግብር",
+    "checkout": "ወደ ክፍያ ሂድ",
+    "continueShopping": "ግዢህን ቀጥል",
+    "back": "ተመለስ",
+    "submit": "አስገባ",
+    "cancel": "ሰርዝ",
+    "save": "አስቀምጥ",
+    "loading": "በመጫን ላይ..."
+  },
+  "status": {
+    "available": "ክምችት አለ",
+    "outOfStock": "አልቋል",
+    "inTransit": "በመንገድ ላይ",
+    "delivered": "ደርሷል",
+    "pending": "በመጠባበቅ ላይ"
+  },
+  "currency": "ብር",
+  "empty": {
+    "title": "ምንም አልተገኘም",
+    "desc": "በዚህ ዝርዝር ውስጥ ምንም መረጃ የለም።"
+  }
+}

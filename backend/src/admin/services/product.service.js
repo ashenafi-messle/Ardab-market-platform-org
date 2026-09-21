@@ -116,15 +116,40 @@ export async function listProducts(query = {}) {
     where.sellerId = query.sellerId.trim();
   }
 
-  // Marketplace Category Filter (supports descendant inclusion for browsing)
-  if (query.categoryId && query.categoryId !== 'all') {
-    const targetCatId = query.categoryId.trim();
-    if (query.includeDescendants === 'true' || query.includeDescendants === true) {
+  // Marketplace Category Filter (supports slug or UUID, and defaults to resolving all descendant categories)
+  const categoryFilterParam = query.categoryId || query.category;
+  if (categoryFilterParam && categoryFilterParam !== 'all') {
+    const rawCat = categoryFilterParam.trim();
+    let targetCatId = rawCat;
+
+    // Check if rawCat is a slug or ID
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCat);
+    if (!isUuid) {
+      const foundCat = await prisma.marketplaceCategory.findUnique({
+        where: { slug: rawCat.toLowerCase() },
+        select: { id: true },
+      });
+      if (foundCat) {
+        targetCatId = foundCat.id;
+      }
+    }
+
+    // Default includeDescendants to TRUE for comprehensive category browsing unless explicitly 'false'
+    const shouldIncludeDescendants = query.includeDescendants !== 'false' && query.includeDescendants !== false;
+    if (shouldIncludeDescendants) {
       const descendants = await getDescendantCategoryIds(targetCatId);
       where.marketplaceCategoryId = { in: [targetCatId, ...descendants] };
     } else {
       where.marketplaceCategoryId = targetCatId;
     }
+  }
+
+  // Price Range Filtering
+  if (query.minPrice !== undefined && query.minPrice !== '' && !isNaN(Number(query.minPrice))) {
+    where.sellingPrice = { ...(where.sellingPrice || {}), gte: Number(query.minPrice) };
+  }
+  if (query.maxPrice !== undefined && query.maxPrice !== '' && !isNaN(Number(query.maxPrice))) {
+    where.sellingPrice = { ...(where.sellingPrice || {}), lte: Number(query.maxPrice) };
   }
 
   // City Availability Filter
@@ -154,6 +179,35 @@ export async function listProducts(query = {}) {
     }
   }
 
+  // Database-Level Sorting
+  const sortParam = query.sort || query.sortBy || 'createdAt_desc';
+  let orderBy = { createdAt: 'desc' };
+
+  switch (sortParam) {
+    case 'price_asc':
+    case 'price:asc':
+      orderBy = { sellingPrice: 'asc' };
+      break;
+    case 'price_desc':
+    case 'price:desc':
+      orderBy = { sellingPrice: 'desc' };
+      break;
+    case 'name_asc':
+    case 'name:asc':
+      orderBy = { name: 'asc' };
+      break;
+    case 'name_desc':
+    case 'name:desc':
+      orderBy = { name: 'desc' };
+      break;
+    case 'popular':
+    case 'newest':
+    case 'createdAt_desc':
+    default:
+      orderBy = { createdAt: 'desc' };
+      break;
+  }
+
   const [total, items] = await Promise.all([
     prisma.product.count({ where }),
     prisma.product.findMany({
@@ -181,7 +235,7 @@ export async function listProducts(query = {}) {
           orderBy: { sortOrder: 'asc' },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy,
       skip,
       take,
     }),

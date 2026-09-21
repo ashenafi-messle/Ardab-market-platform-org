@@ -114,3 +114,42 @@ export const otpVerifyRateLimiter = rateLimit({
   },
 });
 
+/**
+ * Dedicated rate limiter for email verification link clicks
+ * Allows legitimate verification without tripping aggressive general rate limits,
+ * while protecting against automated token brute-forcing (30 attempts per 15m window).
+ */
+export const emailVerificationRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    return ApiResponse.error(
+      res,
+      'TOO_MANY_VERIFICATION_ATTEMPTS',
+      'Too many verification attempts from this network. Please wait a few minutes before trying again.',
+      429
+    );
+  },
+});
+
+/**
+ * Dedicated rate limiter for resending verification emails
+ * Prevents spamming customer inboxes / Brevo quota abuse (5 attempts per 15m window).
+ */
+export const resendVerificationRateLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    return ApiResponse.error(
+      res,
+      'TOO_MANY_RESEND_ATTEMPTS',
+      'Too many verification emails requested. Please wait before requesting another email.',
+      429
+    );
+  },
+});
+

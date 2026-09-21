@@ -224,7 +224,7 @@ export default function CustomersPage() {
       isOpen: true,
       title: isSuspending ? 'Suspend Customer Account' : 'Reactivate Customer Account',
       message: isSuspending
-        ? `Are you sure you want to suspend ${customer.fullName || customer.name}? The customer will be blocked from placing orders on Ardab Market.`
+        ? `Are you sure you want to suspend ${customer.fullName || customer.name}? The customer will immediately lose access to shopping, login, and active sessions on Ardab Market.`
         : `Reactivate ${customer.fullName || customer.name}'s account? Full marketplace access will be restored.`,
       variant: isSuspending ? 'danger' : 'success',
       confirmLabel: isSuspending ? 'Suspend Account' : 'Reactivate Account',
@@ -237,6 +237,32 @@ export default function CustomersPage() {
           setViewCustomer(updated);
         }
         fetchSummary();
+      },
+    });
+  };
+
+  // Permanent Customer Deletion
+  const promptDeleteCustomer = (customer: Customer) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Permanently Delete Customer Account?',
+      message: `Are you sure you want to permanently delete ${customer.fullName || customer.name} (${customer.customerCode || customer.phone})? All personal addresses, loyalty score events, activities, and reviews will be permanently removed. Historical order records will be anonymized to protect accounting and legal compliance. This action cannot be undone.`,
+      variant: 'danger',
+      isIrreversible: true,
+      confirmLabel: 'Delete Customer Permanently',
+      affectedCount: 1,
+      affectedNames: [`${customer.fullName || customer.name} (${customer.customerCode || customer.phone})`],
+      action: async () => {
+        await customersApi.delete(customer.id);
+        // Remove from state
+        setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
+        if (viewCustomer && viewCustomer.id === customer.id) {
+          setViewCustomer(null);
+        }
+        setSelectedIds((prev) => prev.filter((id) => id !== customer.id));
+        fetchSummary();
+        // If current page is now empty, decrement page
+        fetchCustomers();
       },
     });
   };
@@ -744,18 +770,28 @@ export default function CustomersPage() {
                             <i className="bi bi-eye"></i> Details
                           </button>
                           {canSuspend && (
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${
-                                c.accountStatus === 'ACTIVE'
-                                  ? 'btn-outline-danger'
-                                  : 'btn-outline-success'
-                              } shadow-sm`}
-                              onClick={() => promptToggleSuspend(c)}
-                              title={c.accountStatus === 'ACTIVE' ? 'Suspend Account' : 'Reactivate Account'}
-                            >
-                              {c.accountStatus === 'ACTIVE' ? 'Suspend' : 'Reactivate'}
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${
+                                  c.accountStatus === 'ACTIVE'
+                                    ? 'btn-outline-warning'
+                                    : 'btn-outline-success'
+                                } shadow-sm`}
+                                onClick={() => promptToggleSuspend(c)}
+                                title={c.accountStatus === 'ACTIVE' ? 'Suspend Account' : 'Reactivate Account'}
+                              >
+                                {c.accountStatus === 'ACTIVE' ? 'Suspend' : 'Reactivate'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger shadow-sm"
+                                onClick={() => promptDeleteCustomer(c)}
+                                title="Delete Customer and Cleanse Data"
+                              >
+                                <i className="bi bi-trash"></i>
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1373,17 +1409,26 @@ export default function CustomersPage() {
 
                 {/* Modal Footer */}
                 <div className="modal-footer border-top bg-light px-4 py-2 d-flex justify-content-between">
-                  <div>
+                  <div className="d-flex gap-2">
                     {canSuspend && (
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${
-                          viewCustomer.accountStatus === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'
-                        }`}
-                        onClick={() => promptToggleSuspend(viewCustomer)}
-                      >
-                        {viewCustomer.accountStatus === 'ACTIVE' ? 'Suspend Account' : 'Reactivate Account'}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${
+                            viewCustomer.accountStatus === 'ACTIVE' ? 'btn-outline-warning' : 'btn-outline-success'
+                          }`}
+                          onClick={() => promptToggleSuspend(viewCustomer)}
+                        >
+                          {viewCustomer.accountStatus === 'ACTIVE' ? 'Suspend Account' : 'Reactivate Account'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => promptDeleteCustomer(viewCustomer)}
+                        >
+                          <i className="bi bi-trash me-1"></i> Delete Customer
+                        </button>
+                      </>
                     )}
                   </div>
                   <button

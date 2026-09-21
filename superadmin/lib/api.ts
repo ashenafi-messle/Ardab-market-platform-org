@@ -1272,6 +1272,17 @@ export const customersApi = {
     return res.data?.affectedCount || ids.length;
   },
 
+  delete: async (id: string): Promise<{ success: boolean; deletedId: string; customerCode?: string }> => {
+    const res = await fetchAuthApi<{
+      success: boolean;
+      data: { success: boolean; deletedId: string; customerCode?: string };
+    }>(`/api/customers/${id}`, {
+      method: 'DELETE',
+    });
+
+    return res.data;
+  },
+
   update: async (id: string, data: Partial<Customer>): Promise<Customer> => {
     const payload: Record<string, any> = {};
     if (data.fullName !== undefined) payload.fullName = data.fullName;

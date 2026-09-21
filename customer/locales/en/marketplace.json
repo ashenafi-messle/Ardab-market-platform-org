@@ -1,0 +1,58 @@
+{
+  "hero": {
+    "badge": "Official City Marketplace",
+    "title": "Fresh & Quality Products Delivered Right To Your Doorstep",
+    "subtitle": "Order premium teff, organic coffee, honey, and local commodities from verified suppliers in Gondar, Bahir Dar, and Addis Ababa.",
+    "shopNow": "Shop Now",
+    "exploreCategories": "Explore Categories"
+  },
+  "features": {
+    "fleetTitle": "Ardab Logistics Fleet",
+    "fleetDesc": "Internal logistics operations with heavy cargo trucks supporting up to 5,000 kg capacity per trip",
+    "qualityTitle": "Verified Quality",
+    "qualityDesc": "Authentic commodities verified directly by regional agricultural hubs",
+    "speedTitle": "Swift Delivery",
+    "speedDesc": "Reliable same-city and cross-hub scheduled delivery",
+    "paymentTitle": "Seamless Payments",
+    "paymentDesc": "Pay effortlessly via Telebirr, CBE, or cash on delivery"
+  },
+  "sections": {
+    "categories": "Shop by Category",
+    "popularProducts": "Popular Products",
+    "deals": "Featured Deals",
+    "newArrivals": "New Arrivals",
+    "sellers": "Featured Sellers",
+    "cityAvailable": "Available in Your City",
+    "recentlyViewed": "Recently Viewed"
+  },
+  "card": {
+    "seller": "Seller",
+    "rating": "Rating",
+    "delivery": "Delivery",
+    "itemCode": "Item Code",
+    "inStock": "In Stock",
+    "allCities": "All Cities"
+  },
+  "search": {
+    "title": "Product Search",
+    "results": "Search Results for",
+    "noResults": "No matching products found",
+    "tryDifferent": "Try adjusting your keywords or clearing selected filters.",
+    "sortBy": "Sort by",
+    "sortOptions": {
+      "relevance": "Relevance",
+      "newest": "Newest",
+      "priceLow": "Price: Low to High",
+      "priceHigh": "Price: High to Low",
+      "rating": "Top Rated"
+    }
+  },
+  "filters": {
+    "title": "Filters",
+    "priceRange": "Price Range (ETB)",
+    "category": "Category",
+    "seller": "Seller",
+    "city": "City Availability",
+    "attributes": "Product Attributes"
+  }
+}

@@ -28,6 +28,9 @@ export default function LandingFooter() {
             <div className="text-muted" style={{ fontSize: '0.75rem' }}>
               &copy; {new Date().getFullYear()} Ardab Market Platform. All rights reserved.
             </div>
+            <div className="text-muted fw-semibold mt-1" style={{ fontSize: '0.75rem' }}>
+              Powered by Ardab Tech Solutions S.C.
+            </div>
           </div>
         </div>
       </div>

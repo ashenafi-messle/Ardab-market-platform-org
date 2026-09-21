@@ -1,0 +1,58 @@
+{
+  "hero": {
+    "badge": "አስተማማኝ የከተማ መድረክ",
+    "title": "ትኩስ ጥራት ያላቸው ምርቶች በቀጥታ ወደ ደጃፍዎ",
+    "subtitle": "ከጎንደር፣ ባህር ዳር እና አዲስ አበባ ታማኝ ሻጮች ምርጥ እህሎች፣ ቅመማ ቅመሞች፣ ማር እና ፋሽን ምርቶች በአርዳብ ፈጣን ማድረሻ ይዘዙ።",
+    "shopNow": "አሁን ይሸምቱ",
+    "exploreCategories": "ምድቦችን ያስሱ"
+  },
+  "features": {
+    "fleetTitle": "የአርዳብ ማድረሻ መርከብ",
+    "fleetDesc": "በከተማ ደረጃ የተደራጀ የ 5000 ኪ.ግ ጭነት ማድረሻ መኪኖች ለጅምላና ለችርቻሮ ትዕዛዝ",
+    "qualityTitle": "የተረጋገጠ ጥራት",
+    "qualityDesc": "በአስተዳደሩ በቀጥታ የተፈተሹ እውነተኛ ምርቶችና የታመኑ ሻጮች",
+    "speedTitle": "ፈጣን እና አስተማማኝ",
+    "speedDesc": "የቀን ማድረሻ በቀጥታ ከተማ ውስጥ ወደ ሚገኝ ማዕከል",
+    "paymentTitle": "ቀላል ክፍያዎች",
+    "paymentDesc": "በቴሌብር፣ በባንክ ወይም በእጅ በእጅ አስተማማኝ ክፍያ"
+  },
+  "sections": {
+    "categories": "በምድብ ይሸምቱ",
+    "popularProducts": "ተወዳጅ የገበያ ምርቶች",
+    "deals": "ልዩ ቅናሽ ያላቸው ምርቶች",
+    "newArrivals": "አዲስ የገቡ ምርቶች",
+    "sellers": "ታዋቂ ሻጮች እና መደብሮች",
+    "cityAvailable": "በከተማዎ ውስጥ የሚገኙ ምርቶች",
+    "recentlyViewed": "በቅርቡ የተመለከቷቸው"
+  },
+  "card": {
+    "seller": "ሻጭ",
+    "rating": "ደረጃ",
+    "delivery": "ማድረሻ",
+    "itemCode": "የእቃ ኮድ",
+    "inStock": "ክምችት አለ",
+    "allCities": "በሁሉም ከተሞች ይሰራል"
+  },
+  "search": {
+    "title": "የምርት ፍለጋ",
+    "results": "የፍለጋ ውጤቶች ለ",
+    "noResults": "ምንም የተገኘ ውጤት የለም",
+    "tryDifferent": "እባክዎን ሌላ ቃል ይሞክሩ ወይም ማጣሪያዎችን ያጽዱ።",
+    "sortBy": "መደርደሪያ",
+    "sortOptions": {
+      "relevance": "ተዛማጅነት",
+      "newest": "አዳዲሶች",
+      "priceLow": "ዋጋ፡ ከዝቅተኛ ወደ ከፍተኛ",
+      "priceHigh": "ዋጋ፡ ከከፍተኛ ወደ ዝቅተኛ",
+      "rating": "ከፍተኛ ደረጃ ያላቸው"
+    }
+  },
+  "filters": {
+    "title": "ማጣሪያዎች",
+    "priceRange": "የዋጋ ክልል (ብር)",
+    "category": "ምድብ",
+    "seller": "ሻጭ",
+    "city": "የከተማ ተደራሽነት",
+    "attributes": "ልዩ ባህሪያት"
+  }
+}

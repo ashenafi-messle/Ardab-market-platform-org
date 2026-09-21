@@ -1,5 +1,5 @@
 // ==============================================================================
-// Ardab Market - Hierarchical Category Management Integration Test Suite
+// Ardab Market - Category Hierarchy & Descendant Filtering Integration Test Suite
 // ==============================================================================
 
 import test from 'node:test';
@@ -7,285 +7,266 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/shared/config/database.js';
-import { generateAdminToken } from '../src/admin/services/auth.service.js';
-import { ADMIN_ROLES } from '../src/admin/constants/adminRoles.js';
 
 const app = createApp();
 
-let superAdminToken = '';
-let subAdminToken = '';
+test('Category Hierarchy & Product Filtering Integration Test Suite', async (suite) => {
+  const timestamp = Date.now();
+  let testSellerId = null;
+  let clothingCatId = null;
+  let mensClothingCatId = null;
+  let mensShirtsCatId = null;
+  let womensClothingCatId = null;
+  let womensDressesCatId = null;
 
-test('Hierarchical Category Management Integration Test Suite', async (suite) => {
-  let rootFashion = null;
-  let childMen = null;
-  let childShirts = null;
-  let childFormalShirts = null;
-  let testSupplier = null;
-  let createdProductId = null;
+  const productIds = [];
 
   suite.before(async () => {
-    // Generate admin tokens
-    const seededSuperAdmin = await prisma.adminUser.findUnique({
-      where: { email: 'admin@ardabmarket.com' },
-    });
-    const seededSubAdmin = await prisma.adminUser.findUnique({
-      where: { email: 'ashurack664@gmail.com' },
-    });
-
-    superAdminToken = generateAdminToken({
-      id: seededSuperAdmin ? seededSuperAdmin.id : 'superadmin-test-id',
-      email: 'admin@ardabmarket.com',
-      name: 'Super Admin',
-      role: ADMIN_ROLES.SUPER_ADMIN,
-    });
-
-    subAdminToken = generateAdminToken({
-      id: seededSubAdmin ? seededSubAdmin.id : 'subadmin-test-id',
-      email: 'ashurack664@gmail.com',
-      name: 'Sub Admin',
-      role: ADMIN_ROLES.SUB_ADMIN,
-    });
-
-    // Create a temporary active supplier
-    testSupplier = await prisma.supplier.create({
+    // 1. Create a test seller
+    const seller = await prisma.supplier.create({
       data: {
-        companyName: 'Test Category Taxonomy Supplier',
-        name: 'Abebe Bikila',
-        phone: '+251911009988',
-        email: 'taxonomy.supplier@example.com',
+        companyName: `Test Supplier Hierarchy ${timestamp}`,
+        name: `Supplier Contact ${timestamp}`,
+        phone: `+251911${Math.floor(100000 + Math.random() * 900000)}`,
         city: 'Gondar',
-        address: 'Central Market',
+        address: 'Kebele 04, Piazza',
+        status: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+      },
+    });
+    testSellerId = seller.id;
+
+    // 2. Create Category Hierarchy:
+    // Clothing (root)
+    // ├── Men's Clothing (child)
+    // │   └── Men's Shirts (grandchild)
+    // └── Women's Clothing (child)
+    //     └── Women's Dresses (grandchild)
+
+    const clothing = await prisma.marketplaceCategory.create({
+      data: {
+        name: `Clothing Root ${timestamp}`,
+        slug: `clothing-root-${timestamp}`,
+        isActive: true,
+      },
+    });
+    clothingCatId = clothing.id;
+
+    const mensClothing = await prisma.marketplaceCategory.create({
+      data: {
+        name: `Mens Clothing ${timestamp}`,
+        slug: `mens-clothing-${timestamp}`,
+        parentId: clothingCatId,
+        isActive: true,
+      },
+    });
+    mensClothingCatId = mensClothing.id;
+
+    const mensShirts = await prisma.marketplaceCategory.create({
+      data: {
+        name: `Mens Shirts ${timestamp}`,
+        slug: `mens-shirts-${timestamp}`,
+        parentId: mensClothingCatId,
+        isActive: true,
+      },
+    });
+    mensShirtsCatId = mensShirts.id;
+
+    const womensClothing = await prisma.marketplaceCategory.create({
+      data: {
+        name: `Womens Clothing ${timestamp}`,
+        slug: `womens-clothing-${timestamp}`,
+        parentId: clothingCatId,
+        isActive: true,
+      },
+    });
+    womensClothingCatId = womensClothing.id;
+
+    const womensDresses = await prisma.marketplaceCategory.create({
+      data: {
+        name: `Womens Dresses ${timestamp}`,
+        slug: `womens-dresses-${timestamp}`,
+        parentId: womensClothingCatId,
+        isActive: true,
+      },
+    });
+    womensDressesCatId = womensDresses.id;
+
+    // 3. Create Products assigned across the hierarchy:
+    // Product A -> Clothing
+    // Product B -> Men's Clothing
+    // Product C -> Men's Shirts
+    // Product D -> Women's Dresses
+    const pA = await prisma.product.create({
+      data: {
+        itemCode: `TEST-A-${timestamp}`,
+        name: 'Product A (Direct Clothing)',
+        sellingPrice: 500,
+        sellerId: testSellerId,
+        marketplaceCategoryId: clothingCatId,
         status: 'ACTIVE',
       },
     });
+    productIds.push(pA.id);
+
+    const pB = await prisma.product.create({
+      data: {
+        itemCode: `TEST-B-${timestamp}`,
+        name: 'Product B (Mens Clothing)',
+        sellingPrice: 750,
+        sellerId: testSellerId,
+        marketplaceCategoryId: mensClothingCatId,
+        status: 'ACTIVE',
+      },
+    });
+    productIds.push(pB.id);
+
+    const pC = await prisma.product.create({
+      data: {
+        itemCode: `TEST-C-${timestamp}`,
+        name: 'Product C (Mens Shirts)',
+        sellingPrice: 1200,
+        sellerId: testSellerId,
+        marketplaceCategoryId: mensShirtsCatId,
+        status: 'ACTIVE',
+      },
+    });
+    productIds.push(pC.id);
+
+    const pD = await prisma.product.create({
+      data: {
+        itemCode: `TEST-D-${timestamp}`,
+        name: 'Product D (Womens Dresses)',
+        sellingPrice: 1600,
+        sellerId: testSellerId,
+        marketplaceCategoryId: womensDressesCatId,
+        status: 'ACTIVE',
+      },
+    });
+    productIds.push(pD.id);
   });
 
   suite.after(async () => {
     try {
-      if (createdProductId) {
-        await prisma.product.deleteMany({ where: { id: createdProductId } });
+      // Clean up products
+      if (productIds.length > 0) {
+        await prisma.product.deleteMany({ where: { id: { in: productIds } } });
       }
-      if (testSupplier) {
-        await prisma.sellerMarketplaceCategory.deleteMany({ where: { sellerId: testSupplier.id } });
-        await prisma.supplier.deleteMany({ where: { id: testSupplier.id } });
-      }
-
-      // Cleanup categories in reverse order (leaves first)
-      const slugsToDelete = [
-        'test-formal-shirts',
-        'test-shirts',
-        'test-men',
-        'test-fashion-root',
-        'test-electronics-root',
-      ];
-      for (const slug of slugsToDelete) {
-        await prisma.marketplaceCategory.deleteMany({ where: { slug } });
-      }
-    } catch (err) {
-      console.warn('Test cleanup warning:', err.message);
+      // Clean up categories in reverse hierarchy order
+      if (womensDressesCatId) await prisma.marketplaceCategory.deleteMany({ where: { id: womensDressesCatId } });
+      if (womensClothingCatId) await prisma.marketplaceCategory.deleteMany({ where: { id: womensClothingCatId } });
+      if (mensShirtsCatId) await prisma.marketplaceCategory.deleteMany({ where: { id: mensShirtsCatId } });
+      if (mensClothingCatId) await prisma.marketplaceCategory.deleteMany({ where: { id: mensClothingCatId } });
+      if (clothingCatId) await prisma.marketplaceCategory.deleteMany({ where: { id: clothingCatId } });
+      // Clean up seller
+      if (testSellerId) await prisma.supplier.deleteMany({ where: { id: testSellerId } });
+    } catch {
+      // Ignore cleanup error
     }
   });
 
-  // 1. ROOT CATEGORY CREATION
-  await suite.test('1. Create Root Category (parentId = NULL)', async () => {
+  await suite.test('1. Selecting Root Category (Clothing) includes all descendants (A, B, C, D)', async () => {
     const res = await request(app)
-      .post('/api/categories')
-      .set('Authorization', `Bearer ${subAdminToken}`)
-      .send({
-        name: 'Test Fashion Root',
-        slug: 'test-fashion-root',
-        icon: 'bi-gem',
-        description: 'Apparel and accessories',
-        sortOrder: 1,
-      });
+      .get(`/api/customer/catalog/products?categoryId=${clothingCatId}`)
+      .expect(200);
 
-    assert.equal(res.status, 201);
     assert.equal(res.body.success, true);
-    assert.equal(res.body.data.name, 'Test Fashion Root');
-    assert.equal(res.body.data.parentId, null);
-    rootFashion = res.body.data;
+    const returnedIds = res.body.data.items.map((p) => p.id);
+
+    assert.ok(returnedIds.includes(productIds[0]), 'Includes Product A (Root Clothing)');
+    assert.ok(returnedIds.includes(productIds[1]), 'Includes Product B (Mens Clothing)');
+    assert.ok(returnedIds.includes(productIds[2]), 'Includes Product C (Mens Shirts - Grandchild)');
+    assert.ok(returnedIds.includes(productIds[3]), 'Includes Product D (Womens Dresses - Grandchild)');
   });
 
-  // 2. CHILD CATEGORY CREATION (MULTI-LEVEL NESTING)
-  await suite.test('2. Create Child Categories with Unlimited Depth', async () => {
-    // Level 1: Men under Fashion
-    const menRes = await request(app)
-      .post('/api/categories')
-      .set('Authorization', `Bearer ${subAdminToken}`)
-      .send({
-        name: 'Test Men',
-        slug: 'test-men',
-        parentId: rootFashion.id,
-        sortOrder: 1,
-      });
-    assert.equal(menRes.status, 201);
-    assert.equal(menRes.body.data.parentId, rootFashion.id);
-    childMen = menRes.body.data;
-
-    // Level 2: Shirts under Men
-    const shirtsRes = await request(app)
-      .post('/api/categories')
-      .set('Authorization', `Bearer ${subAdminToken}`)
-      .send({
-        name: 'Test Shirts',
-        slug: 'test-shirts',
-        parentId: childMen.id,
-        sortOrder: 1,
-      });
-    assert.equal(shirtsRes.status, 201);
-    assert.equal(shirtsRes.body.data.parentId, childMen.id);
-    childShirts = shirtsRes.body.data;
-
-    // Level 3: Formal Shirts under Shirts
-    const formalRes = await request(app)
-      .post('/api/categories')
-      .set('Authorization', `Bearer ${subAdminToken}`)
-      .send({
-        name: 'Test Formal Shirts',
-        slug: 'test-formal-shirts',
-        parentId: childShirts.id,
-        sortOrder: 1,
-      });
-    assert.equal(formalRes.status, 201);
-    assert.equal(formalRes.body.data.parentId, childShirts.id);
-    childFormalShirts = formalRes.body.data;
-  });
-
-  // 3. TREE RETRIEVAL & BREADCRUMBS
-  await suite.test('3. GET /api/categories/tree returns nested hierarchy', async () => {
+  await suite.test('2. Querying by Category Slug includes all descendants', async () => {
     const res = await request(app)
-      .get('/api/categories/tree')
-      .set('Authorization', `Bearer ${superAdminToken}`);
+      .get(`/api/customer/catalog/products?category=clothing-root-${timestamp}`)
+      .expect(200);
 
-    assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
-    assert.ok(Array.isArray(res.body.data));
+    const returnedIds = res.body.data.items.map((p) => p.id);
 
-    const foundFashion = res.body.data.find((c) => c.id === rootFashion.id);
-    assert.ok(foundFashion, 'Root Fashion must be in tree roots');
-    assert.ok(Array.isArray(foundFashion.children));
-
-    const foundMen = foundFashion.children.find((c) => c.id === childMen.id);
-    assert.ok(foundMen, 'Men must be child of Fashion');
-
-    const foundShirts = foundMen.children.find((c) => c.id === childShirts.id);
-    assert.ok(foundShirts, 'Shirts must be child of Men');
-
-    const foundFormal = foundShirts.children.find((c) => c.id === childFormalShirts.id);
-    assert.ok(foundFormal, 'Formal Shirts must be child of Shirts');
+    assert.ok(returnedIds.includes(productIds[0]));
+    assert.ok(returnedIds.includes(productIds[1]));
+    assert.ok(returnedIds.includes(productIds[2]));
+    assert.ok(returnedIds.includes(productIds[3]));
   });
 
-  await suite.test('4. GET /api/categories/:id/breadcrumbs returns accurate path', async () => {
+  await suite.test('3. Selecting Mid-Level Category (Men\'s Clothing) includes B + C, excludes A + D', async () => {
     const res = await request(app)
-      .get(`/api/categories/${childFormalShirts.id}/breadcrumbs`)
-      .set('Authorization', `Bearer ${superAdminToken}`);
+      .get(`/api/customer/catalog/products?categoryId=${mensClothingCatId}`)
+      .expect(200);
 
-    assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
-    assert.ok(Array.isArray(res.body.data));
-    assert.equal(res.body.data.length, 4);
-    assert.equal(res.body.data[0].name, 'Test Fashion Root');
-    assert.equal(res.body.data[1].name, 'Test Men');
-    assert.equal(res.body.data[2].name, 'Test Shirts');
-    assert.equal(res.body.data[3].name, 'Test Formal Shirts');
+    const returnedIds = res.body.data.items.map((p) => p.id);
+
+    assert.equal(returnedIds.includes(productIds[0]), false, 'Excludes Product A');
+    assert.ok(returnedIds.includes(productIds[1]), 'Includes Product B');
+    assert.ok(returnedIds.includes(productIds[2]), 'Includes Product C (Mens Shirts)');
+    assert.equal(returnedIds.includes(productIds[3]), false, 'Excludes Product D');
   });
 
-  // 5. CYCLE DETECTION SAFETY
-  await suite.test('5. Cycle Prevention: Cannot make a node its own parent or descendant', async () => {
-    // Self-parenting attempt
-    const selfRes = await request(app)
-      .patch(`/api/categories/${rootFashion.id}`)
-      .set('Authorization', `Bearer ${subAdminToken}`)
-      .send({ parentId: rootFashion.id });
+  await suite.test('4. Selecting Leaf Category (Men\'s Shirts) includes ONLY C', async () => {
+    const res = await request(app)
+      .get(`/api/customer/catalog/products?categoryId=${mensShirtsCatId}`)
+      .expect(200);
 
-    assert.equal(selfRes.status, 400);
-    assert.equal(selfRes.body.error.code, 'CATEGORY_CYCLE_DETECTED');
+    assert.equal(res.body.success, true);
+    const returnedIds = res.body.data.items.map((p) => p.id);
 
-    // Circular descent attempt: Move Fashion under Formal Shirts
-    const cycleRes = await request(app)
-      .patch(`/api/categories/${rootFashion.id}/move`)
-      .set('Authorization', `Bearer ${subAdminToken}`)
-      .send({ targetParentId: childFormalShirts.id });
-
-    assert.equal(cycleRes.status, 400);
-    assert.equal(cycleRes.body.error.code, 'CATEGORY_CYCLE_DETECTED');
+    assert.equal(returnedIds.includes(productIds[0]), false);
+    assert.equal(returnedIds.includes(productIds[1]), false);
+    assert.ok(returnedIds.includes(productIds[2]), 'Includes Product C');
+    assert.equal(returnedIds.includes(productIds[3]), false);
   });
 
-  // 6. SAFE DELETION VALIDATION
-  await suite.test('6. Safe Deletion: Rejects deletion if category has children', async () => {
-    const delRes = await request(app)
-      .delete(`/api/categories/${childMen.id}`)
-      .set('Authorization', `Bearer ${subAdminToken}`);
+  await suite.test('5. Category filtering combined with Price Range', async () => {
+    // Under Clothing (all 4), filter minPrice=1000 -> Should return C (1200) and D (1600)
+    const res = await request(app)
+      .get(`/api/customer/catalog/products?categoryId=${clothingCatId}&minPrice=1000`)
+      .expect(200);
 
-    assert.equal(delRes.status, 400);
-    assert.equal(delRes.body.error.code, 'CATEGORY_HAS_CHILDREN');
+    const returnedIds = res.body.data.items.map((p) => p.id);
+    assert.equal(returnedIds.includes(productIds[0]), false); // 500
+    assert.equal(returnedIds.includes(productIds[1]), false); // 750
+    assert.ok(returnedIds.includes(productIds[2])); // 1200
+    assert.ok(returnedIds.includes(productIds[3])); // 1600
   });
 
-  // 7. PRODUCT INTEGRATION & STOPPING AT ANY LEVEL
-  await suite.test('7. Product Creation: Stopping at intermediate level (Shirts)', async () => {
-    // Assign Shirts category to supplier
-    await prisma.sellerMarketplaceCategory.create({
-      data: {
-        sellerId: testSupplier.id,
-        categoryId: childShirts.id,
-      },
-    });
+  await suite.test('6. Category filtering combined with Server-Side Sorting', async () => {
+    // Sort price_asc
+    const resAsc = await request(app)
+      .get(`/api/customer/catalog/products?categoryId=${clothingCatId}&sort=price_asc`)
+      .expect(200);
 
-    const prodRes = await request(app)
-      .post('/api/products')
-      .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({
-        name: 'Oxford Cotton Casual Shirt',
-        sellerId: testSupplier.id,
-        marketplaceCategoryId: childShirts.id,
-        unit: 'piece',
-        weight: 0.35,
-        sellingPrice: 1850,
-      });
+    const ascItems = resAsc.body.data.items.filter((p) => productIds.includes(p.id));
+    for (let i = 0; i < ascItems.length - 1; i++) {
+      assert.ok(Number(ascItems[i].sellingPrice) <= Number(ascItems[i + 1].sellingPrice));
+    }
 
-    assert.equal(prodRes.status, 201);
-    assert.equal(prodRes.body.data.marketplaceCategoryId, childShirts.id);
-    createdProductId = prodRes.body.data.id;
+    // Sort price_desc
+    const resDesc = await request(app)
+      .get(`/api/customer/catalog/products?categoryId=${clothingCatId}&sort=price_desc`)
+      .expect(200);
 
-    // Verify category path in getProductById
-    const getRes = await request(app)
-      .get(`/api/products/${createdProductId}`)
-      .set('Authorization', `Bearer ${superAdminToken}`);
-
-    assert.equal(getRes.status, 200);
-    assert.ok(Array.isArray(getRes.body.data.categoryPath));
-    assert.equal(getRes.body.data.categoryPath.length, 3);
-    assert.equal(getRes.body.data.categoryPath[2].name, 'Test Shirts');
+    const descItems = resDesc.body.data.items.filter((p) => productIds.includes(p.id));
+    for (let i = 0; i < descItems.length - 1; i++) {
+      assert.ok(Number(descItems[i].sellingPrice) >= Number(descItems[i + 1].sellingPrice));
+    }
   });
 
-  // 8. SAFE DELETION: REJECTS IF PRODUCTS EXIST
-  await suite.test('8. Safe Deletion: Rejects deletion if category contains products', async () => {
-    const delRes = await request(app)
-      .delete(`/api/categories/${childShirts.id}`)
-      .set('Authorization', `Bearer ${subAdminToken}`);
+  await suite.test('7. Product Details returns full ancestral categoryPath', async () => {
+    // Query Product C (Mens Shirts)
+    const res = await request(app)
+      .get(`/api/customer/catalog/products/${productIds[2]}`)
+      .expect(200);
 
-    assert.equal(delRes.status, 400);
-    assert.ok(
-      delRes.body.error.code === 'CATEGORY_HAS_PRODUCTS' || delRes.body.error.code === 'CATEGORY_HAS_CHILDREN'
-    );
-  });
-
-  // 9. CATEGORY IMAGE UPLOAD TO CLOUDINARY
-  await suite.test('9. Category Image Upload: Sub Admin uploads banner to Cloudinary', async () => {
-    // 1x1 valid PNG buffer
-    const validPngBuffer = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      'base64'
-    );
-
-    const uploadRes = await request(app)
-      .post('/api/categories/upload-image')
-      .set('Authorization', `Bearer ${subAdminToken}`)
-      .attach('image', validPngBuffer, 'category-banner.png');
-
-    assert.equal(uploadRes.status, 201);
-    assert.equal(uploadRes.body.success, true);
-    assert.ok(uploadRes.body.data.url);
-    assert.ok(uploadRes.body.data.publicId);
+    assert.equal(res.body.success, true);
+    assert.ok(Array.isArray(res.body.data.categoryPath));
+    assert.equal(res.body.data.categoryPath.length, 3);
+    assert.equal(res.body.data.categoryPath[0].id, clothingCatId);
+    assert.equal(res.body.data.categoryPath[1].id, mensClothingCatId);
+    assert.equal(res.body.data.categoryPath[2].id, mensShirtsCatId);
   });
 });

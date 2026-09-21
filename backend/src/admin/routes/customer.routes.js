@@ -12,6 +12,7 @@ import {
   updateCustomerHandler,
   updateCustomerStatusHandler,
   bulkUpdateCustomerStatusHandler,
+  deleteCustomerHandler,
 } from '../controllers/customer.controller.js';
 import { adminAuthMiddleware } from '../middleware/adminAuth.middleware.js';
 import { requireRole, requirePermission } from '../middleware/adminPermission.middleware.js';
@@ -129,4 +130,17 @@ router.patch(
   asyncHandler(updateCustomerStatusHandler)
 );
 
+/**
+ * @route   DELETE /api/customers/:id
+ * @desc    Permanently delete/cleanse customer data and records
+ * @access  Private (Super Admin - customers:suspend)
+ */
+router.delete(
+  '/:id',
+  requirePermission(ADMIN_PERMISSIONS.CUSTOMERS_SUSPEND),
+  validate({ params: customerParamsSchema }),
+  asyncHandler(deleteCustomerHandler)
+);
+
 export default router;
+

@@ -1,0 +1,67 @@
+{
+  "cart": {
+    "title": "Shopping Cart",
+    "emptyTitle": "Your cart is empty",
+    "emptyDesc": "You haven't added any items yet. Explore the marketplace to find great products!",
+    "itemsCount": "Items",
+    "seller": "Sold by",
+    "price": "Price",
+    "quantity": "Quantity",
+    "subtotal": "Subtotal",
+    "remove": "Remove",
+    "moveToWishlist": "Move to Wishlist",
+    "orderSummary": "Order Summary",
+    "deliveryFee": "Delivery Fee",
+    "estimatedTotal": "Total Amount",
+    "proceedToCheckout": "Proceed to Checkout"
+  },
+  "checkout": {
+    "title": "Checkout",
+    "step1": "1. Delivery Information",
+    "step2": "2. Payment Method",
+    "step3": "3. Summary & Confirmation",
+    "recipientName": "Recipient Name",
+    "phone": "Phone Number",
+    "city": "City",
+    "deliveryZone": "Delivery Zone / Sub-city",
+    "addressLine": "House No. / Street or Notable Landmark",
+    "notes": "Delivery instructions for driver",
+    "paymentMethod": "Select Payment Method",
+    "placeOrder": "Place Order",
+    "orderSuccess": "Order placed successfully!",
+    "orderNumber": "Order Number",
+    "trackDelivery": "Track Delivery Status"
+  },
+  "orders": {
+    "title": "My Orders",
+    "emptyTitle": "No orders yet",
+    "emptyDesc": "You have not placed any orders yet.",
+    "orderNumber": "Order #",
+    "placedOn": "Placed on",
+    "total": "Total",
+    "status": "Status",
+    "details": "View Details",
+    "timeline": "Delivery Progress",
+    "steps": {
+      "placed": "Order Placed",
+      "confirmed": "Order Confirmed",
+      "processing": "Preparing",
+      "ready": "Ready for Dispatch",
+      "outForDelivery": "Out for Delivery",
+      "delivered": "Delivered"
+    }
+  },
+  "account": {
+    "title": "Customer Account",
+    "profile": "Profile Info",
+    "security": "Security & Password",
+    "orders": "Order History",
+    "wishlist": "Saved Wishlist",
+    "reviews": "My Reviews",
+    "displayName": "Display Name",
+    "email": "Email",
+    "phone": "Phone",
+    "city": "City",
+    "saveChanges": "Save Changes"
+  }
+}

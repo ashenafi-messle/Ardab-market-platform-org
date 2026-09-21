@@ -98,7 +98,8 @@ export default function LoginPage() {
               </div>
 
               <div className="text-white-50 small pt-4 border-top border-white border-opacity-25" style={{ fontSize: '0.75rem' }}>
-                &copy; {new Date().getFullYear()} Ardab Market Platform. All rights reserved.
+                <div>&copy; {new Date().getFullYear()} Ardab Market Platform. All rights reserved.</div>
+                <div className="text-white-50 opacity-75 mt-1">Powered by Ardab Tech Solutions S.C.</div>
               </div>
             </div>
 

@@ -49,6 +49,13 @@ const FRONTEND_URL =
   process.env.ADMIN_FRONTEND_URL ||
   'http://localhost:3000';
 
+const CUSTOMER_APP_URL =
+  process.env.CUSTOMER_APP_URL ||
+  process.env.CUSTOMER_FRONTEND_URL ||
+  'http://localhost:3001';
+
+const CUSTOMER_FRONTEND_URL = CUSTOMER_APP_URL;
+
 // Cloudinary Image Storage Configuration
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || '';
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '';
@@ -93,6 +100,8 @@ export const env = {
   BREVO_SENDER_NAME,
   BREVO_API_BASE_URL,
   FRONTEND_URL,
+  CUSTOMER_FRONTEND_URL,
+  CUSTOMER_APP_URL,
   CLOUDINARY_CLOUD_NAME,
   CLOUDINARY_API_KEY,
   CLOUDINARY_API_SECRET,

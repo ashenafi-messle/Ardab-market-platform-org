@@ -61,25 +61,46 @@ export async function getCategoryPath(categoryId) {
 }
 
 /**
- * Helper to recursively collect all descendant category IDs
+ * Helper to recursively collect all descendant category IDs (supports arbitrary depth efficiently)
  */
 export async function getDescendantCategoryIds(categoryId) {
-  const descendantIds = [];
-  const queue = [categoryId];
+  if (!categoryId) return [];
 
-  while (queue.length > 0) {
-    const currentId = queue.shift();
-    const children = await prisma.marketplaceCategory.findMany({
-      where: { parentId: currentId },
-      select: { id: true },
-    });
-    for (const child of children) {
-      descendantIds.push(child.id);
-      queue.push(child.id);
+  try {
+    // Efficient PostgreSQL recursive CTE to collect all descendants at any arbitrary depth in a single database roundtrip
+    const result = await prisma.$queryRaw`
+      WITH RECURSIVE category_tree AS (
+        SELECT id FROM "marketplace_categories"
+        WHERE "parentId" = ${categoryId}
+        UNION ALL
+        SELECT c.id FROM "marketplace_categories" c
+        INNER JOIN category_tree ct ON c."parentId" = ct.id
+      )
+      SELECT id FROM category_tree;
+    `;
+    return result.map((r) => r.id);
+  } catch (error) {
+    // Fallback queue-based BFS traversal in case raw query fails
+    const descendantIds = [];
+    const queue = [categoryId];
+    const visited = new Set([categoryId]);
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      const children = await prisma.marketplaceCategory.findMany({
+        where: { parentId: currentId },
+        select: { id: true },
+      });
+      for (const child of children) {
+        if (!visited.has(child.id)) {
+          visited.add(child.id);
+          descendantIds.push(child.id);
+          queue.push(child.id);
+        }
+      }
     }
+    return descendantIds;
   }
-
-  return descendantIds;
 }
 
 /**
@@ -196,6 +217,20 @@ export async function getCategoryTree(query = {}) {
     } else {
       roots.push(node);
     }
+  });
+
+  // Calculate cumulative subtree product counts recursively so parent counts reflect all descendant products
+  function calculateSubtreeCounts(node) {
+    let total = node.productCount || 0;
+    for (const child of node.children) {
+      total += calculateSubtreeCounts(child);
+    }
+    node.productCount = total;
+    return total;
+  }
+
+  roots.forEach((root) => {
+    calculateSubtreeCounts(root);
   });
 
   return roots;

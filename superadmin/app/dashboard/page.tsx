@@ -11,12 +11,14 @@ import {
   customersApi,
   productsApi,
   suppliersApi,
+  securityApi,
 } from '@/lib/api';
 import { Order } from '@/types/order';
 import { Trip } from '@/types/trip';
 import { Customer } from '@/types/customer';
 import { Product } from '@/types/product';
 import { Supplier } from '@/types/supplier';
+import { SecurityEventItem } from '@/types/security';
 
 export default function DashboardPage() {
   const { user, isLoading: authLoading, selectedCity } = useAuth();
@@ -26,6 +28,7 @@ export default function DashboardPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [customerWebEvents, setCustomerWebEvents] = useState<SecurityEventItem[]>([]);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -36,13 +39,15 @@ export default function DashboardPage() {
       customersApi.getAll(selectedCity),
       productsApi.getAll(selectedCity),
       suppliersApi.getAll(selectedCity),
-    ]).then(([ordersRes, tripsRes, customersRes, productsRes, suppliersRes]) => {
+      securityApi.getEvents({ source: 'CUSTOMER_WEB', pageSize: 6 }).catch(() => ({ data: [] })),
+    ]).then(([ordersRes, tripsRes, customersRes, productsRes, suppliersRes, eventsRes]) => {
       if (isMounted) {
         setOrders(ordersRes);
         setTrips(tripsRes);
         setCustomers(customersRes);
         setProducts(productsRes);
         setSuppliers(suppliersRes);
+        setCustomerWebEvents(eventsRes?.data || []);
       }
     }).catch((err) => {
       console.error('Failed to load dashboard:', err);
@@ -460,6 +465,85 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 4: Live Customer Web App Activity & Security Telemetry Stream */}
+        <div className="row g-3 mt-1">
+          <div className="col-12">
+            <div className="ardab-card">
+              <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                <div className="d-flex align-items-center gap-2">
+                  <div
+                    className="rounded-circle bg-success d-inline-block"
+                    style={{ width: '8px', height: '8px', animation: 'pulse 1.5s infinite' }}
+                  ></div>
+                  <div>
+                    <h2 className="h6 fw-bold text-dark mb-0">
+                      <i className="bi bi-broadcast text-info me-2"></i>
+                      Live Customer Web App Activity &amp; Telemetry
+                    </h2>
+                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>
+                      Real-time cross-platform events streamed from the customer shopping interface
+                    </span>
+                  </div>
+                </div>
+                <Link href="/subadmin/security" className="small text-success text-decoration-none fw-semibold">
+                  Security Control Panel &rarr;
+                </Link>
+              </div>
+
+              {customerWebEvents.length > 0 ? (
+                <div className="table-responsive">
+                  <table className="table table-hover table-sm align-middle mb-0">
+                    <thead className="table-light">
+                      <tr style={{ fontSize: '0.75rem' }}>
+                        <th className="py-2">Event</th>
+                        <th className="py-2">Actor / Customer</th>
+                        <th className="py-2">Endpoint / Details</th>
+                        <th className="py-2">IP &amp; Client</th>
+                        <th className="py-2 text-end">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody style={{ fontSize: '0.8rem' }}>
+                      {customerWebEvents.map((evt) => (
+                        <tr key={evt.id}>
+                          <td>
+                            <span className={`badge ${evt.eventType.includes('SUCCESS') || evt.eventType.includes('ORDER') ? 'bg-success' : evt.eventType.includes('FAILED') ? 'bg-danger' : 'bg-primary'}`}>
+                              {evt.eventType.replace('CUSTOMER_', '')}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="fw-semibold text-dark">{evt.actorEmail || 'Customer User'}</div>
+                            <small className="text-muted" style={{ fontSize: '0.7rem' }}>{evt.actorType || 'CUSTOMER'}</small>
+                          </td>
+                          <td>
+                            <span className="font-monospace small text-secondary">{evt.endpoint || '/'}</span>
+                            {Boolean(evt.metadata && typeof evt.metadata === 'object' && 'searchQuery' in evt.metadata) && (
+                              <div className="small text-muted">
+                                Query: &quot;{String((evt.metadata as Record<string, any>).searchQuery)}&quot;
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <div className="text-muted small">{evt.ipAddress || '127.0.0.1'}</div>
+                            <small className="badge bg-light text-dark border" style={{ fontSize: '0.65rem' }}>CUSTOMER_WEB</small>
+                          </td>
+                          <td className="text-end text-muted small">
+                            {new Date(evt.occurredAt || (evt as any).createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-4 bg-light rounded-3">
+                  <i className="bi bi-activity fs-3 text-muted mb-2"></i>
+                  <p className="text-muted small mb-0">No recent customer web events recorded. Activity streams automatically as customers browse and shop.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

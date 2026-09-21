@@ -1,0 +1,365 @@
+/* ==============================================================================
+   Ardab Market Customer App - FreshMart Inspired Marketplace Design Tokens
+   Strictly Bootstrap 5 Extensions (NO TAILWIND)
+   ============================================================================== */
+
+:root {
+  /* Brand Green Palette */
+  --ardab-primary: #108A4E;
+  --ardab-primary-hover: #0B6B3C;
+  --ardab-primary-light: #E8F7EE;
+  --ardab-primary-subtle: #F0FAF4;
+  --ardab-accent-lime: #84CC16;
+  --ardab-accent-yellow: #F59E0B;
+
+  /* Neutrals */
+  --ardab-bg: #F8FAF9;
+  --ardab-surface: #FFFFFF;
+  --ardab-surface-muted: #F1F5F3;
+  --ardab-text-main: #1E293B;
+  --ardab-text-muted: #64748B;
+  --ardab-border: #E2E8F0;
+  --ardab-border-subtle: #EDF2F7;
+
+  /* Badges & Feedback */
+  --ardab-success: #16A34A;
+  --ardab-danger: #EF4444;
+  --ardab-warning: #D97706;
+  --ardab-info: #0284C7;
+
+  /* Shadows */
+  --ardab-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --ardab-shadow-md: 0 4px 12px -1px rgba(16, 138, 78, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  --ardab-shadow-hover: 0 12px 24px -4px rgba(16, 138, 78, 0.15), 0 4px 8px -2px rgba(0, 0, 0, 0.04);
+  --ardab-radius-card: 18px;
+  --ardab-radius-pill: 9999px;
+  --ardab-radius-btn: 12px;
+}
+
+body {
+  background-color: var(--ardab-bg);
+  color: var(--ardab-text-main);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Typography Hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--ardab-text-main);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* FreshMart Custom Cards */
+.fresh-card {
+  background: var(--ardab-surface);
+  border: 1px solid var(--ardab-border-subtle);
+  border-radius: var(--ardab-radius-card);
+  box-shadow: var(--ardab-shadow-sm);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  overflow: hidden;
+  position: relative;
+}
+
+.fresh-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--ardab-shadow-hover);
+  border-color: rgba(16, 138, 78, 0.25);
+}
+
+/* FreshMart Buttons */
+.btn-fresh-primary {
+  background: linear-gradient(135deg, var(--ardab-primary) 0%, #15803D 100%);
+  border: none;
+  color: #FFFFFF;
+  font-weight: 600;
+  border-radius: var(--ardab-radius-btn);
+  padding: 0.6rem 1.25rem;
+  box-shadow: 0 4px 10px rgba(16, 138, 78, 0.2);
+  transition: all 0.2s ease;
+}
+
+.btn-fresh-primary:hover,
+.btn-fresh-primary:focus {
+  background: linear-gradient(135deg, var(--ardab-primary-hover) 0%, #166534 100%);
+  color: #FFFFFF;
+  box-shadow: 0 6px 16px rgba(16, 138, 78, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-fresh-outline {
+  background: transparent;
+  border: 1.5px solid var(--ardab-primary);
+  color: var(--ardab-primary);
+  font-weight: 600;
+  border-radius: var(--ardab-radius-btn);
+  padding: 0.55rem 1.2rem;
+  transition: all 0.2s ease;
+}
+
+.btn-fresh-outline:hover {
+  background: var(--ardab-primary-light);
+  color: var(--ardab-primary-hover);
+  border-color: var(--ardab-primary-hover);
+}
+
+/* Category Badge Pills */
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--ardab-radius-pill);
+  font-size: 0.8rem;
+  font-weight: 600;
+  background-color: var(--ardab-primary-light);
+  color: var(--ardab-primary-hover);
+}
+
+/* Price Display Styling */
+.price-display {
+  font-weight: 800;
+  color: var(--ardab-primary-hover);
+  font-size: 1.25rem;
+}
+
+.price-unit {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--ardab-text-muted);
+}
+
+/* Product Card Aspect Ratio Box */
+.product-image-container {
+  position: relative;
+  width: 100%;
+  padding-top: 80%; /* 4:3 ratio */
+  background: #F8FAFC;
+  overflow: hidden;
+}
+
+.product-image-container img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.fresh-card:hover .product-image-container img {
+  transform: scale(1.05);
+}
+
+/* Mobile Bottom Navigation Bar */
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1040;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--ardab-border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: var(--ardab-text-muted);
+  text-decoration: none;
+  padding: 0.5rem 0.25rem;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.mobile-nav-item i {
+  font-size: 1.25rem;
+  margin-bottom: 2px;
+}
+
+.mobile-nav-item.active,
+.mobile-nav-item:hover {
+  color: var(--ardab-primary);
+}
+
+/* Padding to prevent content under mobile nav */
+@media (max-width: 991.98px) {
+  main {
+    padding-bottom: 75px;
+  }
+}
+
+/* Responsive Touch Target Minimums */
+button, input, select, textarea, .btn {
+  min-height: 44px;
+}
+
+.btn-sm {
+  min-height: 34px;
+}
+
+/* ==============================================================================
+   Modern Motion & Micro-Interactions (Lightweight, Accessible, High Performance)
+   ============================================================================== */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes floatGentle {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+@keyframes floatSlow {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+/* Staggered Hero Entrance */
+.animate-fade-in-up {
+  animation: fadeInUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.delay-100 {
+  animation-delay: 100ms;
+}
+
+.delay-200 {
+  animation-delay: 200ms;
+}
+
+.delay-300 {
+  animation-delay: 300ms;
+}
+
+.delay-400 {
+  animation-delay: 400ms;
+}
+
+/* Hero Floating Image Effect */
+.float-hero-img {
+  animation: floatGentle 4.5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.float-hero-sub {
+  animation: floatSlow 5.5s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Enhanced Hover Lifts & Transitions */
+.hover-elevate {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease, border-color 0.28s ease;
+}
+
+.hover-elevate:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 14px 28px -4px rgba(16, 138, 78, 0.16), 0 4px 10px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.btn-fresh-primary:hover,
+.btn-fresh:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(16, 138, 78, 0.3) !important;
+}
+
+/* Scroll Reveal Base Classes */
+.reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.reveal-on-scroll.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Accessibility: Strict Respect for prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .float-hero-img,
+  .float-hero-sub {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .hover-elevate:hover,
+  .btn-fresh-primary:hover,
+  .btn-fresh:hover {
+    transform: none !important;
+  }
+
+  .reveal-on-scroll {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* ==============================================================================
+   Product Detail Gallery & Lightbox Viewer
+   ============================================================================== */
+.product-main-stage {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.product-main-stage:hover img {
+  transform: scale(1.02);
+}
+
+.cursor-pointer {
+  cursor: pointer !important;
+}
+
+.thumbnail-ribbon::-webkit-scrollbar {
+  height: 6px;
+}
+
+.thumbnail-ribbon::-webkit-scrollbar-thumb {
+  background-color: var(--ardab-border);
+  border-radius: 9999px;
+}
+

@@ -13,6 +13,7 @@ import {
   getCustomerListMetrics,
   getCustomerSummary as getSummaryMetrics,
 } from './customer.metrics.service.js';
+import { logPlatformSecurityEvent } from '../../shared/services/platformSecurity.service.js';
 
 /**
  * Records an administrative audit log for customer operations.
@@ -359,6 +360,18 @@ export async function updateCustomerStatus(id, newStatus, adminUser, ipAddress) 
         actor: 'Super Admin',
       },
     }),
+    logPlatformSecurityEvent({
+      eventType: newStatus === 'SUSPENDED' ? 'CUSTOMER_SUSPENDED' : 'CUSTOMER_STATUS_CHANGED',
+      severity: newStatus === 'SUSPENDED' ? 'MEDIUM' : 'INFO',
+      source: 'SUPERADMIN_WEB',
+      actorType: 'SUPER_ADMIN',
+      actorId: adminUser?.id,
+      actorEmail: adminUser?.email,
+      targetType: 'Customer',
+      targetId: id,
+      ipAddress,
+      metadata: { previousStatus: existing.status, newStatus, customerPhone: existing.phone },
+    }),
   ]);
 
   const metrics = await getCustomerMetrics(updated.id);
@@ -417,13 +430,30 @@ export async function registerCustomer(input, ipAddress) {
     passwordHash = await bcrypt.hash(input.password, 10);
   }
 
+  let fullName = input.fullName?.trim();
+  if (!fullName) {
+    if (email) {
+      const localPart = email.split('@')[0];
+      // Convert dotted or underscore separated names e.g. abebe.kebede -> Abebe Kebede
+      fullName = localPart
+        .replace(/[._-]+/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+    if (!fullName || fullName.length < 2) {
+      fullName = 'Customer ' + phone.slice(-4);
+    }
+  }
+
   const customerCode = await generateNextCustomerCode(prisma);
 
   const customer = await prisma.$transaction(async (tx) => {
     const newCustomer = await tx.customer.create({
       data: {
         customerCode,
-        fullName: input.fullName.trim(),
+        fullName,
         phone,
         email,
         passwordHash,
@@ -467,3 +497,172 @@ export async function registerCustomer(input, ipAddress) {
     metrics,
   };
 }
+
+/**
+ * Super Admin: Complete customer deletion and data cleanup.
+ * Atomically cleanses all customer-owned information (addresses, activities, loyalty score events,
+ * reviews, pending registrations) and anonymizes orders/deliveries to preserve historical accounting integrity.
+ * If any step fails, rolls back completely.
+ */
+export async function deleteCustomerCompletely(customerId, adminUser, ipAddress) {
+  const existing = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: {
+      id: true,
+      customerCode: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      status: true,
+    },
+  });
+
+  if (!existing) {
+    throw ApiError.notFound('Customer not found or already deleted', 'CUSTOMER_NOT_FOUND');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Delete customer-owned delivery addresses
+    await tx.customerAddress.deleteMany({
+      where: { customerId },
+    });
+
+    // 2. Delete customer-owned loyalty score events
+    await tx.customerScoreEvent.deleteMany({
+      where: { customerId },
+    });
+
+    // 3. Delete customer-owned activity audit items
+    await tx.customerActivity.deleteMany({
+      where: { customerId },
+    });
+
+    // 4. Delete customer reviews
+    await tx.customerReview.deleteMany({
+      where: { customerId },
+    });
+
+    // 5. Unlink customer feedback (set customerId to null, anonymize author name)
+    await tx.feedback.updateMany({
+      where: { customerId },
+      data: {
+        customerId: null,
+        authorName: '[Deleted Customer]',
+        isAnonymous: true,
+      },
+    });
+
+    // 6. Delete any pending registrations matching this customer's email or phone
+    const orPending = [];
+    if (existing.email) orPending.push({ email: existing.email });
+    if (existing.phone) orPending.push({ phone: existing.phone });
+    if (orPending.length > 0) {
+      await tx.pendingCustomerRegistration.deleteMany({
+        where: { OR: orPending },
+      });
+    }
+
+    // 7. Delete delivery activities and deliveries linked to the customer's orders or directly to customer
+    const customerOrders = await tx.order.findMany({
+      where: { customerId },
+      select: { id: true },
+    });
+    const orderIds = customerOrders.map((o) => o.id);
+
+    // Find deliveries linked to this customer or to the customer's orders
+    const deliveries = await tx.delivery.findMany({
+      where: {
+        OR: [
+          { customerId },
+          ...(orderIds.length > 0 ? [{ orderId: { in: orderIds } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    const deliveryIds = deliveries.map((d) => d.id);
+
+    if (deliveryIds.length > 0) {
+      await tx.deliveryActivity.deleteMany({
+        where: { deliveryId: { in: deliveryIds } },
+      });
+      await tx.delivery.deleteMany({
+        where: { id: { in: deliveryIds } },
+      });
+    }
+
+    // 8. Delete all order children (activities, delivery address, items) then orders
+    if (orderIds.length > 0) {
+      await tx.orderActivity.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
+      await tx.orderDeliveryAddress.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
+      await tx.orderItem.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
+      await tx.order.deleteMany({
+        where: { id: { in: orderIds } },
+      });
+    }
+
+    // 9. Delete support tickets & ticket history
+    const customerTickets = await tx.supportTicket.findMany({
+      where: { customerId },
+      select: { id: true },
+    });
+    const ticketIds = customerTickets.map((t) => t.id);
+    if (ticketIds.length > 0) {
+      await tx.supportMessage.deleteMany({
+        where: { ticketId: { in: ticketIds } },
+      });
+      await tx.supportTicketStatusHistory.deleteMany({
+        where: { ticketId: { in: ticketIds } },
+      });
+      await tx.supportTicketAssignmentHistory.deleteMany({
+        where: { ticketId: { in: ticketIds } },
+      });
+      await tx.supportTicket.deleteMany({
+        where: { id: { in: ticketIds } },
+      });
+    }
+
+    // 10. Unconditionally delete the Customer row from the database
+    await tx.customer.delete({
+      where: { id: customerId },
+    });
+  });
+
+  // 10. Audit Log & Central Security Event (recorded outside transaction on commit)
+  await Promise.all([
+    recordCustomerAuditLog({
+      adminUser,
+      action: 'CUSTOMER_DELETED',
+      customerId,
+      ipAddress,
+      changesSummary: `Customer account ${existing.customerCode} permanently deleted/cleansed by Super Admin`,
+    }),
+    logPlatformSecurityEvent({
+      eventType: 'CUSTOMER_DELETED',
+      severity: 'HIGH',
+      source: 'SUPERADMIN_WEB',
+      actorType: 'SUPER_ADMIN',
+      actorId: adminUser?.id,
+      actorEmail: adminUser?.email,
+      targetType: 'Customer',
+      targetId: customerId,
+      ipAddress,
+      metadata: {
+        customerCode: existing.customerCode,
+        action: 'PERMANENT_DELETION',
+      },
+    }),
+  ]);
+
+  return {
+    success: true,
+    deletedId: customerId,
+    customerCode: existing.customerCode,
+  };
+}
+

@@ -41,6 +41,9 @@ import { getHealth, getLive, getReady } from './admin/controllers/health.control
 export function createApp() {
   const app = express();
 
+  // 0. Trust Proxy (Render, AWS, Nginx reverse proxy support)
+  app.set('trust proxy', 1);
+
   // 1. Security Headers
   app.use(helmet(helmetOptions));
 

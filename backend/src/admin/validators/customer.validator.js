@@ -113,10 +113,11 @@ export const customerActivityQuerySchema = z.object({
 export const customerRegistrationSchema = z
   .object({
     fullName: z
-      .string({ required_error: 'Full name is required' })
+      .string()
       .trim()
       .min(2, 'Full name must be at least 2 characters')
-      .max(100, 'Full name cannot exceed 100 characters'),
+      .max(100, 'Full name cannot exceed 100 characters')
+      .optional(),
     phone: z
       .string({ required_error: 'Phone number is required' })
       .trim()

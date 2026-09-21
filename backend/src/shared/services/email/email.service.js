@@ -8,11 +8,31 @@ import { sendBrevoEmail } from './brevo.client.js';
 import {
   getPasswordResetTemplate,
   getOtpTemplate,
+  getEmailVerificationLinkTemplate,
   getPasswordChangedNotificationTemplate,
 } from './email.templates.js';
 import { getSupportReplyTemplate } from './templates/support-reply.template.js';
 
 export class EmailService {
+  /**
+   * Dispatches Email Verification link (NO OTP)
+   */
+  static async sendVerificationLinkEmail({ toEmail, name, verificationUrl, expiresMinutes = 1440 }) {
+    const { htmlContent, textContent } = getEmailVerificationLinkTemplate({
+      name,
+      verificationUrl,
+      expiresMinutes,
+    });
+
+    return sendBrevoEmail({
+      toEmail,
+      toName: name,
+      subject: 'Verify Your Ardab Market Email Address',
+      htmlContent,
+      textContent,
+    });
+  }
+
   /**
    * Dispatches Support Ticket Reply to Customer's Registered Email
    */
@@ -35,17 +55,19 @@ export class EmailService {
   /**
    * Dispatches Password Reset Email with frontend reset link
    */
-  static async sendPasswordResetEmail({ toEmail, name, resetUrl, expiresMinutes = 15 }) {
+  static async sendPasswordResetEmail({ toEmail, name, resetUrl, expiresMinutes = 15, isCustomer = false, subject }) {
     const { htmlContent, textContent } = getPasswordResetTemplate({
       name,
       resetUrl,
       expiresMinutes,
+      title: isCustomer ? 'Customer Password Reset' : 'Administrative Password Reset',
+      isCustomer,
     });
 
     return sendBrevoEmail({
       toEmail,
       toName: name,
-      subject: 'Reset Your Ardab Market Admin Password',
+      subject: subject || (isCustomer ? 'Reset Your Ardab Market Password' : 'Reset Your Ardab Market Admin Password'),
       htmlContent,
       textContent,
     });

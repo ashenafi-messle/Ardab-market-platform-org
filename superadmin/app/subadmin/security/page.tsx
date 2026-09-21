@@ -14,9 +14,10 @@ import {
   AuditLog,
   FailedLoginLog,
   SecurityStatistics,
+  SecurityEventItem,
 } from '@/types/security';
 
-type SecurityTab = 'SUPER_ADMINS' | 'SESSIONS' | 'ALERTS' | 'FIREWALL' | 'FAILED_LOGINS' | 'AUDIT';
+type SecurityTab = 'SUPER_ADMINS' | 'SESSIONS' | 'ALERTS' | 'EVENTS' | 'FIREWALL' | 'FAILED_LOGINS' | 'AUDIT';
 
 export default function SecurityManagementPage() {
   const { user } = useAuth();
@@ -70,6 +71,38 @@ export default function SecurityManagementPage() {
   const [newIpReason, setNewIpReason] = useState('');
   const [newIpStatus, setNewIpStatus] = useState<'BLOCKED' | 'WHITELISTED'>('BLOCKED');
 
+  // Platform Security Events state (central multi-app stream including Customer Web)
+  const [platformEvents, setPlatformEvents] = useState<SecurityEventItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventSourceFilter, setEventSourceFilter] = useState('ALL');
+  const [eventSeverityFilter, setEventSeverityFilter] = useState('ALL');
+  const [eventSearch, setEventSearch] = useState('');
+  const [eventPage, setEventPage] = useState(1);
+  const [eventTotalPages, setEventTotalPages] = useState(1);
+  const [eventTotalCount, setEventTotalCount] = useState(0);
+
+  const fetchPlatformEvents = useCallback(async () => {
+    try {
+      setEventsLoading(true);
+      const res = await securityApi.getEvents({
+        page: eventPage,
+        pageSize: 20,
+        source: eventSourceFilter !== 'ALL' ? eventSourceFilter : undefined,
+        severity: eventSeverityFilter !== 'ALL' ? eventSeverityFilter : undefined,
+        search: eventSearch.trim() ? eventSearch.trim() : undefined,
+      });
+      setPlatformEvents(res.data || []);
+      if (res.pagination) {
+        setEventTotalPages(res.pagination.totalPages || 1);
+        setEventTotalCount(res.pagination.total || 0);
+      }
+    } catch (err) {
+      console.error('Failed to fetch platform security events:', err);
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [eventPage, eventSourceFilter, eventSeverityFilter, eventSearch]);
+
   const refreshStatistics = useCallback(async () => {
     try {
       const stats = await securityApi.getStatistics();
@@ -110,6 +143,12 @@ export default function SecurityManagementPage() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'EVENTS') {
+      fetchPlatformEvents();
+    }
+  }, [activeTab, fetchPlatformEvents]);
 
   // Super Admin Management Actions
   const handleCreateSuperAdmin = async (e: React.FormEvent) => {
@@ -487,6 +526,13 @@ export default function SecurityManagementPage() {
               onClick={() => setActiveTab('ALERTS')}
             >
               <i className="bi bi-shield-exclamation me-1"></i> Security Alerts ({unresolvedAlertsCount})
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill px-3 ${activeTab === 'EVENTS' ? 'btn-ardab-primary shadow-sm' : 'btn-outline-secondary bg-white border'}`}
+              onClick={() => setActiveTab('EVENTS')}
+            >
+              <i className="bi bi-shield-check me-1"></i> Platform Events (Customer &amp; Admin)
             </button>
             <button
               type="button"
@@ -939,6 +985,199 @@ export default function SecurityManagementPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Central Platform Security Events (Customer, Super Admin, Sub Admin) */}
+        {activeTab === 'EVENTS' && (
+          <div>
+            {/* Filter Bar */}
+            <div className="card border-0 shadow-sm rounded-4 p-3 mb-3 bg-light">
+              <div className="row g-2 align-items-center">
+                <div className="col-12 col-md-4">
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-white border-end-0 text-muted">
+                      <i className="bi bi-search"></i>
+                    </span>
+                    <input
+                      type="text"
+                      className="form-control bg-white border-start-0"
+                      placeholder="Search event, actor email, IP address, endpoint..."
+                      value={eventSearch}
+                      onChange={(e) => {
+                        setEventSearch(e.target.value);
+                        setEventPage(1);
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <select
+                    className="form-select form-select-sm"
+                    value={eventSourceFilter}
+                    onChange={(e) => {
+                      setEventSourceFilter(e.target.value);
+                      setEventPage(1);
+                    }}
+                  >
+                    <option value="ALL">All Sources (Cross-Platform)</option>
+                    <option value="CUSTOMER_WEB">Customer Web App</option>
+                    <option value="SUPERADMIN_WEB">Super Admin Web</option>
+                    <option value="SUBADMIN_WEB">Sub Admin Web</option>
+                    <option value="AUTH_SERVICE">Authentication Service</option>
+                    <option value="SYSTEM">System Telemetry</option>
+                  </select>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <select
+                    className="form-select form-select-sm"
+                    value={eventSeverityFilter}
+                    onChange={(e) => {
+                      setEventSeverityFilter(e.target.value);
+                      setEventPage(1);
+                    }}
+                  >
+                    <option value="ALL">All Severities</option>
+                    <option value="INFO">Info</option>
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="CRITICAL">Critical</option>
+                  </select>
+                </div>
+
+                <div className="col-12 col-md-2 text-end">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary w-100"
+                    onClick={fetchPlatformEvents}
+                    disabled={eventsLoading}
+                  >
+                    <i className={`bi bi-arrow-clockwise me-1 ${eventsLoading ? 'spin' : ''}`}></i>
+                    Refresh ({eventTotalCount})
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Events Table */}
+            <div className="ardab-card p-0 mb-4 overflow-hidden shadow-sm">
+              <div className="ardab-table-wrapper">
+                <table className="ardab-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Source</th>
+                      <th>Event Type</th>
+                      <th>Severity</th>
+                      <th>Actor</th>
+                      <th>IP Address</th>
+                      <th>Target</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {eventsLoading ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-4 text-muted">
+                          <div className="spinner-border spinner-border-sm text-success me-2" role="status"></div>
+                          Loading platform security telemetry...
+                        </td>
+                      </tr>
+                    ) : platformEvents.length > 0 ? (
+                      platformEvents.map((evt) => (
+                        <tr key={evt.id}>
+                          <td className="small text-muted" style={{ whiteSpace: 'nowrap' }}>
+                            {evt.occurredAt ? new Date(evt.occurredAt).toLocaleString() : 'Just now'}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge rounded-pill px-2 py-1 ${
+                                evt.source === 'CUSTOMER_WEB'
+                                  ? 'bg-success-subtle text-success border border-success-subtle'
+                                  : evt.source === 'SUPERADMIN_WEB'
+                                  ? 'bg-primary-subtle text-primary border border-primary-subtle'
+                                  : evt.source === 'SUBADMIN_WEB'
+                                  ? 'bg-info-subtle text-info border border-info-subtle'
+                                  : 'bg-secondary-subtle text-secondary border'
+                              }`}
+                              style={{ fontSize: '0.72rem' }}
+                            >
+                              {evt.source}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="fw-semibold text-dark small">{evt.eventType}</span>
+                          </td>
+                          <td>
+                            <span
+                              className={`badge rounded-pill px-2 py-1 ${
+                                evt.severity === 'CRITICAL' || evt.severity === 'HIGH'
+                                  ? 'bg-danger-subtle text-danger border border-danger-subtle'
+                                  : evt.severity === 'MEDIUM'
+                                  ? 'bg-warning-subtle text-warning border border-warning-subtle'
+                                  : 'bg-light text-muted border'
+                              }`}
+                              style={{ fontSize: '0.7rem' }}
+                            >
+                              {evt.severity}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="small fw-medium text-dark">{evt.actorEmail || evt.actorType}</div>
+                            {evt.actorEmail && (
+                              <div className="text-muted" style={{ fontSize: '0.68rem' }}>
+                                Type: {evt.actorType}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <code className="small">{evt.ipAddress || '—'}</code>
+                          </td>
+                          <td className="small text-muted">
+                            {evt.endpoint || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={7} className="text-center py-4 text-muted">
+                          No platform security events found matching the criteria.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {eventTotalPages > 1 && (
+                <div className="p-3 border-top d-flex justify-content-between align-items-center bg-light">
+                  <span className="small text-muted">
+                    Page {eventPage} of {eventTotalPages} ({eventTotalCount} total events)
+                  </span>
+                  <div className="btn-group btn-group-sm">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      disabled={eventPage <= 1}
+                      onClick={() => setEventPage(eventPage - 1)}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      disabled={eventPage >= eventTotalPages}
+                      onClick={() => setEventPage(eventPage + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

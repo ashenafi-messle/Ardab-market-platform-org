@@ -61,6 +61,10 @@ export const corsOptions = {
     'x-idempotency-key',
     'Accept',
     'X-Requested-With',
+    'X-App-Source',
+    'x-app-source',
+    'X-Client-Device-Id',
+    'x-client-device-id',
   ],
   exposedHeaders: ['X-Request-ID', 'X-Idempotency-Key', 'Content-Range', 'X-Total-Count'],
   maxAge: 86400, // 24 hours

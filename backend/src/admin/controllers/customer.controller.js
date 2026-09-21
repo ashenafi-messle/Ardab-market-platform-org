@@ -12,6 +12,7 @@ import {
   updateCustomerProfile,
   updateCustomerStatus,
   bulkUpdateCustomerStatus,
+  deleteCustomerCompletely,
 } from '../services/customer.service.js';
 
 /**
@@ -88,3 +89,15 @@ export async function bulkUpdateCustomerStatusHandler(req, res) {
   const result = await bulkUpdateCustomerStatus(req.body.ids, req.body.status, req.user, ipAddress);
   return ApiResponse.success(res, result, `Successfully updated status for ${result.affectedCount} customers`);
 }
+
+/**
+ * DELETE /api/customers/:id
+ * Permanently cleanses customer data, removes customer-owned records, and anonymizes orders.
+ */
+export async function deleteCustomerHandler(req, res) {
+  const ipAddress = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+  const result = await deleteCustomerCompletely(req.params.id, req.user, ipAddress);
+  return ApiResponse.success(res, result, 'Customer deleted and customer-owned data cleansed successfully');
+}
+
+

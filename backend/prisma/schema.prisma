@@ -708,6 +708,7 @@ model Product {
   orderItems            OrderItem[]
   feedbacks             Feedback[]
   attributeValues       ProductAttributeValue[]
+  wishlistItems         CustomerWishlistItem[]
 
   @@index([itemCode])
   @@index([sellerId])
@@ -768,6 +769,7 @@ model Customer {
   scoreEvents        CustomerScoreEvent[]
   activities         CustomerActivity[]
   reviews            CustomerReview[]
+  wishlistItems      CustomerWishlistItem[]
   supportTickets     SupportTicket[]
   feedbacks          Feedback[]
 
@@ -780,6 +782,30 @@ model Customer {
   @@index([createdAt])
   @@index([lastActivityAt])
   @@map("customers")
+}
+
+// ------------------------------------------------------------------------------
+// Temporary Pending Registrations (Unverified Signups)
+// ------------------------------------------------------------------------------
+
+model PendingCustomerRegistration {
+  id                    String    @id @default(uuid())
+  email                 String
+  phone                 String
+  city                  String    @default("Gondar")
+  deliveryZone          String?
+  verificationTokenHash String    @unique
+  verificationExpiresAt DateTime
+  verifiedAt            DateTime?
+  consumedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([verificationTokenHash])
+  @@index([verificationExpiresAt])
+  @@map("pending_customer_registrations")
 }
 
 // ------------------------------------------------------------------------------
@@ -1002,6 +1028,27 @@ model CustomerReview {
   @@index([customerId])
   @@index([orderId])
   @@map("customer_reviews")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Wishlist Items (Persistent Server-Side Saved Products)
+// ------------------------------------------------------------------------------
+
+model CustomerWishlistItem {
+  id         String    @id @default(uuid())
+  customerId String
+  productId  String?
+  addedAt    DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product    Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@unique([customerId, productId])
+  @@index([customerId])
+  @@index([productId])
+  @@index([addedAt])
+  @@map("customer_wishlist_items")
 }
 
 // ------------------------------------------------------------------------------

@@ -38,8 +38,9 @@ function renderBrandHeader() {
 /**
  * Returns Password Reset email templates (HTML & Plain text)
  */
-export function getPasswordResetTemplate({ name, resetUrl, expiresMinutes = 15 }) {
-  const recipientName = name || 'Administrator';
+export function getPasswordResetTemplate({ name, resetUrl, expiresMinutes = 15, title = 'Password Reset', isCustomer = false }) {
+  const recipientName = name || (isCustomer ? 'Customer' : 'Administrator');
+  const greetingRole = isCustomer ? 'customer account' : 'administrative account';
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -61,9 +62,9 @@ export function getPasswordResetTemplate({ name, resetUrl, expiresMinutes = 15 }
       <div class="container">
         ${renderBrandHeader()}
         <div class="content">
-          <h2 style="color: #0f172a; margin-top: 0; font-size: 20px;">Administrative Password Reset</h2>
+          <h2 style="color: #0f172a; margin-top: 0; font-size: 20px;">${title}</h2>
           <p>Hello <strong>${recipientName}</strong>,</p>
-          <p>We received a request to reset your administrative account password for the <strong>Ardab Market Platform</strong>.</p>
+          <p>We received a request to reset your ${greetingRole} password for the <strong>Ardab Market Platform</strong>.</p>
           <p>Click the button below to set your new security credentials. This link is valid for <strong>${expiresMinutes} minutes</strong>:</p>
           <p style="text-align: center;">
             <a href="${resetUrl}" class="btn">Reset Password</a>
@@ -151,6 +152,77 @@ Hello ${recipientName},
 Your One-Time Password (OTP) is: ${otpCode}
 
 Valid for ${expiresMinutes} minutes. Never share this code with anyone.
+  `.trim();
+
+  return { htmlContent, textContent };
+}
+
+/**
+ * Returns Customer Email Verification Link email template (HTML & Plain text)
+ * Dedicated link template - STRICTLY NO OTP CODE
+ */
+export function getEmailVerificationLinkTemplate({ name, verificationUrl, expiresMinutes = 1440 }) {
+  const recipientName = name || 'Valued Customer';
+  const hours = Math.round(expiresMinutes / 60);
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Verify Your Ardab Market Email</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f8; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+        .content { padding: 36px 32px; color: #334155; line-height: 1.6; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #108A4E 0%, #0B6B3C 100%); color: #ffffff !important; padding: 15px 36px; text-decoration: none; border-radius: 9999px; font-weight: 700; font-size: 16px; margin: 24px 0; box-shadow: 0 4px 12px rgba(16, 138, 78, 0.35); text-align: center; }
+        .footer { background-color: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+        .notice { background-color: #f0fdf4; border-left: 4px solid #108A4E; padding: 14px 16px; margin-top: 24px; border-radius: 0 6px 6px 0; font-size: 13px; color: #166534; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        ${renderBrandHeader()}
+        <div class="content">
+          <h2 style="color: #0f172a; margin-top: 0; font-size: 22px; font-weight: 800;">Verify Your Email Address</h2>
+          <p style="font-size: 15px;">Hello <strong>${recipientName}</strong>,</p>
+          <p style="font-size: 15px; color: #475569;">
+            Thank you for creating an account on <strong>Ardab Market</strong>. Please click the button below to verify your email address and continue setting up your password:
+          </p>
+          <div style="text-align: center; margin: 28px 0;">
+            <a href="${verificationUrl}" class="btn" target="_blank" rel="noopener noreferrer">
+              Verify Email Address
+            </a>
+          </div>
+          <div class="notice">
+            <strong>Security Note:</strong> This verification link will remain active for <strong>${hours} hours</strong>. If you did not sign up for Ardab Market, you can safely ignore this email.
+          </div>
+          <p style="font-size: 12px; color: #64748b; word-break: break-all; margin-top: 24px;">
+            If the button above does not work, copy and paste this link into your browser:<br>
+            <a href="${verificationUrl}" style="color: #108A4E;">${verificationUrl}</a>
+          </p>
+        </div>
+        <div class="footer">
+          &copy; ${new Date().getFullYear()} Ardab Market Platform. All rights reserved.
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const textContent = `
+Ardab Market - Verify Your Email Address
+
+Hello ${recipientName},
+
+Thank you for creating an account on Ardab Market.
+Please verify your email address by opening this link:
+
+${verificationUrl}
+
+This link is valid for ${hours} hours.
+If you did not create this account, please ignore this email.
   `.trim();
 
   return { htmlContent, textContent };

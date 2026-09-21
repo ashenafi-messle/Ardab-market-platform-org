@@ -1,0 +1,66 @@
+{
+  "brand": {
+    "name": "Ardab Market",
+    "tagline": "Your Trusted City Marketplace & Swift Delivery"
+  },
+  "nav": {
+    "home": "Home",
+    "categories": "Categories",
+    "products": "Products",
+    "sellers": "Sellers",
+    "deals": "Deals",
+    "newArrivals": "New Arrivals",
+    "popular": "Popular",
+    "about": "About",
+    "search": "Search products, categories, stores...",
+    "cart": "Cart",
+    "wishlist": "Wishlist",
+    "account": "My Account",
+    "signIn": "Sign In",
+    "signUp": "Sign Up",
+    "register": "Sign Up",
+    "logout": "Logout",
+    "city": "City"
+
+  },
+  "footer": {
+    "about": "About Ardab Market",
+    "aboutDesc": "Ardab Market connects you directly with verified regional merchants and delivers fresh quality groceries, fashion, and electronics straight to your doorstep.",
+    "quickLinks": "Quick Links",
+    "customerCare": "Customer Care",
+    "contact": "Contact Us",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "support": "Help Center",
+    "deliveryFleet": "Ardab Dedicated Delivery Fleet",
+    "rights": "All rights reserved."
+  },
+  "actions": {
+    "addToCart": "Add to Cart",
+    "buyNow": "Buy Now",
+    "viewDetails": "View Details",
+    "filter": "Filter",
+    "sort": "Sort",
+    "clearAll": "Clear All",
+    "apply": "Apply",
+    "checkout": "Proceed to Checkout",
+    "continueShopping": "Continue Shopping",
+    "back": "Back",
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "save": "Save",
+    "loading": "Loading..."
+  },
+  "status": {
+    "available": "In Stock",
+    "outOfStock": "Out of Stock",
+    "inTransit": "In Transit",
+    "delivered": "Delivered",
+    "pending": "Pending"
+  },
+  "currency": "ETB",
+  "empty": {
+    "title": "Nothing Found",
+    "desc": "There is currently no data in this section."
+  }
+}
