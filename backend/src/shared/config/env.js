@@ -49,9 +49,12 @@ const FRONTEND_URL =
   process.env.ADMIN_FRONTEND_URL ||
   'http://localhost:3000';
 
+// CUSTOMER_FRONTEND_URL is the canonical variable name for the deployed customer
+// web app. CUSTOMER_APP_URL is kept as a legacy alias. Do NOT put multiple URLs
+// here — this value is embedded directly into email links.
 const CUSTOMER_APP_URL =
-  process.env.CUSTOMER_APP_URL ||
   process.env.CUSTOMER_FRONTEND_URL ||
+  process.env.CUSTOMER_APP_URL ||
   'http://localhost:3001';
 
 const CUSTOMER_FRONTEND_URL = CUSTOMER_APP_URL;
@@ -75,6 +78,16 @@ if (NODE_ENV === 'production') {
   }
   if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
     console.warn('[CONFIG WARNING] Cloudinary credentials are not fully configured in production.');
+  }
+  // Warn loudly when customer-facing email links would point at localhost
+  if (CUSTOMER_APP_URL.includes('localhost')) {
+    console.error(
+      '[CONFIG CRITICAL] CUSTOMER_FRONTEND_URL resolves to localhost in production. ' +
+      'Email verification and password-reset links sent to customers will be broken. ' +
+      'Set CUSTOMER_FRONTEND_URL=https://customer-phi-wheat.vercel.app on Render.'
+    );
+  } else {
+    console.info(`[CONFIG] Customer email links will use: ${CUSTOMER_APP_URL}`);
   }
   console.info(`[CONFIG] CORS allowed origins (${CORS_ORIGINS.length}): ${CORS_ORIGINS.join(', ')}`);
 }
