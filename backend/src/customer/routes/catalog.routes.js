@@ -18,23 +18,28 @@ import {
   postCustomerReview,
 } from '../controllers/catalog.controller.js';
 import { asyncHandler } from '../../shared/utils/asyncHandler.js';
+import {
+  customerAuthMiddleware,
+  optionalCustomerAuthMiddleware,
+} from '../middleware/customerAuth.middleware.js';
+import { publicApiCache } from '../../shared/middleware/cache.middleware.js';
 
 const router = Router();
 
-// Public Catalog Endpoints
-router.get('/products', asyncHandler(getCustomerProducts));
-router.get('/products/:id', asyncHandler(getCustomerProductDetails));
-router.get('/categories', asyncHandler(getCustomerCategories));
-router.get('/categories/tree', asyncHandler(getCustomerCategoryTree));
-router.get('/categories/:id', asyncHandler(getCustomerCategoryById));
-router.get('/categories/:id/attributes', asyncHandler(getCustomerCategoryAttributes));
-router.get('/cities', asyncHandler(getCustomerCities));
-router.get('/sellers', asyncHandler(getCustomerSellers));
-router.get('/sellers/:id', asyncHandler(getCustomerSellerById));
-router.get('/payment-methods', asyncHandler(getCustomerPaymentMethods));
+// Public Catalog Endpoints (with lightweight memory & HTTP caching)
+router.get('/products', publicApiCache(60), asyncHandler(getCustomerProducts));
+router.get('/products/:id', publicApiCache(60), asyncHandler(getCustomerProductDetails));
+router.get('/categories', publicApiCache(300), asyncHandler(getCustomerCategories));
+router.get('/categories/tree', publicApiCache(300), asyncHandler(getCustomerCategoryTree));
+router.get('/categories/:id', publicApiCache(300), asyncHandler(getCustomerCategoryById));
+router.get('/categories/:id/attributes', publicApiCache(300), asyncHandler(getCustomerCategoryAttributes));
+router.get('/cities', publicApiCache(600), asyncHandler(getCustomerCities));
+router.get('/sellers', publicApiCache(300), asyncHandler(getCustomerSellers));
+router.get('/sellers/:id', publicApiCache(120), asyncHandler(getCustomerSellerById));
+router.get('/payment-methods', publicApiCache(600), asyncHandler(getCustomerPaymentMethods));
 
-// Reviews (public)
-router.get('/reviews', asyncHandler(getCustomerReviews));
-router.post('/reviews', asyncHandler(postCustomerReview));
+// Reviews (public read, authenticated submission)
+router.get('/reviews', optionalCustomerAuthMiddleware, asyncHandler(getCustomerReviews));
+router.post('/reviews', customerAuthMiddleware, asyncHandler(postCustomerReview));
 
 export default router;

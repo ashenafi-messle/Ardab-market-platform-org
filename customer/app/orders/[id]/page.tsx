@@ -239,9 +239,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                           <div className="text-muted" style={{ fontSize: '0.72rem' }}>{item.sellerName}</div>
                         )}
                       </div>
-                      <span className="fw-bold text-success">
-                        {(Number(price) * item.quantity).toLocaleString()} ETB
-                      </span>
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="fw-bold text-success">
+                          {(Number(price) * item.quantity).toLocaleString()} ETB
+                        </span>
+                        {order.status === 'DELIVERED' && item.productId && (
+                          <Link
+                            href={`/product/${item.productId}#reviews-section`}
+                            className="btn btn-outline-success btn-sm rounded-pill px-2 py-1 ms-1 text-nowrap"
+                            style={{ fontSize: '0.75rem' }}
+                          >
+                            <i className="bi bi-star me-1"></i>
+                            {language === 'am' ? 'ገምግም' : 'Review'}
+                          </Link>
+                        )}
+                      </div>
                     </li>
                   );
                 })}

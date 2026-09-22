@@ -542,9 +542,17 @@ export default function CustomerSupportPage() {
                       <td>{getPriorityBadge(ticket.priority)}</td>
                       <td>{getStatusBadge(ticket.status)}</td>
                       <td>
-                        <span className="text-muted small">
-                          {ticket.assignedSubadmin?.name || ticket.assignedTo || 'Unassigned'}
-                        </span>
+                        {ticket.assignedSubadmin?.name || (ticket.assignedTo && ticket.assignedTo !== 'Unassigned') ? (
+                          <span className="badge bg-light text-dark border px-2 py-1">
+                            <i className="bi bi-person-check me-1 text-primary"></i>
+                            {ticket.assignedSubadmin?.name || ticket.assignedTo}
+                          </span>
+                        ) : (
+                          <span className="badge bg-light text-muted border px-2 py-1">
+                            <i className="bi bi-person me-1"></i>
+                            {user?.name || 'Unassigned'}
+                          </span>
+                        )}
                       </td>
                       <td className="text-end">
                         <button
@@ -587,8 +595,11 @@ export default function CustomerSupportPage() {
 
                 <div className="fw-medium text-dark small mb-2">{ticket.subject}</div>
 
-                <div className="d-flex justify-content-between text-muted small mb-2" style={{ fontSize: '0.75rem' }}>
+                <div className="d-flex justify-content-between text-muted small mb-1" style={{ fontSize: '0.75rem' }}>
+                  <span><i className="bi bi-person me-1"></i>{ticket.assignedSubadmin?.name || (ticket.assignedTo && ticket.assignedTo !== 'Unassigned' ? ticket.assignedTo : null) || user?.name || 'Unassigned'}</span>
                   <span>{ticket.city} &bull; {ticket.customerPhone}</span>
+                </div>
+                <div className="d-flex justify-content-end mb-2">
                   {getStatusBadge(ticket.status)}
                 </div>
 
@@ -702,7 +713,7 @@ export default function CustomerSupportPage() {
                             <div className="d-flex align-items-center gap-2 mt-2">
                               <span className="text-muted small">Assigned:</span>
                               <span className="fw-semibold small text-dark">
-                                {selectedTicket.assignedSubadmin?.name || selectedTicket.assignedTo || 'Unassigned'}
+                                {selectedTicket.assignedSubadmin?.name || (selectedTicket.assignedTo && selectedTicket.assignedTo !== 'Unassigned' ? selectedTicket.assignedTo : null) || user?.name || 'Unassigned'}
                               </span>
                               {canAssign && user && (
                                 <button

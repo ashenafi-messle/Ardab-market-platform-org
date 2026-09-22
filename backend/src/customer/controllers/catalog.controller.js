@@ -3,7 +3,10 @@
 // ==============================================================================
 
 import { ApiResponse } from '../../shared/utils/apiResponse.js';
-import { listProducts, getProductById } from '../../admin/services/product.service.js';
+import {
+  listCustomerProducts,
+  getCustomerProductDetails as fetchCustomerProductDetails,
+} from '../services/customerCatalog.service.js';
 import {
   listCategories,
   getCategoryTree,
@@ -14,6 +17,7 @@ import { citiesService } from '../../admin/services/cities.service.js';
 import { listSuppliers } from '../../admin/services/supplier.service.js';
 import { listPaymentMethods } from '../../admin/services/paymentMethod.service.js';
 import { listFeedback, createFeedback } from '../../admin/services/feedback.service.js';
+import { getProductReviews, createCustomerProductReview } from '../services/review.service.js';
 import { prisma } from '../../shared/config/database.js';
 
 /**
@@ -25,7 +29,7 @@ export async function getCustomerProducts(req, res) {
     ...req.query,
     status: req.query.status || 'ACTIVE',
   };
-  const result = await listProducts(query);
+  const result = await listCustomerProducts(query);
   return ApiResponse.success(res, result, 'Marketplace products retrieved');
 }
 
@@ -34,7 +38,7 @@ export async function getCustomerProducts(req, res) {
  * Detailed customer product view
  */
 export async function getCustomerProductDetails(req, res) {
-  const product = await getProductById(req.params.id);
+  const product = await fetchCustomerProductDetails(req.params.id);
   return ApiResponse.success(res, product, 'Product details retrieved');
 }
 
@@ -129,6 +133,10 @@ export async function getCustomerPaymentMethods(req, res) {
  * Public reviews for products or sellers
  */
 export async function getCustomerReviews(req, res) {
+  if (req.query.productId) {
+    const result = await getProductReviews(req.query.productId, req.query, req.customer?.id || null);
+    return ApiResponse.success(res, result, 'Customer reviews retrieved');
+  }
   const query = {
     ...req.query,
     status: 'PUBLISHED',
@@ -142,7 +150,11 @@ export async function getCustomerReviews(req, res) {
  * Submit a customer product or seller review
  */
 export async function postCustomerReview(req, res) {
-  const customerId = req.customer?.id || req.body.customerId;
+  const customerId = req.customer?.id;
+  if (req.body.productId) {
+    const review = await createCustomerProductReview(customerId, req.body);
+    return ApiResponse.success(res, review, 'Review submitted successfully', 201);
+  }
   const reviewData = {
     ...req.body,
     customerId,

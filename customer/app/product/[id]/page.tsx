@@ -7,7 +7,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
-import { catalogApi, Product, Review } from '@/lib/api';
+import { catalogApi, reviewsApi, Product, Review } from '@/lib/api';
+import { getOptimizedImageUrl } from '@/lib/images';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -20,38 +21,51 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { isAuthenticated } = useCustomerAuth();
 
   const [product, setProduct] = useState<Product | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [quantity, setQuantity] = useState<number>(1);
-  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
-  const [addedSuccess, setAddedSuccess] = useState(false);
-
-  // New Review Modal State
-  const [rating, setRating] = useState<number>(5);
-  const [comment, setComment] = useState('');
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, any>>({});
+  const [addedSuccess, setAddedSuccess] = useState<boolean>(false);
+  // Reviews State
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<any>(null);
+  const [customerReview, setCustomerReview] = useState<any>(null);
+  const [eligibility, setEligibility] = useState<any>(null);
+  const [showReviewForm, setShowReviewForm] = useState<boolean>(false);
+  const [isEditingReview, setIsEditingReview] = useState<boolean>(false);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewTitle, setReviewTitle] = useState('');
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
-  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [deletingReview, setDeletingReview] = useState(false);
+
+  const fetchReviews = async () => {
+    try {
+      const res: any = await reviewsApi.getProductReviews(productId);
+      if (res) {
+        setReviews(res.items || res.data || []);
+        if (res.summary) setReviewSummary(res.summary);
+        if (res.customerReview !== undefined) setCustomerReview(res.customerReview);
+        if (res.eligibility !== undefined) setEligibility(res.eligibility);
+      }
+    } catch (err) {
+      console.error('Error fetching product reviews:', err);
+    }
+  };
 
   useEffect(() => {
     async function fetchProduct() {
       setLoading(true);
       try {
-        const [prodRes, revRes] = await Promise.all([
-          catalogApi.getProductById(productId),
-          catalogApi.getProductReviews(productId),
-        ]);
-
+        const prodRes = await catalogApi.getProductById(productId);
         if (prodRes && prodRes.data) {
           setProduct(prodRes.data);
-          // Preselect default attributes if available
           if (prodRes.data.attributes && typeof prodRes.data.attributes === 'object') {
             setSelectedAttributes(prodRes.data.attributes);
           }
         }
-
-        if (revRes && revRes.data) {
-          setReviews(revRes.data);
-        }
+        await fetchReviews();
       } catch (err) {
         console.error('Error fetching product detail:', err);
       } finally {
@@ -82,25 +96,81 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       return;
     }
 
-    setSubmittingReview(true);
-    setReviewMessage(null);
-    try {
-      const res = await catalogApi.createReview({
-        productId,
-        rating,
-        comment,
-      });
+    const previousReview = customerReview;
+    const optimisticReview = {
+      id: isEditingReview ? customerReview?.id : 'temp-' + Date.now(),
+      rating: reviewRating,
+      title: reviewTitle.trim() || null,
+      comment: reviewComment.trim(),
+      isAnonymous: reviewAnonymous,
+      status: 'APPROVED',
+      createdAt: new Date().toISOString(),
+      isVerified: customerReview?.isVerified ?? false,
+    };
 
-      if (res && res.data) {
-        setReviews([res.data, ...reviews]);
-        setComment('');
-        setRating(5);
-        setReviewMessage(t('review_submitted_success'));
+    // Optimistically update the UI immediately
+    setCustomerReview(optimisticReview);
+    setShowReviewForm(false);
+    setIsEditingReview(false);
+    setSubmittingReview(true);
+    setReviewMessage({ type: 'success', text: t('review_submitted_success') });
+
+    try {
+      if (isEditingReview && previousReview?.id) {
+        await reviewsApi.updateReview(previousReview.id, {
+          rating: reviewRating,
+          title: reviewTitle.trim() || undefined,
+          comment: reviewComment.trim(),
+          isAnonymous: reviewAnonymous,
+        });
+      } else {
+        await reviewsApi.submitReview(productId, {
+          rating: reviewRating,
+          title: reviewTitle.trim() || undefined,
+          comment: reviewComment.trim(),
+          isAnonymous: reviewAnonymous,
+        });
       }
+      setReviewComment('');
+      setReviewTitle('');
+      setReviewRating(5);
+      // Re-sync quietly in background
+      await fetchReviews();
     } catch (err: any) {
-      setReviewMessage(err.message || 'Failed to submit review');
+      // Revert optimistic update on failure
+      setCustomerReview(previousReview);
+      setShowReviewForm(true);
+      setReviewMessage({ type: 'error', text: err.message || 'Failed to submit review' });
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const handleStartEditReview = () => {
+    if (!customerReview) return;
+    setReviewRating(customerReview.rating || 5);
+    setReviewTitle(customerReview.title || '');
+    setReviewComment(customerReview.comment || '');
+    setReviewAnonymous(customerReview.isAnonymous || false);
+    setIsEditingReview(true);
+    setShowReviewForm(true);
+  };
+
+  const handleDeleteReview = async () => {
+    if (!customerReview?.id) return;
+    if (!window.confirm(t('delete_review_confirm'))) return;
+
+    setDeletingReview(true);
+    try {
+      await reviewsApi.deleteReview(customerReview.id);
+      setCustomerReview(null);
+      setShowReviewForm(false);
+      setIsEditingReview(false);
+      await fetchReviews();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete review');
+    } finally {
+      setDeletingReview(false);
     }
   };
 
@@ -206,7 +276,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               title={language === 'am' ? 'ምስሉን በትልቅ ለማየት ይጫኑ' : 'Click to view full-screen'}
             >
               <img
-                src={rawImages[activeImageIndex]}
+                src={getOptimizedImageUrl(rawImages[activeImageIndex], { width: 800 })}
                 alt={`${product.name} - view ${activeImageIndex + 1}`}
                 className="img-fluid object-fit-contain w-100 transition-all"
                 style={{ maxHeight: '460px' }}
@@ -278,7 +348,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     style={{ width: '72px', height: '72px', outline: 'none' }}
                   >
                     <img
-                      src={imgUrl}
+                      src={getOptimizedImageUrl(imgUrl, { width: 160 })}
                       alt={`Thumbnail ${idx + 1}`}
                       className="w-100 h-100 object-fit-cover"
                       onError={(e) => {
@@ -518,7 +588,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={rawImages[activeImageIndex]}
+              src={getOptimizedImageUrl(rawImages[activeImageIndex], { width: 1400 })}
               alt={`${product.name} - large view`}
               className="img-fluid rounded-4 object-fit-contain shadow-lg"
               style={{ maxHeight: '80vh', maxWidth: '85vw' }}
@@ -547,93 +617,406 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* Customer Reviews Section */}
-      <section className="mt-5">
-        <div className="d-flex justify-content-between align-items-center mb-4">
-          <div>
-            <h3 className="h4 fw-bold mb-1">{t('customer_reviews')}</h3>
-            <small className="text-muted">{reviews.length} {t('reviews_count')}</small>
+      <section className="mt-5 pt-3 border-top" id="reviews-section">
+        {/* Review Header & Overview Card */}
+        <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
+          <div className="row g-4 align-items-center">
+            {/* Left: Overall Rating Score */}
+            <div className="col-12 col-md-5 text-center text-md-start border-md-end pb-3 pb-md-0">
+              <h3 className="h4 fw-bold text-dark mb-1">{t('customer_reviews')}</h3>
+              <div className="d-flex align-items-baseline gap-3 my-2 justify-content-center justify-content-md-start">
+                <span className="display-4 fw-bold text-dark">
+                  {reviewSummary?.averageRating ? reviewSummary.averageRating.toFixed(1) : '0.0'}
+                </span>
+                <div>
+                  <div className="text-warning fs-5">
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const avg = reviewSummary?.averageRating || 0;
+                      return (
+                        <i
+                          key={star}
+                          className={`bi ${star <= Math.round(avg) ? 'bi-star-fill' : 'bi-star'} me-1`}
+                        ></i>
+                      );
+                    })}
+                  </div>
+                  <small className="text-muted">
+                    {reviewSummary?.totalReviews || reviews.length} {t('reviews_count')} ({t('out_of_5')})
+                  </small>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Rating Distribution Bars */}
+            <div className="col-12 col-md-7">
+              <div className="d-flex flex-column gap-2">
+                {[5, 4, 3, 2, 1].map((starVal) => {
+                  const pct = reviewSummary?.ratingPercentages?.[starVal] || 0;
+                  const count = reviewSummary?.ratingDistribution?.[starVal] || 0;
+                  return (
+                    <div key={starVal} className="d-flex align-items-center gap-2 small">
+                      <span className="text-muted text-nowrap" style={{ width: '38px' }}>
+                        {starVal} <i className="bi bi-star-fill text-warning"></i>
+                      </span>
+                      <div className="progress flex-grow-1" style={{ height: '8px', borderRadius: '4px' }}>
+                        <div
+                          className="progress-bar bg-warning"
+                          role="progressbar"
+                          style={{ width: `${pct}%` }}
+                          aria-valuenow={pct}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                        ></div>
+                      </div>
+                      <span className="text-muted text-end text-nowrap" style={{ width: '65px', fontSize: '0.75rem' }}>
+                        {pct}% ({count})
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-          {isAuthenticated ? (
-            <a href="#review-form" className="btn btn-outline-success btn-sm rounded-pill px-3">
-              <i className="bi bi-pencil me-1"></i> {t('write_review')}
-            </a>
+        </div>
+
+        {/* Action / Eligibility Banner */}
+        <div className="mb-4">
+          {reviewMessage && (
+            <div
+              className={`alert ${reviewMessage.type === 'success' ? 'alert-success' : 'alert-danger'} alert-dismissible fade show rounded-4 py-2 px-3 small`}
+              role="alert"
+            >
+              <i className={`bi ${reviewMessage.type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2`}></i>
+              {reviewMessage.text}
+              <button
+                type="button"
+                className="btn-close py-2"
+                onClick={() => setReviewMessage(null)}
+                aria-label="Close"
+              ></button>
+            </div>
+          )}
+
+          {!isAuthenticated ? (
+            <div className="card border-0 shadow-sm rounded-4 p-3 bg-light d-flex flex-row align-items-center justify-content-between flex-wrap gap-2">
+              <div className="d-flex align-items-center gap-2 text-muted small">
+                <i className="bi bi-person-lock fs-5 text-success"></i>
+                <span>{t('login_to_review')}</span>
+              </div>
+              <Link href={`/login?redirect=/product/${productId}`} className="btn btn-outline-success btn-sm rounded-pill px-3">
+                {t('login')}
+              </Link>
+            </div>
+          ) : customerReview ? (
+            /* Author's Existing Review Highlight Card */
+            <div className="card border border-success border-opacity-25 shadow-sm rounded-4 p-4 mb-3 bg-white">
+              <div className="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+                <div>
+                  <span className="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-1 fw-semibold small me-2">
+                    <i className="bi bi-person-check-fill me-1"></i>
+                    {t('your_review')}
+                  </span>
+                  {customerReview.status === 'PENDING' ? (
+                    <span className="badge bg-warning bg-opacity-10 text-warning border border-warning-subtle rounded-pill px-3 py-1 small">
+                      <i className="bi bi-hourglass-split me-1"></i>
+                      {t('pending_moderation')}
+                    </span>
+                  ) : (
+                    <span className="badge bg-success bg-opacity-10 text-success border border-success-subtle rounded-pill px-3 py-1 small">
+                      <i className="bi bi-patch-check-fill me-1"></i>
+                      {t('approved_published')}
+                    </span>
+                  )}
+                </div>
+                <div className="d-flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+                    onClick={handleStartEditReview}
+                  >
+                    <i className="bi bi-pencil me-1"></i> {t('edit_review')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger rounded-pill px-3"
+                    disabled={deletingReview}
+                    onClick={handleDeleteReview}
+                  >
+                    <i className="bi bi-trash me-1"></i> {t('delete_review')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <div className="text-warning">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <i
+                      key={star}
+                      className={`bi ${star <= customerReview.rating ? 'bi-star-fill' : 'bi-star'} small`}
+                    ></i>
+                  ))}
+                </div>
+                <span className="text-muted small">
+                  {customerReview.createdAt?.split('T')[0]}
+                </span>
+                {customerReview.isVerified && (
+                  <span className="badge bg-light text-muted border small ms-1" style={{ fontSize: '0.7rem' }}>
+                    <i className="bi bi-check2 text-success me-1"></i>{t('verified_purchase')}
+                  </span>
+                )}
+              </div>
+
+              {customerReview.title && (
+                <h6 className="fw-bold text-dark mb-1">{customerReview.title}</h6>
+              )}
+              <p className="text-dark small mb-0">{customerReview.comment}</p>
+
+              {/* Admin response if available */}
+              {customerReview.adminReply && (
+                <div className="mt-3 p-3 bg-light rounded-3 border-start border-3 border-success">
+                  <div className="d-flex align-items-center gap-2 mb-1">
+                    <i className="bi bi-reply-fill text-success"></i>
+                    <strong className="small text-success">
+                      {customerReview.responderName || t('admin_response')}
+                    </strong>
+                    {customerReview.repliedAt && (
+                      <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+                        {customerReview.repliedAt.split('T')[0]}
+                      </span>
+                    )}
+                  </div>
+                  <p className="small text-muted mb-0">{customerReview.adminReply}</p>
+                </div>
+              )}
+            </div>
           ) : (
-            <Link href={`/login?redirect=/product/${productId}`} className="btn btn-outline-secondary btn-sm rounded-pill px-3">
-              {t('login_to_review')}
-            </Link>
+            /* Write review button for all authenticated customers */
+            <div className="d-flex justify-content-end mb-3">
+              <button
+                type="button"
+                className="btn btn-fresh rounded-pill px-4"
+                onClick={() => {
+                  setIsEditingReview(false);
+                  setReviewRating(5);
+                  setReviewTitle('');
+                  setReviewComment('');
+                  setShowReviewForm(!showReviewForm);
+                }}
+              >
+                <i className="bi bi-pencil-square me-1"></i>
+                {showReviewForm ? t('cancel') : t('write_review')}
+              </button>
+            </div>
+          )}
+
+          {/* Accessible Review Creation & Editing Form */}
+          {showReviewForm && (
+            <div className="card border-0 shadow rounded-4 p-4 mb-4 bg-white">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h5 className="fw-bold mb-0">
+                  {isEditingReview ? t('edit_review') : t('write_review')}
+                </h5>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-light border-0"
+                  onClick={() => setShowReviewForm(false)}
+                >
+                  <i className="bi bi-x-lg"></i>
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmitReview}>
+                {/* Accessible Star Selector */}
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold text-dark d-block">
+                    {language === 'am' ? 'ደረጃ ይምረጡ' : 'Select Rating'} (1–5 {t('stars')})
+                  </label>
+                  <div
+                    className="d-flex gap-2 text-warning fs-3"
+                    role="radiogroup"
+                    aria-label="Product rating from 1 to 5 stars"
+                  >
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        className="btn p-0 border-0 text-warning fs-3 focus-ring focus-ring-success"
+                        onClick={() => setReviewRating(star)}
+                        aria-label={`${star} ${star === 1 ? t('star') : t('stars')}`}
+                        role="radio"
+                        aria-checked={reviewRating === star}
+                      >
+                        <i className={`bi ${star <= reviewRating ? 'bi-star-fill text-warning' : 'bi-star text-muted'}`}></i>
+                      </button>
+                    ))}
+                    <span className="text-dark small align-self-center ms-2 fw-semibold">
+                      {reviewRating} / 5
+                    </span>
+                  </div>
+                </div>
+
+                {/* Review Title Input */}
+                <div className="mb-3">
+                  <label htmlFor="rev-title" className="form-label small fw-semibold text-dark">
+                    {t('review_title')}
+                  </label>
+                  <input
+                    type="text"
+                    id="rev-title"
+                    className="form-control rounded-3"
+                    placeholder={language === 'am' ? 'ለምሳሌ፡ በጣም ምርጥ ምርት...' : 'e.g., Excellent quality grain...'}
+                    maxLength={120}
+                    value={reviewTitle}
+                    onChange={(e) => setReviewTitle(e.target.value)}
+                  />
+                </div>
+
+                {/* Review Comment Textarea */}
+                <div className="mb-3">
+                  <label htmlFor="rev-comment" className="form-label small fw-semibold text-dark">
+                    {t('your_comment')} <span className="text-danger">*</span>
+                  </label>
+                  <textarea
+                    id="rev-comment"
+                    className="form-control rounded-3"
+                    rows={4}
+                    placeholder={t('review_placeholder')}
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    required
+                    minLength={3}
+                    maxLength={2000}
+                  ></textarea>
+                  <div className="d-flex justify-content-between text-muted small mt-1" style={{ fontSize: '0.75rem' }}>
+                    <span>{language === 'am' ? 'ዝቅተኛ 3 ፊደላት' : 'Min 3 characters'}</span>
+                    <span>{reviewComment.length}/2000</span>
+                  </div>
+                </div>
+
+                {/* Anonymous Option */}
+                <div className="form-check mb-3">
+                  <input
+                    type="checkbox"
+                    id="rev-anon"
+                    className="form-check-input"
+                    checked={reviewAnonymous}
+                    onChange={(e) => setReviewAnonymous(e.target.checked)}
+                  />
+                  <label htmlFor="rev-anon" className="form-check-label small text-muted">
+                    {t('anonymous_review')}
+                  </label>
+                </div>
+
+                {/* Form Buttons */}
+                <div className="d-flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={submittingReview || reviewComment.trim().length < 3}
+                    className="btn btn-fresh rounded-pill px-4"
+                  >
+                    {submittingReview ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                        {t('saving')}
+                      </>
+                    ) : isEditingReview ? (
+                      t('update_review')
+                    ) : (
+                      t('submit_review')
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary rounded-pill px-3"
+                    onClick={() => setShowReviewForm(false)}
+                  >
+                    {t('cancel')}
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
         </div>
 
+        {/* Public Reviews Listing */}
+        <h5 className="fw-bold text-dark mb-3">
+          {t('customer_reviews')} ({reviews.length})
+        </h5>
+
         {reviews.length > 0 ? (
-          <div className="row g-3 mb-4">
+          <div className="row g-3">
             {reviews.map((rev) => (
-              <div key={rev.id} className="col-md-6">
-                <div className="card border-0 shadow-sm rounded-4 p-3 h-100">
+              <div key={rev.id} className="col-12 col-md-6">
+                <div className="card border-0 shadow-sm rounded-4 p-3 h-100 bg-white">
                   <div className="d-flex justify-content-between align-items-center mb-2">
-                    <div className="fw-bold text-dark">
-                      {rev.customer?.user?.fullName || rev.customer?.user?.email?.split('@')[0] || 'Customer'}
+                    <div className="d-flex align-items-center gap-2">
+                      <div
+                        className="rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center fw-bold small"
+                        style={{ width: '32px', height: '32px' }}
+                      >
+                        {(rev.authorName || 'C').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="fw-bold text-dark small">{rev.authorName}</div>
+                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>
+                          {rev.createdAt?.split('T')[0]}
+                        </div>
+                      </div>
                     </div>
                     <div className="text-warning">
-                      {Array.from({ length: 5 }, (_, i) => (
-                        <i key={i} className={`bi ${i < rev.rating ? 'bi-star-fill' : 'bi-star'} small`}></i>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <i
+                          key={star}
+                          className={`bi ${star <= rev.rating ? 'bi-star-fill' : 'bi-star'} small`}
+                        ></i>
                       ))}
                     </div>
                   </div>
-                  <p className="text-muted small mb-0">{rev.comment}</p>
+
+                  {rev.isVerified && (
+                    <div className="mb-2">
+                      <span
+                        className="badge bg-success bg-opacity-10 text-success border border-success-subtle rounded-pill px-2 py-1"
+                        style={{ fontSize: '0.68rem' }}
+                      >
+                        <i className="bi bi-patch-check-fill me-1"></i>
+                        {t('verified_purchase')}
+                      </span>
+                    </div>
+                  )}
+
+                  {rev.title && (
+                    <h6 className="fw-semibold text-dark small mb-1">{rev.title}</h6>
+                  )}
+                  <p className="text-muted small mb-0 flex-grow-1" style={{ whiteSpace: 'pre-line' }}>
+                    {rev.comment}
+                  </p>
+
+                  {/* Official Sub Admin Response */}
+                  {rev.adminReply && (
+                    <div className="mt-3 p-3 bg-light rounded-3 border-start border-3 border-primary">
+                      <div className="d-flex align-items-center gap-2 mb-1">
+                        <i className="bi bi-reply-fill text-primary"></i>
+                        <strong className="small text-primary">
+                          {rev.responderName || t('admin_response')}
+                        </strong>
+                        {rev.repliedAt && (
+                          <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+                            {rev.repliedAt.split('T')[0]}
+                          </span>
+                        )}
+                      </div>
+                      <p className="small text-muted mb-0">{rev.adminReply}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="card border-0 shadow-sm rounded-4 text-center py-4 mb-4">
+          <div className="card border-0 shadow-sm rounded-4 text-center py-5 bg-light">
+            <i className="bi bi-chat-square-dots text-muted display-5 mb-2"></i>
             <p className="text-muted mb-0">{t('no_reviews_yet')}</p>
-          </div>
-        )}
-
-        {/* Review Submission Form */}
-        {isAuthenticated && (
-          <div id="review-form" className="card border-0 shadow-sm rounded-4 p-4">
-            <h5 className="fw-bold mb-3">{t('write_review')}</h5>
-            {reviewMessage && (
-              <div className="alert alert-info py-2 small mb-3">{reviewMessage}</div>
-            )}
-            <form onSubmit={handleSubmitReview}>
-              <div className="mb-3">
-                <label className="form-label small fw-semibold">{t('rating')}</label>
-                <div className="d-flex gap-2 text-warning fs-5 cursor-pointer">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <i
-                      key={star}
-                      className={`bi ${star <= rating ? 'bi-star-fill' : 'bi-star'}`}
-                      onClick={() => setRating(star)}
-                    ></i>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-3">
-                <label className="form-label small fw-semibold" htmlFor="rev-comment">
-                  {t('your_comment')}
-                </label>
-                <textarea
-                  id="rev-comment"
-                  className="form-control"
-                  rows={3}
-                  placeholder={language === 'am' ? 'ስለ ምርቱ ያለዎትን አስተያየት ይፃፉ...' : 'Write your honest review...'}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  required
-                ></textarea>
-              </div>
-
-              <button
-                type="submit"
-                disabled={submittingReview || !comment.trim()}
-                className="btn btn-fresh rounded-pill px-4"
-              >
-                {submittingReview ? t('submitting') : t('submit_review')}
-              </button>
-            </form>
           </div>
         )}
       </section>

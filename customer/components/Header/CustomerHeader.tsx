@@ -119,6 +119,9 @@ export function CustomerHeader() {
             <Link href="/about" className="text-decoration-none text-dark fw-semibold small hover-success">
               {t('about', 'About')}
             </Link>
+            <Link href="/support" className="text-decoration-none text-dark fw-semibold small hover-success">
+              {t('support', 'Support')}
+            </Link>
           </div>
 
           {/* Search Form (Desktop & Tablet) */}
@@ -221,6 +224,11 @@ export function CustomerHeader() {
                     <li>
                       <Link className="dropdown-item" href="/wishlist">
                         <i className="bi bi-heart me-2"></i>{t('common.nav.wishlist', 'Wishlist')}
+                      </Link>
+                    </li>
+                    <li>
+                      <Link className="dropdown-item" href="/support">
+                        <i className="bi bi-headset me-2 text-primary"></i>{t('support', 'Support')}
                       </Link>
                     </li>
                     <li><hr className="dropdown-divider" /></li>

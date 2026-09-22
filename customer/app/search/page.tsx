@@ -19,6 +19,7 @@ function SearchPageContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>(initialQuery);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>(initialQuery);
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
@@ -32,9 +33,19 @@ function SearchPageContent() {
     const q = searchParams.get('q') || '';
     const cat = searchParams.get('category') || '';
     setSearchQuery(q);
+    setDebouncedSearchQuery(q);
     setSelectedCategory(cat);
     setPage(1);
   }, [searchParams]);
+
+  // Debounce search query input by 300ms
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   useEffect(() => {
     async function fetchCategories() {
@@ -59,7 +70,7 @@ function SearchPageContent() {
           limit: 12,
           sort: sortBy,
         };
-        if (searchQuery.trim()) params.search = searchQuery.trim();
+        if (debouncedSearchQuery.trim()) params.search = debouncedSearchQuery.trim();
         if (selectedCategory) params.categoryId = selectedCategory;
         if (minPrice) params.minPrice = Number(minPrice);
         if (maxPrice) params.maxPrice = Number(maxPrice);
@@ -81,10 +92,11 @@ function SearchPageContent() {
     }
 
     fetchProducts();
-  }, [searchQuery, selectedCategory, minPrice, maxPrice, sortBy, page]);
+  }, [debouncedSearchQuery, selectedCategory, minPrice, maxPrice, sortBy, page]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
+    setDebouncedSearchQuery('');
     setSelectedCategory('');
     setMinPrice('');
     setMaxPrice('');

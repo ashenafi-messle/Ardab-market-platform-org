@@ -715,6 +715,9 @@ model Product {
   @@index([marketplaceCategoryId])
   @@index([status])
   @@index([createdAt])
+  @@index([status, marketplaceCategoryId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([status, sellingPrice])
   @@map("products")
 }
 
@@ -885,6 +888,7 @@ model Order {
   @@index([customerId])
   @@index([customerId, status])
   @@index([customerId, createdAt])
+  @@index([customerId, placedAt(sort: Desc)])
   @@index([orderNumber])
   @@index([status])
   @@index([paymentStatus])
@@ -1332,6 +1336,7 @@ model SupportTicket {
   @@index([ticketNumber])
   @@index([customerId])
   @@index([customerId, status])
+  @@index([customerId, lastMessageAt(sort: Desc)])
   @@index([assignedSubadminId])
   @@index([assignedSubadminId, status])
   @@index([categoryId])
@@ -1609,6 +1614,8 @@ model Feedback {
   @@index([rating])
   @@index([isVerified])
   @@index([createdAt])
+  @@index([productId, status, visibility, createdAt(sort: Desc)])
+  @@index([customerId, type, status, createdAt(sort: Desc)])
   @@map("feedbacks")
 }
 

@@ -30,6 +30,75 @@ export function getAdminId(adminUser) {
 }
 
 /**
+ * Auto-resolves active Sub Admin responsible for the ticket if unassigned.
+ */
+export async function resolveSubadminForTicket(ticket) {
+  if (!ticket || ticket.assignedSubadminId || ticket.assignedSubadmin) {
+    return ticket;
+  }
+
+  const ticketCity = ticket.city || 'Gondar';
+  let assignedAdmin = await prisma.adminUser.findFirst({
+    where: {
+      status: 'ACTIVE',
+      role: 'SUB_ADMIN',
+      OR: [
+        { assignedCities: { has: ticketCity } },
+        { assignedCities: { has: 'All Cities' } },
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (!assignedAdmin) {
+    assignedAdmin = await prisma.adminUser.findFirst({
+      where: {
+        status: 'ACTIVE',
+        role: 'SUB_ADMIN',
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  if (!assignedAdmin) {
+    assignedAdmin = await prisma.adminUser.findFirst({
+      where: {
+        status: 'ACTIVE',
+        role: 'SUPER_ADMIN',
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  if (assignedAdmin) {
+    ticket.assignedSubadminId = assignedAdmin.id;
+    ticket.assignedSubadmin = {
+      id: assignedAdmin.id,
+      name: assignedAdmin.name,
+      email: assignedAdmin.email,
+    };
+
+    // Asynchronously persist assignment to DB so subsequent reads are immediate
+    prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: { assignedSubadminId: assignedAdmin.id },
+    }).then(async () => {
+      await prisma.supportTicketAssignmentHistory.create({
+        data: {
+          ticketId: ticket.id,
+          assignedToId: assignedAdmin.id,
+          changedById: assignedAdmin.id,
+        },
+      }).catch(() => {});
+    }).catch((err) => {
+      logger.warn(`Failed to auto-persist ticket assignment for ${ticket.id}:`, err);
+    });
+  }
+
+  return ticket;
+}
+
+/**
  * Formats a raw ticket database record for API response
  */
 export function formatTicketResponse(ticket) {
@@ -222,6 +291,12 @@ export async function listTickets(arg1 = {}, arg2 = null) {
     prisma.supportTicket.count({ where }),
   ]);
 
+  for (const record of records) {
+    if (!record.assignedSubadminId) {
+      await resolveSubadminForTicket(record);
+    }
+  }
+
   const items = records.map(formatTicketResponse);
   const totalPages = Math.ceil(total / take) || 1;
 
@@ -307,6 +382,10 @@ export async function getTicketById(arg1, arg2 = null) {
 
   if (!ticket) {
     throw ApiError.notFound(`Support ticket with ID "${id}" was not found`);
+  }
+
+  if (!ticket.assignedSubadminId) {
+    await resolveSubadminForTicket(ticket);
   }
 
   return formatTicketResponse(ticket);

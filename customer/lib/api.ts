@@ -11,9 +11,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 class CustomerApiClient {
   private token: string | null = null;
+  private inFlightRequests: Map<string, Promise<any>> = new Map();
+  private cache: Map<string, { data: any; expiresAt: number }> = new Map();
 
   setToken(token: string | null) {
     this.token = token;
+    this.cache.clear();
     if (typeof window !== 'undefined') {
       if (token) {
         localStorage.setItem('ardab_customer_jwt', token);
@@ -31,6 +34,10 @@ class CustomerApiClient {
     return null;
   }
 
+  clearCache() {
+    this.cache.clear();
+  }
+
   private getDeviceId(): string {
     if (typeof window === 'undefined') return 'server';
     let devId = localStorage.getItem('ardab_customer_device_id');
@@ -41,35 +48,75 @@ class CustomerApiClient {
     return devId;
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-App-Source': 'CUSTOMER_WEB',
-      'X-Client-Device-Id': this.getDeviceId(),
-      ...((options.headers as Record<string, string>) || {}),
-    };
+  async request<T>(endpoint: string, options: RequestInit = {}, cacheTtlMs: number = 0): Promise<T> {
+    const method = (options.method || 'GET').toUpperCase();
+    const isGet = method === 'GET';
 
-    const token = this.getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      let errorMsg = json.error?.message || json.message;
-      if (json.error?.details && Array.isArray(json.error.details) && json.error.details.length > 0) {
-        errorMsg = json.error.details.map((d: any) => d.message || d.field).join('. ');
+    // 1. Instant Cache Hit for safe public reference GET requests (0ms)
+    if (isGet && cacheTtlMs > 0) {
+      const cached = this.cache.get(endpoint);
+      if (cached && Date.now() < cached.expiresAt) {
+        return cached.data as T;
       }
-      throw new Error(errorMsg || `Request failed with status ${res.status}`);
     }
 
-    return json.data !== undefined ? json.data : json;
+    // 2. In-Flight Request Deduplication (prevents duplicate parallel network calls)
+    if (isGet && this.inFlightRequests.has(endpoint)) {
+      return this.inFlightRequests.get(endpoint)! as Promise<T>;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-App-Source': 'CUSTOMER_WEB',
+          'X-Client-Device-Id': this.getDeviceId(),
+          ...((options.headers as Record<string, string>) || {}),
+        };
+
+        const token = this.getToken();
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const res = await fetch(`${API_BASE}${endpoint}`, {
+          ...options,
+          headers,
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          let errorMsg = json.error?.message || json.message;
+          if (json.error?.details && Array.isArray(json.error.details) && json.error.details.length > 0) {
+            errorMsg = json.error.details.map((d: any) => d.message || d.field).join('. ');
+          }
+          throw new Error(errorMsg || `Request failed with status ${res.status}`);
+        }
+
+        const result = json.data !== undefined ? json.data : json;
+
+        // Store into client memory cache if cacheTtlMs configured
+        if (isGet && cacheTtlMs > 0) {
+          this.cache.set(endpoint, {
+            data: result,
+            expiresAt: Date.now() + cacheTtlMs,
+          });
+        }
+
+        return result as T;
+      } finally {
+        if (isGet) {
+          this.inFlightRequests.delete(endpoint);
+        }
+      }
+    })();
+
+    if (isGet) {
+      this.inFlightRequests.set(endpoint, fetchPromise);
+    }
+
+    return fetchPromise;
   }
 
   // --- Auth Endpoints ---
@@ -192,7 +239,7 @@ class CustomerApiClient {
   }
 
   async getPaymentMethods() {
-    return this.request<PaymentMethodItem[]>('/api/customer/catalog/payment-methods');
+    return this.request<PaymentMethodItem[]>('/api/customer/catalog/payment-methods', {}, 600_000);
   }
 
   async getSellers(params: Record<string, string | number> = {}) {
@@ -225,6 +272,7 @@ class CustomerApiClient {
   }) {
     return this.request<CustomerOrder>('/api/customer/orders/checkout', {
       method: 'POST',
+      headers: payload.idempotencyKey ? { 'Idempotency-Key': payload.idempotencyKey } : {},
       body: JSON.stringify(payload),
     });
   }
@@ -301,22 +349,155 @@ class CustomerApiClient {
     sellerId?: string;
     orderId?: string;
     rating: number;
-    title: string;
+    title?: string;
     comment: string;
     authorName?: string;
+    isAnonymous?: boolean;
   }) {
+    if (data.productId) {
+      return this.submitProductReview(data.productId, data);
+    }
     return this.request<any>('/api/customer/catalog/reviews', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
+  async getProductReviews(productId: string, params: Record<string, any> = {}) {
+    const sp = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') sp.append(k, String(v));
+    });
+    const query = sp.toString() ? `?${sp.toString()}` : '';
+    return this.request<{
+      summary: {
+        averageRating: number;
+        totalReviews: number;
+        ratingDistribution: Record<number, number>;
+        ratingPercentages: Record<number, number>;
+      };
+      items: any[];
+      customerReview?: any;
+      eligibility?: {
+        canReview: boolean;
+        reason: string | null;
+        message: string | null;
+        orderId: string | null;
+        existingReview: any;
+      };
+      pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+      };
+    }>(`/api/customer/products/${productId}/reviews${query}`);
+  }
+
+  async checkReviewEligibility(productId: string) {
+    return this.request<{
+      canReview: boolean;
+      reason: string | null;
+      message: string | null;
+      orderId: string | null;
+      existingReview: any;
+    }>(`/api/customer/products/${productId}/review-eligibility`);
+  }
+
+  async submitProductReview(productId: string, data: { rating: number; comment: string; title?: string; isAnonymous?: boolean }) {
+    return this.request<any>(`/api/customer/products/${productId}/reviews`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMyReviews(params: Record<string, any> = {}) {
+    const sp = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') sp.append(k, String(v));
+    });
+    const query = sp.toString() ? `?${sp.toString()}` : '';
+    return this.request<{
+      items: any[];
+      pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+      };
+    }>(`/api/customer/reviews${query}`);
+  }
+
+  async getMyReviewById(reviewId: string) {
+    return this.request<any>(`/api/customer/reviews/${reviewId}`);
+  }
+
+  async updateMyReview(reviewId: string, data: { rating?: number; comment?: string; title?: string; isAnonymous?: boolean }) {
+    return this.request<any>(`/api/customer/reviews/${reviewId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteMyReview(reviewId: string) {
+    return this.request<{ success: boolean; message: string }>(`/api/customer/reviews/${reviewId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getCategories() {
-    return this.request<CustomerCategory[]>('/api/customer/catalog/categories/tree');
+    return this.request<CustomerCategory[]>('/api/customer/catalog/categories/tree', {}, 300_000);
   }
 
   async getOperationalCities() {
-    return this.request<OperationalCity[]>('/api/customer/catalog/cities');
+    return this.request<OperationalCity[]>('/api/customer/catalog/cities', {}, 600_000);
+  }
+
+  // --- Customer Support ---
+  async getSupportCategories() {
+    return this.request<any[]>('/api/customer/support/categories', {}, 300_000);
+  }
+
+  async getSupportOrders() {
+    return this.request<any[]>('/api/customer/support/orders');
+  }
+
+  async getMySupportRequests(params: Record<string, string | number | undefined> = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') query.append(key, String(val));
+    });
+    const qs = query.toString();
+    const endpoint = qs ? `/api/customer/support/requests?${qs}` : '/api/customer/support/requests';
+    return this.request<{ items: any[]; pagination: any }>(endpoint);
+  }
+
+  async getSupportRequest(id: string) {
+    return this.request<any>(`/api/customer/support/requests/${id}`);
+  }
+
+  async createSupportRequest(data: any) {
+    return this.request<any>('/api/customer/support/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async replySupportRequest(id: string, data: { message: string; idempotencyKey?: string }) {
+    return this.request<any>(`/api/customer/support/requests/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markSupportRequestRead(id: string) {
+    return this.request<any>(`/api/customer/support/requests/${id}/read`, {
+      method: 'PATCH',
+    });
   }
 }
 
@@ -350,12 +531,18 @@ export const catalogApi = {
     const res: any = await customerApi.getPaymentMethods();
     return { data: Array.isArray(res) ? res : res?.items || [] };
   },
-  getProductReviews: async (productId: string) => {
-    const res: any = await customerApi.getReviews({ productId });
-    return { data: Array.isArray(res) ? res : res?.items || [] };
+  getProductReviews: async (productId: string, params?: any) => {
+    const res: any = await customerApi.getProductReviews(productId, params);
+    return {
+      data: res?.items || (Array.isArray(res) ? res : []),
+      summary: res?.summary,
+      customerReview: res?.customerReview,
+      eligibility: res?.eligibility,
+      pagination: res?.pagination,
+    };
   },
   createReview: async (data: any) => {
-    const res: any = await customerApi.submitReview(data);
+    const res: any = await customerApi.submitProductReview(data.productId, data);
     return { data: res?.data || res };
   },
 };
@@ -407,8 +594,57 @@ export const wishlistApi = {
   },
 };
 
+export const supportApi = {
+  getCategories: async () => {
+    return customerApi.getSupportCategories();
+  },
+  getRecentOrders: async () => {
+    return customerApi.getSupportOrders();
+  },
+  getMyRequests: async (params?: { page?: number; pageSize?: number; status?: string; search?: string }) => {
+    return customerApi.getMySupportRequests(params);
+  },
+  getRequestById: async (id: string) => {
+    return customerApi.getSupportRequest(id);
+  },
+  createRequest: async (payload: any) => {
+    return customerApi.createSupportRequest(payload);
+  },
+  replyRequest: async (id: string, payload: { message: string; idempotencyKey?: string }) => {
+    return customerApi.replySupportRequest(id, payload);
+  },
+  markAsRead: async (id: string) => {
+    return customerApi.markSupportRequestRead(id);
+  },
+};
+
+export const reviewsApi = {
+  getProductReviews: async (productId: string, params?: any) => {
+    return customerApi.getProductReviews(productId, params);
+  },
+  checkEligibility: async (productId: string) => {
+    return customerApi.checkReviewEligibility(productId);
+  },
+  submitReview: async (productId: string, data: { rating: number; comment: string; title?: string; isAnonymous?: boolean }) => {
+    return customerApi.submitProductReview(productId, data);
+  },
+  getMyReviews: async (params?: any) => {
+    return customerApi.getMyReviews(params);
+  },
+  getReviewById: async (reviewId: string) => {
+    return customerApi.getMyReviewById(reviewId);
+  },
+  updateReview: async (reviewId: string, data: any) => {
+    return customerApi.updateMyReview(reviewId, data);
+  },
+  deleteReview: async (reviewId: string) => {
+    return customerApi.deleteMyReview(reviewId);
+  },
+};
+
 export type Product = CustomerProduct;
 export type Category = CustomerCategory;
 export type Order = CustomerOrder;
 export type PaymentMethod = PaymentMethodItem;
 export type Review = any;
+

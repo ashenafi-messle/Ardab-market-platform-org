@@ -119,21 +119,39 @@ export default function AccountPage() {
           </div>
 
           <div className="row g-3">
-            <div className="col-sm-6">
+            <div className="col-sm-6 col-lg-3">
               <Link href="/orders" className="text-decoration-none">
-                <div className="card border-0 shadow-sm rounded-4 p-4 hover-elevate transition-all">
+                <div className="card h-100 border-0 shadow-sm rounded-4 p-4 hover-elevate transition-all">
                   <i className="bi bi-bag-check text-success display-5 mb-2"></i>
                   <h5 className="fw-bold text-dark mb-1">{t('my_orders')}</h5>
                   <small className="text-muted">{t('view_all_orders_desc')}</small>
                 </div>
               </Link>
             </div>
-            <div className="col-sm-6">
+            <div className="col-sm-6 col-lg-3">
               <Link href="/wishlist" className="text-decoration-none">
-                <div className="card border-0 shadow-sm rounded-4 p-4 hover-elevate transition-all">
+                <div className="card h-100 border-0 shadow-sm rounded-4 p-4 hover-elevate transition-all">
                   <i className="bi bi-heart text-danger display-5 mb-2"></i>
                   <h5 className="fw-bold text-dark mb-1">{t('wishlist')}</h5>
                   <small className="text-muted">{t('view_saved_items_desc')}</small>
+                </div>
+              </Link>
+            </div>
+            <div className="col-sm-6 col-lg-3">
+              <Link href="/customer/reviews" className="text-decoration-none">
+                <div className="card h-100 border-0 shadow-sm rounded-4 p-4 hover-elevate transition-all">
+                  <i className="bi bi-star-fill text-warning display-5 mb-2"></i>
+                  <h5 className="fw-bold text-dark mb-1">{t('my_reviews')}</h5>
+                  <small className="text-muted">{t('view_all_reviews_desc')}</small>
+                </div>
+              </Link>
+            </div>
+            <div className="col-sm-6 col-lg-3">
+              <Link href="/support" className="text-decoration-none">
+                <div className="card h-100 border-0 shadow-sm rounded-4 p-4 hover-elevate transition-all">
+                  <i className="bi bi-headset text-primary display-5 mb-2"></i>
+                  <h5 className="fw-bold text-dark mb-1">{t('customer_support', 'Customer Support')}</h5>
+                  <small className="text-muted">{t('contact_support_desc', 'Connect directly with Ardab support')}</small>
                 </div>
               </Link>
             </div>

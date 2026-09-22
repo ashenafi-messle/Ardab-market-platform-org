@@ -6,6 +6,7 @@ import { CustomerProduct } from '@/types/marketplace';
 import { useLanguage } from '@/context/LanguageContext';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
+import { getOptimizedImageUrl } from '@/lib/images';
 
 interface ProductCardProps {
   product: CustomerProduct;
@@ -16,7 +17,7 @@ export function ProductCard({ product }: ProductCardProps) {
   const { addToCart } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
 
-  const primaryImage = product.primaryImage?.url || product.images?.[0]?.url || '/placeholder.png';
+  const primaryImage = getOptimizedImageUrl(product.primaryImage?.url || product.images?.[0]?.url, { width: 400 });
 
   const isWishlisted = isInWishlist(product.id);
   const inStock = product.status === 'ACTIVE';

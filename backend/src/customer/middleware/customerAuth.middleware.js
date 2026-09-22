@@ -52,3 +52,45 @@ export async function customerAuthMiddleware(req, res, next) {
     return next(error);
   }
 }
+
+/**
+ * Optional customer authentication: sets req.customer if valid token is supplied,
+ * but does not reject the request if token is omitted or invalid.
+ */
+export async function optionalCustomerAuthMiddleware(req, res, next) {
+  let token = null;
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.cookies?.customer_token) {
+    token = req.cookies.customer_token;
+  }
+
+  if (!token) {
+    req.customer = null;
+    return next();
+  }
+
+  try {
+    const decoded = verifyCustomerToken(token);
+    const customer = await prisma.customer.findUnique({
+      where: { id: decoded.id },
+      select: { id: true, status: true, verificationStatus: true },
+    });
+
+    if (customer && customer.status === 'ACTIVE') {
+      req.customer = {
+        ...decoded,
+        status: customer.status,
+      };
+    } else {
+      req.customer = null;
+    }
+  } catch {
+    req.customer = null;
+  }
+
+  return next();
+}
+

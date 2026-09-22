@@ -22,7 +22,12 @@ export async function customerCheckoutHandler(req, res) {
     throw ApiError.unauthorized('Customer authentication required', 'UNAUTHORIZED');
   }
 
-  const order = await checkoutCustomerOrder(req.body, customerId, ipAddress);
+  const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotencyKey;
+  const order = await checkoutCustomerOrder(
+    { ...req.body, ...(idempotencyKey ? { idempotencyKey } : {}) },
+    customerId,
+    ipAddress
+  );
   return ApiResponse.success(res, order, 'Order placed successfully', 201);
 }
 
