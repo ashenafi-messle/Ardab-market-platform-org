@@ -67,39 +67,51 @@ export default function CheckoutPage() {
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+
     if (!isAuthenticated) {
       router.push('/login?redirect=/checkout');
       return;
     }
 
-    if (!recipientName || !recipientPhone) {
+    if (!recipientName.trim() || !recipientPhone.trim()) {
       setError(t('fill_required_fields'));
+      return;
+    }
+
+    if (!cart.items || cart.items.length === 0) {
+      setError(t('cart_empty'));
       return;
     }
 
     setSubmitting(true);
     setError(null);
 
+    const chosenPm = paymentMethods.find((pm) => pm.id === selectedMethodId);
+    const paymentMethod = chosenPm ? chosenPm.name : 'CASH_ON_DELIVERY';
+    const idempotencyKey = `chk_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+
+    const payload = {
+      items: cart.items.map((item: any) => ({
+        productId: item.productId,
+        quantity: Number(item.quantity) || 1,
+      })),
+      deliveryAddress: {
+        recipientName: recipientName.trim(),
+        phone: recipientPhone.trim(),
+        city: shippingCity.trim(),
+        deliveryZone: shippingZone ? shippingZone.trim() : undefined,
+        addressLine: shippingZone ? `${shippingCity.trim()}, ${shippingZone.trim()}` : shippingCity.trim(),
+      },
+      paymentMethod,
+      customerNote: '',
+      idempotencyKey,
+    };
+
     try {
-      const payload = {
-        recipientName,
-        recipientPhone,
-        shippingCity,
-        streetAddress: shippingZone ? `${shippingCity}, ${shippingZone}` : shippingCity,
-        shippingZone,
-        paymentMethodId: selectedMethodId || undefined,
-        notes: '',
-        items: cart.items.map((item: any) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: Number(item.product.price ?? item.product.sellingPrice ?? 0),
-        })),
-      };
-
-
       const res = await ordersApi.checkout(payload);
-      if (res && res.data) {
-        setPlacedOrder(res.data);
+      if (res) {
+        setPlacedOrder(res);
         clearCart();
       }
     } catch (err: any) {
@@ -127,15 +139,15 @@ export default function CheckoutPage() {
           <div className="bg-light rounded-3 p-3 mb-4 text-start small">
             <div className="d-flex justify-content-between mb-1">
               <span className="text-muted">{t('recipient')}:</span>
-              <strong>{placedOrder.recipientName || recipientName}</strong>
+              <strong>{placedOrder.deliveryAddressSnapshot?.recipientName || placedOrder.recipientName || recipientName}</strong>
             </div>
             <div className="d-flex justify-content-between mb-1">
               <span className="text-muted">{t('city')}:</span>
-              <strong>{placedOrder.shippingCity || shippingCity}{shippingZone ? ` (${shippingZone})` : ''}</strong>
+              <strong>{placedOrder.city || shippingCity}{shippingZone ? ` (${shippingZone})` : ''}</strong>
             </div>
             <div className="d-flex justify-content-between">
               <span className="text-muted">{t('total_amount')}:</span>
-              <strong className="text-success">{Number(placedOrder.totalAmount || cart.total).toLocaleString()} ETB</strong>
+              <strong className="text-success">{Number(placedOrder.totalEtb || placedOrder.totalAmount || cart.total).toLocaleString()} ETB</strong>
             </div>
           </div>
 

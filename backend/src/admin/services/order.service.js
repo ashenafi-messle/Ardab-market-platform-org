@@ -294,9 +294,8 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
         entity: 'Order',
         entityId: id,
         ipAddress: ipAddress || null,
-        changesSummary: `Order ${existingOrder.orderNumber} transitioned from ${existingOrder.status} to ${newStatus}${
-          reason ? ` (Reason: ${reason})` : ''
-        }`,
+        changesSummary: `Order ${existingOrder.orderNumber} transitioned from ${existingOrder.status} to ${newStatus}${reason ? ` (Reason: ${reason})` : ''
+          }`,
         status: 'SUCCESS',
       },
     });
@@ -317,7 +316,7 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
       entityType: 'ORDER',
       entityId: id,
       actionUrl: '/orders',
-    }, adminUser).catch(() => {});
+    }, adminUser).catch(() => { });
   }
 
   return formatOrderResponse(updatedOrder);
@@ -416,10 +415,10 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
   const targetCustomerId = customerId || payload.customerId;
 
   if (!targetCustomerId) {
-    throw ApiError.badRequest('Customer ID is required for checkout.');
+    throw ApiError.unauthorized('Customer authentication required for checkout.', 'UNAUTHORIZED');
   }
 
-  // 1. Idempotency Check
+  // 1. Idempotency Check (Scoped to Customer)
   if (payload.idempotencyKey) {
     const existing = await prisma.order.findUnique({
       where: { idempotencyKey: payload.idempotencyKey },
@@ -431,6 +430,9 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
       },
     });
     if (existing) {
+      if (existing.customerId !== targetCustomerId) {
+        throw ApiError.conflict('Idempotency key collision.', 'IDEMPOTENCY_CONFLICT');
+      }
       return formatOrderResponse(existing);
     }
   }
@@ -441,11 +443,15 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
   });
 
   if (!customer) {
-    throw ApiError.notFound('Customer account not found.');
+    throw ApiError.notFound('Customer account not found.', 'CUSTOMER_NOT_FOUND');
+  }
+
+  if (customer.status === 'SUSPENDED') {
+    throw ApiError.forbidden('Your customer account has been suspended. Please contact support.', 'ACCOUNT_SUSPENDED');
   }
 
   if (customer.status !== 'ACTIVE') {
-    throw ApiError.badRequest('Customer account is suspended or inactive. Cannot place orders.');
+    throw ApiError.forbidden('Your customer account is inactive. Cannot place orders.', 'ACCOUNT_INACTIVE');
   }
 
   // 3. Validate and Fetch Authoritative Products from Database
@@ -598,6 +604,9 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
     });
 
     return order;
+  }, {
+    maxWait: 10000,
+    timeout: 20000,
   });
 
   return formatOrderResponse(createdOrder);
@@ -672,15 +681,15 @@ function formatOrderResponse(o) {
     })),
     deliveryAddressSnapshot: o.deliveryAddressSnapshot
       ? {
-          recipientName: o.deliveryAddressSnapshot.recipientName,
-          phone: o.deliveryAddressSnapshot.phone,
-          city: o.deliveryAddressSnapshot.city,
-          deliveryZone: o.deliveryAddressSnapshot.deliveryZone,
-          neighborhood: o.deliveryAddressSnapshot.neighborhood,
-          addressLine: o.deliveryAddressSnapshot.addressLine,
-          latitude: o.deliveryAddressSnapshot.latitude ? Number(o.deliveryAddressSnapshot.latitude) : null,
-          longitude: o.deliveryAddressSnapshot.longitude ? Number(o.deliveryAddressSnapshot.longitude) : null,
-        }
+        recipientName: o.deliveryAddressSnapshot.recipientName,
+        phone: o.deliveryAddressSnapshot.phone,
+        city: o.deliveryAddressSnapshot.city,
+        deliveryZone: o.deliveryAddressSnapshot.deliveryZone,
+        neighborhood: o.deliveryAddressSnapshot.neighborhood,
+        addressLine: o.deliveryAddressSnapshot.addressLine,
+        latitude: o.deliveryAddressSnapshot.latitude ? Number(o.deliveryAddressSnapshot.latitude) : null,
+        longitude: o.deliveryAddressSnapshot.longitude ? Number(o.deliveryAddressSnapshot.longitude) : null,
+      }
       : null,
     timeline: (o.activities || []).map((a) => ({
       status: a.toStatus || o.status,

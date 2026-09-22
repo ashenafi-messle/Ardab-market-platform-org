@@ -8,14 +8,12 @@ import {
   listCategories,
   getCategoryTree,
   getCategoryById,
-  getCategoryPath,
 } from '../../admin/services/category.service.js';
 import { resolveEffectiveCategoryAttributes } from '../../admin/services/categoryAttribute.service.js';
 import { citiesService } from '../../admin/services/cities.service.js';
 import { listSuppliers } from '../../admin/services/supplier.service.js';
 import { listPaymentMethods } from '../../admin/services/paymentMethod.service.js';
 import { listFeedback, createFeedback } from '../../admin/services/feedback.service.js';
-import { getCustomerOrders } from '../../admin/services/customer.service.js';
 import { prisma } from '../../shared/config/database.js';
 
 /**
@@ -23,7 +21,6 @@ import { prisma } from '../../shared/config/database.js';
  * Public customer product listing with search, category filtering, city availability, and sorting
  */
 export async function getCustomerProducts(req, res) {
-  // Customers default to viewing ACTIVE products only
   const query = {
     ...req.query,
     status: req.query.status || 'ACTIVE',
@@ -128,7 +125,7 @@ export async function getCustomerPaymentMethods(req, res) {
 }
 
 /**
- * GET /api/customer/reviews
+ * GET /api/customer/catalog/reviews
  * Public reviews for products or sellers
  */
 export async function getCustomerReviews(req, res) {
@@ -141,7 +138,7 @@ export async function getCustomerReviews(req, res) {
 }
 
 /**
- * POST /api/customer/reviews
+ * POST /api/customer/catalog/reviews
  * Submit a customer product or seller review
  */
 export async function postCustomerReview(req, res) {
@@ -153,50 +150,4 @@ export async function postCustomerReview(req, res) {
   };
   const review = await createFeedback(reviewData);
   return ApiResponse.success(res, review, 'Review submitted successfully', 201);
-}
-
-/**
- * GET /api/customer/orders
- * Authenticated customer orders list
- */
-export async function getMyOrdersHandler(req, res) {
-  const customerId = req.customer?.id || req.query.customerId;
-  if (!customerId) {
-    return ApiResponse.error(res, 'UNAUTHORIZED', 'Customer authentication required', 401);
-  }
-  const result = await getCustomerOrders(customerId, req.query);
-  return ApiResponse.success(res, result, 'Customer orders retrieved');
-}
-
-/**
- * GET /api/customer/orders/:id
- * Authenticated customer order details and timeline
- */
-export async function getMyOrderDetailsHandler(req, res) {
-  const orderId = req.params.id;
-  const customerId = req.customer?.id;
-
-  const where = { id: orderId };
-  if (customerId) {
-    where.customerId = customerId;
-  }
-
-  const order = await prisma.order.findFirst({
-    where,
-    include: {
-      customer: true,
-      items: true,
-      deliveryAddressSnapshot: true,
-      activities: {
-        orderBy: { createdAt: 'asc' },
-      },
-      delivery: true,
-    },
-  });
-
-  if (!order) {
-    return ApiResponse.error(res, 'ORDER_NOT_FOUND', 'Order not found', 404);
-  }
-
-  return ApiResponse.success(res, order, 'Order details retrieved');
 }

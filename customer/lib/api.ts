@@ -62,7 +62,11 @@ class CustomerApiClient {
 
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(json.message || json.error?.message || `Request failed with status ${res.status}`);
+      let errorMsg = json.error?.message || json.message;
+      if (json.error?.details && Array.isArray(json.error.details) && json.error.details.length > 0) {
+        errorMsg = json.error.details.map((d: any) => d.message || d.field).join('. ');
+      }
+      throw new Error(errorMsg || `Request failed with status ${res.status}`);
     }
 
     return json.data !== undefined ? json.data : json;
@@ -113,7 +117,6 @@ class CustomerApiClient {
     }
     return result;
   }
-
 
   async login(data: { identifier: string; password: string }) {
     const result = await this.request<{ token: string; customer: CustomerUser }>('/api/customer/auth/login', {
@@ -231,11 +234,60 @@ class CustomerApiClient {
     Object.entries(params).forEach(([key, val]) => {
       if (val) query.append(key, String(val));
     });
-    return this.request<{ items: CustomerOrder[]; pagination: any }>(`/api/customer/catalog/orders?${query.toString()}`);
+    return this.request<{ orders: CustomerOrder[]; pagination: any }>(`/api/customer/orders?${query.toString()}`);
   }
 
   async getOrder(id: string) {
-    return this.request<CustomerOrder>(`/api/customer/catalog/orders/${id}`);
+    return this.request<CustomerOrder>(`/api/customer/orders/${id}`);
+  }
+
+  async cancelOrder(id: string, reason: string) {
+    return this.request<CustomerOrder>(`/api/customer/orders/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // --- Wishlist ---
+  async getWishlist() {
+    return this.request<{ items: any[]; total: number }>('/api/customer/wishlist');
+  }
+
+  async toggleWishlist(productId: string) {
+    return this.request<{ action: 'added' | 'removed'; productId?: string; item?: any }>(
+      '/api/customer/wishlist/toggle',
+      {
+        method: 'POST',
+        body: JSON.stringify({ productId }),
+      }
+    );
+  }
+
+  async removeFromWishlist(productId: string) {
+    return this.request<{ removed: boolean; productId: string }>(
+      `/api/customer/wishlist/${productId}`,
+      { method: 'DELETE' }
+    );
+  }
+
+  async clearWishlist() {
+    return this.request<{ removed: number }>('/api/customer/wishlist', { method: 'DELETE' });
+  }
+
+  async syncWishlist(productIds: string[]) {
+    return this.request<{ synced: number; total: number; items: any[] }>(
+      '/api/customer/wishlist/sync',
+      {
+        method: 'POST',
+        body: JSON.stringify({ productIds }),
+      }
+    );
+  }
+
+  async checkWishlistItem(productId: string) {
+    return this.request<{ inWishlist: boolean; productId: string }>(
+      `/api/customer/wishlist/check/${productId}`
+    );
   }
 
   // --- Reviews ---
@@ -258,6 +310,7 @@ class CustomerApiClient {
       body: JSON.stringify(data),
     });
   }
+
   async getCategories() {
     return this.request<CustomerCategory[]>('/api/customer/catalog/categories/tree');
   }
@@ -268,6 +321,7 @@ class CustomerApiClient {
 }
 
 export const customerApi = new CustomerApiClient();
+
 export const catalogApi = {
   getCategories: async (params?: any) => {
     const res: any = await customerApi.getCategories();
@@ -313,7 +367,8 @@ export const ordersApi = {
   },
   getMyOrders: async (params?: any) => {
     const res: any = await customerApi.getMyOrders(params);
-    const items = res?.items || (Array.isArray(res) ? res : []);
+    // Backend now returns { orders: [...], pagination: {...} }
+    const items = res?.orders || res?.items || (Array.isArray(res) ? res : []);
     return { data: items, pagination: res?.pagination };
   },
   getOrderById: async (id: string) => {
@@ -324,8 +379,33 @@ export const ordersApi = {
     const res: any = await customerApi.getOrder(id);
     return { data: res?.data || res };
   },
+  cancelOrder: async (id: string, reason: string) => {
+    const res: any = await customerApi.cancelOrder(id, reason);
+    return { data: res?.data || res };
+  },
 };
 
+export const wishlistApi = {
+  getWishlist: async () => {
+    const res: any = await customerApi.getWishlist();
+    return { data: res?.items || [], total: res?.total || 0 };
+  },
+  toggle: async (productId: string) => {
+    return customerApi.toggleWishlist(productId);
+  },
+  remove: async (productId: string) => {
+    return customerApi.removeFromWishlist(productId);
+  },
+  clear: async () => {
+    return customerApi.clearWishlist();
+  },
+  sync: async (productIds: string[]) => {
+    return customerApi.syncWishlist(productIds);
+  },
+  check: async (productId: string) => {
+    return customerApi.checkWishlistItem(productId);
+  },
+};
 
 export type Product = CustomerProduct;
 export type Category = CustomerCategory;

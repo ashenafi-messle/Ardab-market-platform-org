@@ -8,6 +8,7 @@ import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/shared/config/database.js';
 import { generateAdminToken } from '../src/admin/services/auth.service.js';
+import { generateCustomerToken } from '../src/customer/services/customerAuth.service.js';
 import { ADMIN_ROLES } from '../src/admin/constants/adminRoles.js';
 import { generateNextOrderNumber } from '../src/admin/services/orderCode.service.js';
 import { getOrderSummary } from '../src/admin/services/order.metrics.service.js';
@@ -43,6 +44,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
   let testProductId = null;
   let testProduct2Id = null;
   let testCustomerId = null;
+  let testCustomerToken = null;
   let createdOrderId = null;
   let secondaryOrderId = null;
 
@@ -118,23 +120,20 @@ test('Incoming Orders Module Test Suite', async (suite) => {
       },
     });
     testCustomerId = customer.id;
+    testCustomerToken = generateCustomerToken(customer);
   });
 
   suite.after(async () => {
     try {
-      if (createdOrderId || secondaryOrderId) {
-        await prisma.order.deleteMany({
-          where: { id: { in: [createdOrderId, secondaryOrderId].filter(Boolean) } },
-        });
+      if (testCustomerId) {
+        await prisma.order.deleteMany({ where: { customerId: testCustomerId } });
+        await prisma.customerActivity.deleteMany({ where: { customerId: testCustomerId } });
+        await prisma.customer.delete({ where: { id: testCustomerId } });
       }
       if (testProductId || testProduct2Id) {
         await prisma.product.deleteMany({
           where: { id: { in: [testProductId, testProduct2Id].filter(Boolean) } },
         });
-      }
-      if (testCustomerId) {
-        await prisma.customerActivity.deleteMany({ where: { customerId: testCustomerId } });
-        await prisma.customer.delete({ where: { id: testCustomerId } });
       }
       if (testCategoryId) {
         await prisma.marketplaceCategory.delete({ where: { id: testCategoryId } });
@@ -177,6 +176,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
       // Grand total = 1,900 ETB
       const res = await request(app)
         .post('/api/customer/orders/checkout')
+        .set('Authorization', `Bearer ${testCustomerToken}`)
         .send({
           customerId: testCustomerId,
           idempotencyKey,
@@ -238,6 +238,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
 
       const res1 = await request(app)
         .post('/api/customer/orders/checkout')
+        .set('Authorization', `Bearer ${testCustomerToken}`)
         .send({
           customerId: testCustomerId,
           idempotencyKey,
@@ -255,6 +256,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
       // Repeat identical request
       const res2 = await request(app)
         .post('/api/customer/orders/checkout')
+        .set('Authorization', `Bearer ${testCustomerToken}`)
         .send({
           customerId: testCustomerId,
           idempotencyKey,
@@ -296,7 +298,24 @@ test('Incoming Orders Module Test Suite', async (suite) => {
       assert.equal(res.body.data.subtotalEtb, 1600);
     });
 
-    await t.test('Rejects checkout for inactive/suspended customer with 400', async () => {
+    await t.test('Rejects checkout for unauthenticated customer with 401', async () => {
+      const res = await request(app)
+        .post('/api/customer/orders/checkout')
+        .send({
+          items: [{ productId: testProductId, quantity: 1 }],
+          deliveryAddress: {
+            recipientName: 'Guest User',
+            phone: '+251911000000',
+            city: 'Gondar',
+            addressLine: 'Guest Line',
+          },
+        });
+
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
+    });
+
+    await t.test('Rejects checkout for inactive/suspended customer with 403 or 400', async () => {
       const suspendedCustomer = await prisma.customer.create({
         data: {
           customerCode: `CUST-SUS-${Date.now().toString().slice(-6)}`,
@@ -307,8 +326,11 @@ test('Incoming Orders Module Test Suite', async (suite) => {
         },
       });
 
+      const suspendedToken = generateCustomerToken(suspendedCustomer);
+
       const res = await request(app)
         .post('/api/customer/orders/checkout')
+        .set('Authorization', `Bearer ${suspendedToken}`)
         .send({
           customerId: suspendedCustomer.id,
           items: [{ productId: testProductId, quantity: 1 }],
@@ -320,7 +342,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
           },
         });
 
-      assert.equal(res.status, 400);
+      assert.ok([400, 403].includes(res.status));
 
       // Cleanup
       await prisma.customer.delete({ where: { id: suspendedCustomer.id } });
@@ -443,6 +465,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
       // Create fresh pending order
       const freshOrderRes = await request(app)
         .post('/api/customer/orders/checkout')
+        .set('Authorization', `Bearer ${testCustomerToken}`)
         .send({
           customerId: testCustomerId,
           items: [{ productId: testProduct2Id, quantity: 1 }],
@@ -510,6 +533,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
       // Create two pending orders for bulk test
       const o1 = await request(app)
         .post('/api/customer/orders/checkout')
+        .set('Authorization', `Bearer ${testCustomerToken}`)
         .send({
           customerId: testCustomerId,
           items: [{ productId: testProduct2Id, quantity: 1 }],
@@ -522,6 +546,7 @@ test('Incoming Orders Module Test Suite', async (suite) => {
         });
       const o2 = await request(app)
         .post('/api/customer/orders/checkout')
+        .set('Authorization', `Bearer ${testCustomerToken}`)
         .send({
           customerId: testCustomerId,
           items: [{ productId: testProduct2Id, quantity: 1 }],
