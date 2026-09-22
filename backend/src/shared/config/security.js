@@ -67,7 +67,9 @@ export const corsOptions = {
     'x-client-device-id',
   ],
   exposedHeaders: ['X-Request-ID', 'X-Idempotency-Key', 'Content-Range', 'X-Total-Count'],
-  maxAge: 86400, // 24 hours
+  maxAge: 86400,         // 24 hours — browsers cache preflight result
+  preflightContinue: false, // cors middleware handles OPTIONS, never passes to next()
+  optionsSuccessStatus: 204, // RFC-compliant empty response for preflight
 };
 
 /**

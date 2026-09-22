@@ -49,6 +49,9 @@ export function createApp() {
 
   // 2. Cross-Origin Resource Sharing
   app.use(cors(corsOptions));
+  // Explicitly handle preflight OPTIONS requests for ALL routes before any other
+  // middleware (rate limiter, auth, etc.) can intercept them.
+  app.options('*', cors(corsOptions));
 
   // 3. Request Body Parsing with Strict Size Limit
   app.use(express.json({ limit: REQUEST_BODY_LIMIT }));

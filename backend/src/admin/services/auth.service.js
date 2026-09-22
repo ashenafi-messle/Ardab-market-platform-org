@@ -62,7 +62,7 @@ export async function loginAdmin({ email, password, ipAddress, userAgent }) {
         changesSummary: 'User account not found',
         status: 'FAILED',
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     throw ApiError.unauthorized('Invalid administrative credentials. Please verify your email and password.', 'INVALID_CREDENTIALS');
   }
@@ -93,7 +93,7 @@ export async function loginAdmin({ email, password, ipAddress, userAgent }) {
         changesSummary: 'Invalid password provided',
         status: 'FAILED',
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     throw ApiError.unauthorized('Invalid administrative credentials. Please verify your email and password.', 'INVALID_CREDENTIALS');
   }
@@ -159,7 +159,7 @@ export async function logoutAdmin({ token, adminId, ipAddress }) {
     await prisma.adminSession.updateMany({
       where: { tokenHash: tokenHashed },
       data: { status: 'REVOKED' },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   if (adminId) {
@@ -175,7 +175,7 @@ export async function logoutAdmin({ token, adminId, ipAddress }) {
           ipAddress,
           status: 'SUCCESS',
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }
 
@@ -203,7 +203,7 @@ export async function requestPasswordReset({ email, ipAddress }) {
   // Delete previous reset tokens for this admin
   await prisma.passwordResetToken.deleteMany({
     where: { adminId: admin.id },
-  }).catch(() => {});
+  }).catch(() => { });
 
   const rawToken = generateRandomToken();
   const tokenHashed = hashToken(rawToken);
@@ -230,7 +230,7 @@ export async function requestPasswordReset({ email, ipAddress }) {
   });
 
   const resetUrl = `${env.FRONTEND_URL.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
-  
+
   // Asynchronous email dispatch via EmailService (Brevo)
   EmailService.sendPasswordResetEmail({
     toEmail: admin.email,
@@ -301,7 +301,7 @@ export async function executePasswordReset({ token, newPassword, ipAddress }) {
   EmailService.sendPasswordChangedNotification({
     toEmail: admin.email,
     name: admin.name,
-  }).catch(() => {});
+  }).catch(() => { });
 
   return { message: 'Password has been reset successfully. Please log in with your new password.' };
 }

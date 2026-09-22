@@ -137,7 +137,7 @@ export async function registerCustomerAccount(input, ipAddress) {
 
   // Dispatch verification email (LINK ONLY, NO OTP)
   const verificationUrl = `${env.CUSTOMER_APP_URL.replace(/\/$/, '')}/verify-email?token=${rawVerificationToken}&email=${encodeURIComponent(email)}`;
-  
+
   // Await email dispatch or handle safely without false confirmation
   const emailResult = await EmailService.sendVerificationLinkEmail({
     toEmail: email,
@@ -216,7 +216,7 @@ export async function resendVerificationEmail({ email }) {
   });
 
   const verificationUrl = `${env.CUSTOMER_APP_URL.replace(/\/$/, '')}/verify-email?token=${rawVerificationToken}&email=${encodeURIComponent(normalizedEmail)}`;
-  
+
   await EmailService.sendVerificationLinkEmail({
     toEmail: normalizedEmail,
     name: normalizedEmail.split('@')[0],
@@ -461,7 +461,7 @@ export async function setCustomerPassword({ email, password, token }) {
       description: 'Customer set account password and logged in automatically',
       actor: 'Customer',
     },
-  }).catch(() => {});
+  }).catch(() => { });
 
   // Generate authoritative customer session token
   const authToken = generateCustomerToken(updatedCustomer);
@@ -581,7 +581,7 @@ export async function loginCustomer({ identifier, password, ipAddress, userAgent
   await prisma.customer.update({
     where: { id: customer.id },
     data: { lastActivityAt: new Date() },
-  }).catch(() => {});
+  }).catch(() => { });
 
   await prisma.customerActivity.create({
     data: {
@@ -590,7 +590,7 @@ export async function loginCustomer({ identifier, password, ipAddress, userAgent
       description: `Customer logged in successfully from IP ${ipAddress || 'unknown'}`,
       actor: 'Customer',
     },
-  }).catch(() => {});
+  }).catch(() => { });
 
   // Centralized security event for successful login
   await logPlatformSecurityEvent({
@@ -699,7 +699,7 @@ export async function loginWithGoogleRegisteredAccount({ email, ipAddress, userA
   await prisma.customer.update({
     where: { id: customer.id },
     data: updateData,
-  }).catch(() => {});
+  }).catch(() => { });
 
   await prisma.customerActivity.create({
     data: {
@@ -708,7 +708,7 @@ export async function loginWithGoogleRegisteredAccount({ email, ipAddress, userA
       description: `Customer authenticated via Google (${normalizedEmail}) from IP ${ipAddress || 'unknown'}`,
       actor: 'Customer',
     },
-  }).catch(() => {});
+  }).catch(() => { });
 
   // Platform Security Telemetry (tracked in Super Admin & Security Management in real time)
   await logPlatformSecurityEvent({
@@ -799,7 +799,7 @@ export async function requestCustomerPasswordReset({ email, ipAddress }) {
       actor: 'Customer',
       metadata: JSON.stringify({ tokenHash, rawTokenPrefix: rawToken.slice(0, 8), expiresAt: expiresAt.toISOString() }),
     },
-  }).catch(() => {});
+  }).catch(() => { });
 
   const resetUrl = `${env.CUSTOMER_APP_URL.replace(/\/$/, '')}/reset-password?token=${rawToken}&email=${encodeURIComponent(customer.email)}`;
 
@@ -914,12 +914,12 @@ export async function resetCustomerPassword({ token, email, newPassword, ipAddre
       description: `Password reset completed from IP ${ipAddress || 'unknown'}`,
       actor: 'Customer',
     },
-  }).catch(() => {});
+  }).catch(() => { });
 
   EmailService.sendPasswordChangedNotification({
     toEmail: targetCustomer.email,
     name: targetCustomer.fullName,
-  }).catch(() => {});
+  }).catch(() => { });
 
   return {
     success: true,

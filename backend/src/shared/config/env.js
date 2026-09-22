@@ -76,6 +76,7 @@ if (NODE_ENV === 'production') {
   if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
     console.warn('[CONFIG WARNING] Cloudinary credentials are not fully configured in production.');
   }
+  console.info(`[CONFIG] CORS allowed origins (${CORS_ORIGINS.length}): ${CORS_ORIGINS.join(', ')}`);
 }
 
 export const env = {
