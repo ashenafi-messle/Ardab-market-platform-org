@@ -317,6 +317,47 @@ export default function ProductsPage() {
     });
   };
 
+  const promptDeleteProduct = (product: Product) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Permanently Delete Product',
+      message: `This will permanently remove "${product.name}" [${product.itemCode}] and all its images from the database. This action cannot be undone.`,
+      variant: 'danger',
+      confirmLabel: 'Delete Forever',
+      affectedCount: 1,
+      affectedNames: [`${product.name} [${product.itemCode}]`],
+      isIrreversible: true,
+      action: async () => {
+        await productsApi.delete(product.id);
+        setProducts((prev) => prev.filter((p) => p.id !== product.id));
+        setSelectedIds((prev) => prev.filter((id) => id !== product.id));
+      },
+    });
+  };
+
+  const promptBulkDelete = () => {
+    const count = selectedIds.length;
+    const names = products
+      .filter((p) => selectedIds.includes(p.id))
+      .map((p) => `${p.name} (${p.itemCode})`);
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Permanently Delete Selected Products',
+      message: `You are about to permanently delete ${count} product(s) and all their images from the database. This cannot be undone.`,
+      variant: 'danger',
+      confirmLabel: `Delete ${count} Product${count !== 1 ? 's' : ''} Forever`,
+      affectedCount: count,
+      affectedNames: names,
+      isIrreversible: true,
+      action: async () => {
+        await productsApi.bulkDelete(selectedIds);
+        setProducts((prev) => prev.filter((p) => !selectedIds.includes(p.id)));
+        setSelectedIds([]);
+      },
+    });
+  };
+
   const promptBulkStatus = (newStatus: 'ACTIVE' | 'INACTIVE') => {
     const count = selectedIds.length;
     const names = products
@@ -937,6 +978,14 @@ export default function ProductsPage() {
                 >
                   <i className="bi bi-x-circle me-1"></i> Bulk Deactivate
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-danger"
+                  title="Permanently delete selected products"
+                  onClick={() => promptBulkDelete()}
+                >
+                  <i className="bi bi-trash3 me-1"></i> Delete Forever
+                </button>
               </div>
             </div>
           )}
@@ -1133,6 +1182,14 @@ export default function ProductsPage() {
                                     <i className="bi bi-archive"></i>
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-danger"
+                                  title="Permanently Delete Product"
+                                  onClick={() => promptDeleteProduct(p)}
+                                >
+                                  <i className="bi bi-trash3"></i>
+                                </button>
                               </>
                             )}
                           </div>
@@ -1271,6 +1328,14 @@ export default function ProductsPage() {
                           onClick={() => promptToggleStatus(p)}
                         >
                           {p.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          title="Permanently Delete Product"
+                          onClick={() => promptDeleteProduct(p)}
+                        >
+                          <i className="bi bi-trash3"></i>
                         </button>
                       </>
                     )}

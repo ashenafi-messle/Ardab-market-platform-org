@@ -609,7 +609,7 @@ export const productsApi = {
     const res = await fetchAuthApi<{ success: boolean; message?: string }>(`/api/products/${id}`, {
       method: 'DELETE',
     });
-    return { success: res.success ?? true, message: res.message || 'Product archived successfully' };
+    return { success: res.success ?? true, message: res.message || 'Product permanently deleted' };
   },
 
   getPaginated: async (options: QueryOptions = {}): Promise<PaginatedResponse<Product>> => {
@@ -639,6 +639,13 @@ export const productsApi = {
       }
     }
     return count;
+  },
+
+  bulkDelete: async (ids: string[]): Promise<{ deleted: number; failed: number }> => {
+    const results = await Promise.allSettled(ids.map((id) => productsApi.delete(id)));
+    const deleted = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    return { deleted, failed };
   },
 };
 

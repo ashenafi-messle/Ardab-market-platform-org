@@ -49,7 +49,7 @@ export async function toggleProductStatusHandler(req, res) {
 export async function deleteProductHandler(req, res) {
   const ipAddress = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
   const result = await deleteProduct(req.params.id, req.user, ipAddress);
-  return ApiResponse.success(res, result, 'Product archived successfully');
+  return ApiResponse.success(res, result, 'Product permanently deleted');
 }
 
 export async function addProductImageHandler(req, res) {

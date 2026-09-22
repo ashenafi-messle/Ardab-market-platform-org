@@ -951,32 +951,41 @@ export async function toggleProductStatus(id, newStatus = null, adminUser = null
 }
 
 /**
- * Soft delete or archive a product
+ * Permanently delete a product and all its data from the database.
+ * Cloudinary images are removed first (best-effort); the DB row is always deleted.
  */
 export async function deleteProduct(id, adminUser = null, ipAddress = null) {
   const existing = await prisma.product.findUnique({
     where: { id },
-    select: { id: true, name: true, itemCode: true, status: true },
+    include: { images: { select: { id: true, publicId: true } } },
   });
 
   if (!existing) {
     throw ApiError.notFound('Product not found', 'PRODUCT_NOT_FOUND');
   }
 
-  const updated = await prisma.product.update({
-    where: { id },
-    data: { status: 'ARCHIVED' },
-  });
+  // 1. Delete Cloudinary assets first (best-effort — DB delete proceeds regardless)
+  if (existing.images && existing.images.length > 0) {
+    await Promise.allSettled(
+      existing.images
+        .filter((img) => img.publicId)
+        .map((img) => deleteImageFromStorage(img.publicId))
+    );
+  }
+
+  // 2. Hard-delete the product row; Prisma cascade rules remove related rows
+  //    (images, attributeValues, etc.) automatically via schema onDelete: Cascade.
+  await prisma.product.delete({ where: { id } });
 
   await recordProductAuditLog({
     adminUser,
     action: 'PRODUCT_DELETED',
-    productId: updated.id,
+    productId: id,
     ipAddress,
-    changesSummary: `Archived product "${existing.name}" [${existing.itemCode}]`,
+    changesSummary: `Permanently deleted product "${existing.name}" [${existing.itemCode}]`,
   });
 
-  return { id: updated.id, status: updated.status, message: 'Product archived successfully' };
+  return { id, message: 'Product permanently deleted' };
 }
 
 /**
