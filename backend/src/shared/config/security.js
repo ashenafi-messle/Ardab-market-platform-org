@@ -59,6 +59,8 @@ export const corsOptions = {
     'X-Request-ID',
     'X-Idempotency-Key',
     'x-idempotency-key',
+    'Idempotency-Key',
+    'idempotency-key',
     'Accept',
     'X-Requested-With',
     'X-App-Source',
