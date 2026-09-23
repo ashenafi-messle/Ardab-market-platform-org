@@ -9,6 +9,7 @@ import { useWishlist } from '@/context/WishlistContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { catalogApi, reviewsApi, Product, Review } from '@/lib/api';
 import { getOptimizedImageUrl } from '@/lib/images';
+import RatingDisplay from '@/components/Cards/RatingDisplay';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -408,11 +409,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
             <div className="d-flex align-items-center gap-2 mb-3" aria-label={product.rating?.count ? `${product.rating.average?.toFixed(1)} out of 5 from ${product.rating.count} reviews` : 'No ratings yet'}>
               {product.rating?.count ? (
-                <>
-                  <i className="bi bi-star-fill text-warning"></i>
-                  <strong>{product.rating.average?.toFixed(1)}</strong>
-                  <span className="text-muted small">({product.rating.count} {t('reviews_count')})</span>
-                </>
+                <RatingDisplay average={product.rating.average ?? 0} count={product.rating.count} />
               ) : (
                 <span className="text-muted small">{t('marketplace.card.noRatings')}</span>
               )}

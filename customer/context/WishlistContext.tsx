@@ -82,6 +82,7 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
           seller: i.product.seller,
           images: i.product.primaryImage ? [{ url: i.product.primaryImage.url }] : [],
           primaryImage: i.product.primaryImage || null,
+          rating: i.product.rating || { average: null, count: 0 },
         }));
       setItems(serverItems);
       setServerSynced(true);

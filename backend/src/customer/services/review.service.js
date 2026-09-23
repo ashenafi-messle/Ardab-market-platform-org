@@ -28,16 +28,20 @@ export async function getPublicProductRatingSummaries(productIds = [], db = pris
       ...PUBLIC_PRODUCT_REVIEW_WHERE,
       productId: { in: productIds },
     },
-    _avg: { rating: true },
+    _sum: { rating: true },
     _count: { rating: true },
   });
 
   return new Map(aggregates.map((aggregate) => [
     aggregate.productId,
-    {
-      average: aggregate._avg.rating === null ? null : Number(aggregate._avg.rating),
-      count: aggregate._count.rating,
-    },
+    (() => {
+      const count = aggregate._count.rating;
+      const sum = aggregate._sum.rating || 0;
+      return {
+        average: count > 0 ? sum / count : null,
+        count,
+      };
+    })(),
   ]));
 }
 

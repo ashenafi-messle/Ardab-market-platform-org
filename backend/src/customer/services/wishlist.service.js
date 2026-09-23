@@ -6,6 +6,7 @@
 
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
+import { getPublicProductRatingSummaries } from './review.service.js';
 
 // Product include for wishlist responses
 const PRODUCT_INCLUDE = {
@@ -25,7 +26,7 @@ const PRODUCT_INCLUDE = {
 /**
  * Formats a wishlist item for API response
  */
-function formatWishlistItem(item) {
+function formatWishlistItem(item, rating = { average: null, count: 0 }) {
   const product = item.product;
   return {
     id: item.id,
@@ -46,6 +47,7 @@ function formatWishlistItem(item) {
           primaryImage: product.images?.[0]
             ? { url: product.images[0].url, publicId: product.images[0].publicId }
             : null,
+          rating,
         }
       : null,
   };
@@ -69,8 +71,12 @@ export async function getWishlist(customerId) {
     },
   });
 
+  const ratingSummaries = await getPublicProductRatingSummaries(
+    items.map((item) => item.productId).filter(Boolean)
+  );
+
   return {
-    items: items.map(formatWishlistItem),
+    items: items.map((item) => formatWishlistItem(item, ratingSummaries.get(item.productId))),
     total: items.length,
   };
 }
@@ -118,7 +124,8 @@ export async function toggleWishlistItem(customerId, productId) {
     },
   });
 
-  return { action: 'added', item: formatWishlistItem(created) };
+  const ratingSummaries = await getPublicProductRatingSummaries([productId]);
+  return { action: 'added', item: formatWishlistItem(created, ratingSummaries.get(productId)) };
 }
 
 /**

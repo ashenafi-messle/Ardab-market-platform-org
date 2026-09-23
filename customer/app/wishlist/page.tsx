@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useWishlist } from '@/context/WishlistContext';
 import { useCart } from '@/context/CartContext';
 import { useLanguage } from '@/context/LanguageContext';
+import RatingDisplay from '@/components/Cards/RatingDisplay';
 
 export default function WishlistPage() {
   const { wishlist, removeFromWishlist, clearWishlist } = useWishlist();
@@ -79,6 +80,13 @@ export default function WishlistPage() {
                       {prod.name}
                     </Link>
                   </h5>
+                  {prod.rating?.count ? (
+                    <div className="mb-2">
+                      <RatingDisplay average={prod.rating.average ?? 0} count={prod.rating.count} />
+                    </div>
+                  ) : (
+                    <div className="text-muted small mb-2">{t('marketplace.card.noRatings')}</div>
+                  )}
                   <div className="text-success fw-bold fs-5 mb-3">
                     {Number(prodPrice).toLocaleString()} ETB
                   </div>
