@@ -39,6 +39,9 @@ export interface CustomerProduct {
     average: number | null;
     count: number;
   };
+  averageRating?: number | null;
+  reviewCount?: number;
+  ratingCount?: number;
   seller?: {
     id: string;
     companyName: string;

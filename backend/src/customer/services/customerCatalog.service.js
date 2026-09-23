@@ -26,6 +26,8 @@ function formatCustomerProductCard(product) {
 
   const primaryImage = images.find((i) => i.isPrimary) || images[0] || null;
 
+  const ratingSummary = product.rating || { average: null, count: 0 };
+
   return {
     id: product.id,
     itemCode: product.itemCode,
@@ -39,7 +41,10 @@ function formatCustomerProductCard(product) {
     seller: product.seller || null,
     images,
     primaryImage,
-    rating: product.rating || { average: null, count: 0 },
+    rating: ratingSummary,
+    averageRating: ratingSummary.average,
+    reviewCount: ratingSummary.count,
+    ratingCount: ratingSummary.count,
   };
 }
 
@@ -324,13 +329,18 @@ export async function getCustomerProductDetails(productId) {
     valueDate: pav.valueDate ? pav.valueDate.toISOString() : null,
   }));
 
+  const ratingSummary = ratingSummaries.get(product.id) || { average: null, count: 0 };
+
   return {
     ...product,
     weight: product.weight !== null && product.weight !== undefined ? Number(product.weight) : null,
     sellingPrice: Number(product.sellingPrice),
     images,
     primaryImage,
-    rating: ratingSummaries.get(product.id) || { average: null, count: 0 },
+    rating: ratingSummary,
+    averageRating: ratingSummary.average,
+    reviewCount: ratingSummary.count,
+    ratingCount: ratingSummary.count,
     attributeValues: formattedAttributeValues,
   };
 }

@@ -91,13 +91,42 @@ export function ProductCard({ product }: ProductCardProps) {
           </Link>
         </h6>
 
-        {product.rating?.count ? (
-          <div className="mb-2">
-            <RatingDisplay average={product.rating.average ?? 0} count={product.rating.count} />
-          </div>
-        ) : (
-          <div className="text-muted small mb-2">{t('marketplace.card.noRatings')}</div>
-        )}
+        {/* Customer Rating Section */}
+        {(() => {
+          const reviewCount =
+            typeof product.rating?.count === 'number'
+              ? product.rating.count
+              : typeof (product as any).reviewCount === 'number'
+                ? (product as any).reviewCount
+                : typeof (product as any).ratingCount === 'number'
+                  ? (product as any).ratingCount
+                  : 0;
+
+          const rawAverage =
+            product.rating?.average !== undefined && product.rating?.average !== null
+              ? product.rating.average
+              : (product as any).averageRating !== undefined && (product as any).averageRating !== null
+                ? (product as any).averageRating
+                : typeof (product as any).rating === 'number'
+                  ? (product as any).rating
+                  : null;
+
+          const averageRating = rawAverage !== null && rawAverage !== undefined ? Number(rawAverage) : null;
+
+          if (reviewCount > 0 && averageRating !== null && !isNaN(averageRating) && averageRating > 0) {
+            return (
+              <div className="mb-2">
+                <RatingDisplay average={averageRating} count={reviewCount} />
+              </div>
+            );
+          }
+
+          return (
+            <div className="text-muted small mb-2">
+              {t('marketplace.card.noRatings', 'No ratings yet')}
+            </div>
+          );
+        })()}
 
         {/* Seller Info */}
         <div className="d-flex align-items-center gap-1 text-muted small mb-2">

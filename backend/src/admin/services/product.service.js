@@ -15,6 +15,7 @@ import {
 } from './productImage.service.js';
 import { getDescendantCategoryIds, getCategoryPath } from './category.service.js';
 import { resolveEffectiveCategoryAttributes } from './categoryAttribute.service.js';
+import { getPublicProductRatingSummaries } from '../../customer/services/review.service.js';
 
 async function recordProductAuditLog({ adminUser, action, productId, ipAddress, changesSummary }) {
   try {
@@ -87,6 +88,8 @@ function formatProduct(product) {
     valueDate: pav.valueDate ? pav.valueDate.toISOString() : null,
   }));
 
+  const ratingSummary = rating || product.rating || { average: null, count: 0 };
+
   return {
     ...product,
     costPrice: product.costPrice !== null && product.costPrice !== undefined ? Number(product.costPrice) : null,
@@ -95,6 +98,10 @@ function formatProduct(product) {
     images: formattedImages,
     primaryImage: formattedImages.find((img) => img.isPrimary) || formattedImages[0] || null,
     attributeValues: formattedAttributeValues,
+    rating: ratingSummary,
+    averageRating: ratingSummary.average,
+    reviewCount: ratingSummary.count,
+    ratingCount: ratingSummary.count,
   };
 }
 
@@ -241,7 +248,8 @@ export async function listProducts(query = {}) {
     }),
   ]);
 
-  const formattedItems = items.map(formatProduct);
+  const ratingSummaries = await getPublicProductRatingSummaries(items.map((p) => p.id));
+  const formattedItems = items.map((p) => formatProduct(p, ratingSummaries.get(p.id)));
 
   return {
     items: formattedItems,
@@ -301,7 +309,8 @@ export async function getProductById(id) {
     throw ApiError.notFound('Product not found', 'PRODUCT_NOT_FOUND');
   }
 
-  const formatted = formatProduct(product);
+  const ratingSummaries = await getPublicProductRatingSummaries([product.id]);
+  const formatted = formatProduct(product, ratingSummaries.get(product.id));
   if (product.marketplaceCategoryId) {
     formatted.categoryPath = await getCategoryPath(product.marketplaceCategoryId);
   } else {
@@ -625,7 +634,8 @@ export async function createProduct(data, filesOrAdmin = [], adminOrIp = null, m
     changesSummary: `Created product "${product.name}" with item code [${product.itemCode}] under seller "${product.seller.companyName}" with ${imageRecordsToCreate.length} image(s) and ${preparedAttrRecords.length} attribute value(s)`,
   });
 
-  return formatProduct(product);
+  const ratingSummaries = await getPublicProductRatingSummaries([product.id]);
+  return formatProduct(product, ratingSummaries.get(product.id));
 }
 
 /**

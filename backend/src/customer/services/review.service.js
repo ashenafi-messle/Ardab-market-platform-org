@@ -10,14 +10,21 @@ import { ApiError } from '../../shared/utils/apiResponse.js';
 import { logger } from '../../shared/utils/logger.js';
 import { memoryCache } from '../../shared/middleware/cache.middleware.js';
 
+export const VALID_PRODUCT_REVIEW_STATUSES = ['PUBLISHED', 'REVIEWED', 'RESOLVED'];
+
 export const PUBLIC_PRODUCT_REVIEW_WHERE = {
   type: 'PRODUCT',
-  status: { in: ['PUBLISHED', 'REVIEWED', 'RESOLVED'] },
+  status: { in: VALID_PRODUCT_REVIEW_STATUSES },
   visibility: 'PUBLIC',
 };
 
 /**
  * Returns public rating summaries for a set of products in one grouped query.
+ *
+ * Business rule:
+ * - count === 0: average = null
+ * - count === 1: average = rating (e.g. 5)
+ * - count >= 2: arithmetic average = sum / count
  */
 export async function getPublicProductRatingSummaries(productIds = [], db = prisma) {
   if (!Array.isArray(productIds) || productIds.length === 0) return new Map();
@@ -35,8 +42,8 @@ export async function getPublicProductRatingSummaries(productIds = [], db = pris
   return new Map(aggregates.map((aggregate) => [
     aggregate.productId,
     (() => {
-      const count = aggregate._count.rating;
-      const sum = aggregate._sum.rating || 0;
+      const count = Number(aggregate._count?.rating ?? 0);
+      const sum = Number(aggregate._sum?.rating ?? 0);
       return {
         average: count > 0 ? sum / count : null,
         count,
@@ -306,6 +313,10 @@ export async function createCustomerProductReview(customerId, data) {
   });
 
   logger.info(`Customer review created: id=${review.id}, customerId=${customerId}, productId=${productId}, rating=${numericRating}`);
+
+  if (review.productId) {
+    memoryCache.invalidate('.*products.*');
+  }
 
   return formatCustomerReview(review, customerId);
 }
@@ -592,8 +603,11 @@ export async function updateCustomerReview(customerId, reviewId, data) {
     updateData.isAnonymous = Boolean(data.isAnonymous);
   }
 
-  // Re-enter moderation queue on customer edit
-  updateData.status = 'PENDING';
+  // Preserve PUBLISHED status if review was already approved and customer updates rating/comment,
+  // or set PENDING if it was not yet published
+  if (review.status !== 'PUBLISHED') {
+    updateData.status = 'PENDING';
+  }
 
   const updated = await prisma.feedback.update({
     where: { id: reviewId },
@@ -610,7 +624,7 @@ export async function updateCustomerReview(customerId, reviewId, data) {
   });
 
   if (review.productId) {
-    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+    memoryCache.invalidate('.*products.*');
   }
 
   logger.info(`Customer review updated [${reviewId}] by customer [${customerId}]`);
@@ -648,7 +662,7 @@ export async function deleteCustomerReview(customerId, reviewId) {
   });
 
   if (review.productId) {
-    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+    memoryCache.invalidate('.*products.*');
   }
 
   logger.info(`Customer review [${reviewId}] archived by customer [${customerId}]`);

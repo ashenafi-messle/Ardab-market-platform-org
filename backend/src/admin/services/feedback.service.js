@@ -357,8 +357,8 @@ export async function createFeedback(data) {
       sellerId: data.sellerId || null,
       deliveryId: data.deliveryId || null,
       categoryId: data.categoryId || null,
-      type: data.type || 'PLATFORM',
-      source: data.source || 'PLATFORM',
+      type: data.type || (data.productId ? 'PRODUCT' : 'PLATFORM'),
+      source: data.source || (data.productId ? 'PRODUCT' : 'PLATFORM'),
       city: data.city || 'Gondar',
       rating: data.rating,
       title: data.title,
@@ -385,8 +385,8 @@ export async function createFeedback(data) {
     isVerified,
   });
 
-  if (feedback.type === 'PRODUCT' && feedback.productId) {
-    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+  if (feedback.productId) {
+    memoryCache.invalidate('.*products.*');
   }
 
   return formatFeedbackItem(feedback);
@@ -439,6 +439,10 @@ export async function respondToFeedback(feedbackId, responseData, adminUser) {
 
     return response;
   });
+
+  if (feedback.productId) {
+    memoryCache.invalidate('.*products.*');
+  }
 
   logger.info(`Response published to feedback [${feedbackId}] by admin [${adminUser?.id}]`, {
     feedbackId,
@@ -535,7 +539,7 @@ export async function moderateFeedback(feedbackId, { action, reason }, adminUser
   });
 
   if (feedback.productId) {
-    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+    memoryCache.invalidate('.*products.*');
   }
 
   logger.info(`Feedback [${feedbackId}] moderated with action [${action}] by [${adminUser?.id}]`, {

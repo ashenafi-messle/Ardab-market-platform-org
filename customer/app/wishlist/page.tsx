@@ -80,13 +80,41 @@ export default function WishlistPage() {
                       {prod.name}
                     </Link>
                   </h5>
-                  {prod.rating?.count ? (
-                    <div className="mb-2">
-                      <RatingDisplay average={prod.rating.average ?? 0} count={prod.rating.count} />
-                    </div>
-                  ) : (
-                    <div className="text-muted small mb-2">{t('marketplace.card.noRatings')}</div>
-                  )}
+                  {(() => {
+                    const reviewCount =
+                      typeof prod.rating?.count === 'number'
+                        ? prod.rating.count
+                        : typeof (prod as any).reviewCount === 'number'
+                          ? (prod as any).reviewCount
+                          : typeof (prod as any).ratingCount === 'number'
+                            ? (prod as any).ratingCount
+                            : 0;
+
+                    const rawAverage =
+                      prod.rating?.average !== undefined && prod.rating?.average !== null
+                        ? prod.rating.average
+                        : (prod as any).averageRating !== undefined && (prod as any).averageRating !== null
+                          ? (prod as any).averageRating
+                          : typeof (prod as any).rating === 'number'
+                            ? (prod as any).rating
+                            : null;
+
+                    const averageRating = rawAverage !== null && rawAverage !== undefined ? Number(rawAverage) : null;
+
+                    if (reviewCount > 0 && averageRating !== null && !isNaN(averageRating) && averageRating > 0) {
+                      return (
+                        <div className="mb-2">
+                          <RatingDisplay average={averageRating} count={reviewCount} />
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="text-muted small mb-2">
+                        {t('marketplace.card.noRatings', 'No ratings yet')}
+                      </div>
+                    );
+                  })()}
                   <div className="text-success fw-bold fs-5 mb-3">
                     {Number(prodPrice).toLocaleString()} ETB
                   </div>

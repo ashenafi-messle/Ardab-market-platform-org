@@ -28,6 +28,7 @@ const PRODUCT_INCLUDE = {
  */
 function formatWishlistItem(item, rating = { average: null, count: 0 }) {
   const product = item.product;
+  const ratingSummary = rating || { average: null, count: 0 };
   return {
     id: item.id,
     customerId: item.customerId,
@@ -47,7 +48,10 @@ function formatWishlistItem(item, rating = { average: null, count: 0 }) {
           primaryImage: product.images?.[0]
             ? { url: product.images[0].url, publicId: product.images[0].publicId }
             : null,
-          rating,
+          rating: ratingSummary,
+          averageRating: ratingSummary.average,
+          reviewCount: ratingSummary.count,
+          ratingCount: ratingSummary.count,
         }
       : null,
   };

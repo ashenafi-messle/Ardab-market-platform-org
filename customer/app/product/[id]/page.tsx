@@ -104,7 +104,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       title: reviewTitle.trim() || null,
       comment: reviewComment.trim(),
       isAnonymous: reviewAnonymous,
-      status: 'APPROVED',
+      status: isEditingReview && previousReview?.status === 'PUBLISHED' ? 'PUBLISHED' : 'PENDING',
       createdAt: new Date().toISOString(),
       isVerified: customerReview?.isVerified ?? false,
     };
@@ -407,12 +407,38 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               )}
             </div>
 
-            <div className="d-flex align-items-center gap-2 mb-3" aria-label={product.rating?.count ? `${product.rating.average?.toFixed(1)} out of 5 from ${product.rating.count} reviews` : 'No ratings yet'}>
-              {product.rating?.count ? (
-                <RatingDisplay average={product.rating.average ?? 0} count={product.rating.count} />
-              ) : (
-                <span className="text-muted small">{t('marketplace.card.noRatings')}</span>
-              )}
+            <div className="d-flex align-items-center gap-2 mb-3">
+              {(() => {
+                const reviewCount =
+                  typeof product.rating?.count === 'number'
+                    ? product.rating.count
+                    : typeof (product as any).reviewCount === 'number'
+                      ? (product as any).reviewCount
+                      : typeof (product as any).ratingCount === 'number'
+                        ? (product as any).ratingCount
+                        : 0;
+
+                const rawAverage =
+                  product.rating?.average !== undefined && product.rating?.average !== null
+                    ? product.rating.average
+                    : (product as any).averageRating !== undefined && (product as any).averageRating !== null
+                      ? (product as any).averageRating
+                      : typeof (product as any).rating === 'number'
+                        ? (product as any).rating
+                        : null;
+
+                const averageRating = rawAverage !== null && rawAverage !== undefined ? Number(rawAverage) : null;
+
+                if (reviewCount > 0 && averageRating !== null && !isNaN(averageRating) && averageRating > 0) {
+                  return <RatingDisplay average={averageRating} count={reviewCount} />;
+                }
+
+                return (
+                  <span className="text-muted small">
+                    {t('marketplace.card.noRatings', 'No ratings yet')}
+                  </span>
+                );
+              })()}
             </div>
 
             {/* Stock Availability */}
