@@ -90,6 +90,16 @@ export function ProductCard({ product }: ProductCardProps) {
           </Link>
         </h6>
 
+        {product.rating?.count ? (
+          <div className="d-flex align-items-center gap-1 mb-2" aria-label={`${product.rating.average?.toFixed(1)} out of 5 from ${product.rating.count} reviews`}>
+            <i className="bi bi-star-fill text-warning"></i>
+            <span className="fw-semibold small">{product.rating.average?.toFixed(1)}</span>
+            <span className="text-muted small">({product.rating.count})</span>
+          </div>
+        ) : (
+          <div className="text-muted small mb-2">{t('marketplace.card.noRatings')}</div>
+        )}
+
         {/* Seller Info */}
         <div className="d-flex align-items-center gap-1 text-muted small mb-2">
           <i className="bi bi-shop text-success"></i>

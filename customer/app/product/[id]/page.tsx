@@ -406,6 +406,18 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               )}
             </div>
 
+            <div className="d-flex align-items-center gap-2 mb-3" aria-label={product.rating?.count ? `${product.rating.average?.toFixed(1)} out of 5 from ${product.rating.count} reviews` : 'No ratings yet'}>
+              {product.rating?.count ? (
+                <>
+                  <i className="bi bi-star-fill text-warning"></i>
+                  <strong>{product.rating.average?.toFixed(1)}</strong>
+                  <span className="text-muted small">({product.rating.count} {t('reviews_count')})</span>
+                </>
+              ) : (
+                <span className="text-muted small">{t('marketplace.card.noRatings')}</span>
+              )}
+            </div>
+
             {/* Stock Availability */}
             <div className="mb-4">
               {isAvailable ? (
@@ -626,12 +638,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <h3 className="h4 fw-bold text-dark mb-1">{t('customer_reviews')}</h3>
               <div className="d-flex align-items-baseline gap-3 my-2 justify-content-center justify-content-md-start">
                 <span className="display-4 fw-bold text-dark">
-                  {reviewSummary?.averageRating ? reviewSummary.averageRating.toFixed(1) : '0.0'}
+                  {reviewSummary?.totalReviews ? reviewSummary.averageRating.toFixed(1) : product.rating?.average?.toFixed(1) || '—'}
                 </span>
                 <div>
                   <div className="text-warning fs-5">
                     {[1, 2, 3, 4, 5].map((star) => {
-                      const avg = reviewSummary?.averageRating || 0;
+                      const avg = reviewSummary?.totalReviews ? reviewSummary.averageRating : product.rating?.average || 0;
                       return (
                         <i
                           key={star}
@@ -641,7 +653,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     })}
                   </div>
                   <small className="text-muted">
-                    {reviewSummary?.totalReviews || reviews.length} {t('reviews_count')} ({t('out_of_5')})
+                    {reviewSummary?.totalReviews ?? product.rating?.count ?? 0} {t('reviews_count')} ({t('out_of_5')})
                   </small>
                 </div>
               </div>

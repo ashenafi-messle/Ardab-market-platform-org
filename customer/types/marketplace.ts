@@ -35,6 +35,10 @@ export interface CustomerProduct {
   status: string;
   cityAvailability: string[];
   createdAt: string;
+  rating?: {
+    average: number | null;
+    count: number;
+  };
   seller?: {
     id: string;
     companyName: string;

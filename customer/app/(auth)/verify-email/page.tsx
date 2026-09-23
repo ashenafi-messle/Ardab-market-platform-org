@@ -15,13 +15,18 @@ function VerifyEmailContent() {
   const tokenParam = searchParams.get('token');
   const emailParam = searchParams.get('email');
 
-  const [verifying, setVerifying] = useState(false);
+  const [verifying, setVerifying] = useState(() => Boolean(tokenParam));
   const [success, setSuccess] = useState(false);
   const [alreadyVerified, setAlreadyVerified] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isExpired, setIsExpired] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const missingTokenMessage = !tokenParam
+    ? language === 'am'
+      ? 'የማረጋገጫ ሊንኩ ልክ ያልሆነ ወይም የጎደለ ነው። እባክዎ ከኢሜይልዎ ላይ ሙሉውን ሊንክ ይክፈቱ።'
+      : 'Invalid or missing verification token. Please open the link sent directly to your email.'
+    : null;
 
   // Execution guard: Guarantee verification executes EXACTLY ONCE per mount (prevents React StrictMode/loop duplication)
   const hasExecutedRef = useRef(false);
@@ -30,17 +35,10 @@ function VerifyEmailContent() {
     if (hasExecutedRef.current) return;
 
     if (!tokenParam) {
-      setErrorMessage(
-        language === 'am'
-          ? 'የማረጋገጫ ሊንኩ ልክ ያልሆነ ወይም የጎደለ ነው። እባክዎ ከኢሜይልዎ ላይ ሙሉውን ሊንክ ይክፈቱ።'
-          : 'Invalid or missing verification token. Please open the link sent directly to your email.'
-      );
       return;
     }
 
     hasExecutedRef.current = true;
-    setVerifying(true);
-    setErrorMessage(null);
 
     async function executeVerification() {
       try {
@@ -162,7 +160,7 @@ function VerifyEmailContent() {
                 </div>
               )}
 
-              {errorMessage && !verifying && !success && !alreadyVerified && (
+              {(errorMessage || missingTokenMessage) && !verifying && !success && !alreadyVerified && (
                 <div className="py-2">
                   <i className="bi bi-exclamation-triangle-fill text-danger display-3 mb-3"></i>
                   <h5 className="fw-bold text-danger mb-2">
@@ -170,7 +168,7 @@ function VerifyEmailContent() {
                       ? (language === 'am' ? 'የማረጋገጫ ሊንኩ ጊዜው አልፎበታል' : 'Verification Link Expired')
                       : (language === 'am' ? 'ማረጋገጥ አልተቻለም' : 'Verification Issue')}
                   </h5>
-                  <div className="alert alert-danger py-2 small mb-4">{errorMessage}</div>
+                  <div className="alert alert-danger py-2 small mb-4">{errorMessage || missingTokenMessage}</div>
 
                   {resendStatus && (
                     <div className="alert alert-info py-2 small mb-3">{resendStatus}</div>

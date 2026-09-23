@@ -31,7 +31,8 @@
     "delivery": "Delivery",
     "itemCode": "Item Code",
     "inStock": "In Stock",
-    "allCities": "All Cities"
+    "allCities": "All Cities",
+    "noRatings": "No ratings yet"
   },
   "search": {
     "title": "Product Search",

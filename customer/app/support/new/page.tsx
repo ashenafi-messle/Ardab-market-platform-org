@@ -252,7 +252,7 @@ function NewSupportRequestContent() {
                 <div className="d-flex flex-wrap gap-2">
                   {(['LOW', 'NORMAL', 'HIGH', 'URGENT'] as SupportTicketPriority[]).map((p) => {
                     const isSelected = priority === p;
-                    let label = t(`priority_${p.toLowerCase()}`, p);
+                    const label = t(`priority_${p.toLowerCase()}`, p);
                     let badgeClass = 'btn-outline-secondary';
                     if (isSelected) {
                       if (p === 'URGENT') badgeClass = 'btn-danger text-white';

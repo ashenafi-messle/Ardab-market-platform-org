@@ -504,6 +504,21 @@ test('Customer Reviews & Feedback Full E2E Security & Functional Test Suite', as
     assert.equal(res.body.data.summary.ratingDistribution[5], 1);
   });
 
+  await suite.test('14a. Product list and detail APIs return the public rating summary', async () => {
+    const listRes = await request(app)
+      .get(`/api/customer/catalog/products?search=${encodeURIComponent(testProduct1.name)}`);
+
+    assert.equal(listRes.status, 200);
+    const listedProduct = listRes.body.data.items.find((item) => item.id === testProduct1.id);
+    assert.deepEqual(listedProduct.rating, { average: 5, count: 1 });
+
+    const detailRes = await request(app)
+      .get(`/api/customer/catalog/products/${testProduct1.id}`);
+
+    assert.equal(detailRes.status, 200);
+    assert.deepEqual(detailRes.body.data.rating, { average: 5, count: 1 });
+  });
+
   // ============================================================================
   // Test 15: Sub Admin Official Reply to Review
   // ============================================================================

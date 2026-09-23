@@ -5,6 +5,7 @@
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 import { logger } from '../../shared/utils/logger.js';
+import { memoryCache } from '../../shared/middleware/cache.middleware.js';
 
 /**
  * Format feedback record for frontend presentation.
@@ -384,6 +385,10 @@ export async function createFeedback(data) {
     isVerified,
   });
 
+  if (feedback.type === 'PRODUCT' && feedback.productId) {
+    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+  }
+
   return formatFeedbackItem(feedback);
 }
 
@@ -528,6 +533,10 @@ export async function moderateFeedback(feedbackId, { action, reason }, adminUser
       });
     }
   });
+
+  if (feedback.productId) {
+    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+  }
 
   logger.info(`Feedback [${feedbackId}] moderated with action [${action}] by [${adminUser?.id}]`, {
     feedbackId,

@@ -31,7 +31,8 @@
     "delivery": "ማድረሻ",
     "itemCode": "የእቃ ኮድ",
     "inStock": "ክምችት አለ",
-    "allCities": "በሁሉም ከተሞች ይሰራል"
+    "allCities": "በሁሉም ከተሞች ይሰራል",
+    "noRatings": "እስካሁን ደረጃ የለውም"
   },
   "search": {
     "title": "የምርት ፍለጋ",

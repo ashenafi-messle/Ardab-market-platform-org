@@ -8,6 +8,38 @@
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 import { logger } from '../../shared/utils/logger.js';
+import { memoryCache } from '../../shared/middleware/cache.middleware.js';
+
+export const PUBLIC_PRODUCT_REVIEW_WHERE = {
+  type: 'PRODUCT',
+  status: { in: ['PUBLISHED', 'REVIEWED', 'RESOLVED'] },
+  visibility: 'PUBLIC',
+};
+
+/**
+ * Returns public rating summaries for a set of products in one grouped query.
+ */
+export async function getPublicProductRatingSummaries(productIds = [], db = prisma) {
+  if (!Array.isArray(productIds) || productIds.length === 0) return new Map();
+
+  const aggregates = await db.feedback.groupBy({
+    by: ['productId'],
+    where: {
+      ...PUBLIC_PRODUCT_REVIEW_WHERE,
+      productId: { in: productIds },
+    },
+    _avg: { rating: true },
+    _count: { rating: true },
+  });
+
+  return new Map(aggregates.map((aggregate) => [
+    aggregate.productId,
+    {
+      average: aggregate._avg.rating === null ? null : Number(aggregate._avg.rating),
+      count: aggregate._count.rating,
+    },
+  ]));
+}
 
 /**
  * Basic XSS sanitizer that strips script tags, iframe, object, and raw javascript
@@ -295,12 +327,7 @@ export async function getProductReviews(productId, queryParams = {}, currentCust
   else if (sort === 'oldest') orderBy = { createdAt: 'asc' };
 
   // Filter for public visibility
-  const publicWhere = {
-    productId,
-    type: 'PRODUCT',
-    status: { in: ['PUBLISHED', 'REVIEWED', 'RESOLVED'] },
-    visibility: 'PUBLIC',
-  };
+  const publicWhere = { ...PUBLIC_PRODUCT_REVIEW_WHERE, productId };
 
   // Optional filter by specific star rating
   const listWhere = { ...publicWhere };
@@ -578,6 +605,10 @@ export async function updateCustomerReview(customerId, reviewId, data) {
     },
   });
 
+  if (review.productId) {
+    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+  }
+
   logger.info(`Customer review updated [${reviewId}] by customer [${customerId}]`);
 
   return formatCustomerReview(updated, customerId);
@@ -611,6 +642,10 @@ export async function deleteCustomerReview(customerId, reviewId) {
       visibility: 'HIDDEN',
     },
   });
+
+  if (review.productId) {
+    memoryCache.invalidate('^cache:/api/customer/catalog/products');
+  }
 
   logger.info(`Customer review [${reviewId}] archived by customer [${customerId}]`);
 

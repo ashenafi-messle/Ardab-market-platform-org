@@ -8,6 +8,7 @@
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 import { getDescendantCategoryIds } from '../../admin/services/category.service.js';
+import { getPublicProductRatingSummaries } from './review.service.js';
 
 /**
  * Format a lightweight customer product card
@@ -38,6 +39,7 @@ function formatCustomerProductCard(product) {
     seller: product.seller || null,
     images,
     primaryImage,
+    rating: product.rating || { average: null, count: 0 },
   };
 }
 
@@ -196,10 +198,16 @@ export async function listCustomerProducts(query = {}) {
     }),
   ]);
 
+  const ratingSummaries = await getPublicProductRatingSummaries(products.map((product) => product.id));
+  const formattedProducts = products.map((product) => formatCustomerProductCard({
+    ...product,
+    rating: ratingSummaries.get(product.id),
+  }));
+
   const totalPages = Math.ceil(total / limit) || 1;
 
   return {
-    items: products.map(formatCustomerProductCard),
+    items: formattedProducts,
     pagination: {
       page,
       pageSize: limit,
@@ -297,6 +305,8 @@ export async function getCustomerProductDetails(productId) {
     throw ApiError.notFound('Product not found');
   }
 
+  const ratingSummaries = await getPublicProductRatingSummaries([product.id]);
+
   const images = product.images || [];
   const primaryImage = images.find((i) => i.isPrimary) || images[0] || null;
 
@@ -320,6 +330,7 @@ export async function getCustomerProductDetails(productId) {
     sellingPrice: Number(product.sellingPrice),
     images,
     primaryImage,
+    rating: ratingSummaries.get(product.id) || { average: null, count: 0 },
     attributeValues: formattedAttributeValues,
   };
 }
