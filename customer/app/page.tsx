@@ -3,11 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
+import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import ProductCard from '@/components/Cards/ProductCard';
 import { catalogApi, Product, Category } from '@/lib/api';
 
 export default function HomePage() {
   const { t, language } = useLanguage();
+  const { isAuthenticated, customer } = useCustomerAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [popularProducts, setPopularProducts] = useState<Product[]>([]);
   const [newArrivals, setNewArrivals] = useState<Product[]>([]);
@@ -88,14 +90,90 @@ export default function HomePage() {
                   : 'Shop fresh regional produce, authentic coffee, spices, electronics, fashion, and household goods from verified merchants delivered directly to your doorstep.'}
               </p>
 
-              <div className="d-flex flex-wrap gap-3 justify-content-center justify-content-lg-start mb-4 animate-fade-in-up delay-300">
-                <Link href="/products" className="btn btn-fresh btn-lg px-4 py-3 rounded-pill fw-bold shadow-sm hover-elevate">
-                  <i className="bi bi-basket3-fill me-2"></i>
-                  {t('shop_now')}
+              {/* First Comer / Auth Call-to-Action on Hero (High-visibility for mobile & first-time visitors) */}
+              {!isAuthenticated ? (
+                <div className="hero-firstcomer-card p-3 mb-4 rounded-4 bg-light bg-opacity-75 border shadow-sm animate-fade-in-up delay-250">
+                  <div className="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 text-start">
+                    <div className="d-flex align-items-center gap-2.5">
+                      <div className="rounded-circle bg-success text-white p-2 d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '40px', height: '40px' }}>
+                        <i className="bi bi-person-heart fs-5"></i>
+                      </div>
+                      <div>
+                        <div className="fw-bold text-dark fs-6 d-flex align-items-center gap-2">
+                          <span>{language === 'am' ? 'አዲስ ጎብኝ ነዎት?' : 'New to Ardab?'}</span>
+                          <span className="badge bg-success bg-opacity-15 text-success rounded-pill px-2 py-0.5" style={{ fontSize: '0.72rem' }}>
+                            {language === 'am' ? 'ፈጣን ጅምር' : 'Get Started'}
+                          </span>
+                        </div>
+                        <div className="text-muted small" style={{ fontSize: '0.8rem' }}>
+                          {language === 'am'
+                            ? 'ትዕዛዝዎን ለመከታተልና ልዩ ቅናሾችን ለማግኘት አሁኑኑ ይመዝገቡ ወይም ይግቡ'
+                            : 'Sign in or create a free account to track orders & claim deals'}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Hero Sign In & Sign Up Buttons */}
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0 w-100 w-sm-auto justify-content-stretch">
+                      <Link
+                        href="/login"
+                        className="btn btn-outline-success btn-md rounded-pill px-3 py-2 fw-bold d-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-sm-grow-0 hover-elevate"
+                        style={{ minHeight: '40px' }}
+                      >
+                        <i className="bi bi-box-arrow-in-right"></i>
+                        <span>{t('common.nav.signIn', 'Sign In')}</span>
+                      </Link>
+                      <Link
+                        href="/signup"
+                        className="btn btn-fresh btn-md rounded-pill px-3 py-2 fw-bold text-white shadow-sm d-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-sm-grow-0 hover-elevate"
+                        style={{ minHeight: '40px' }}
+                      >
+                        <i className="bi bi-person-plus-fill"></i>
+                        <span>{t('common.nav.signUp', 'Sign Up')}</span>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="hero-auth-welcome p-3 mb-4 rounded-4 bg-success bg-opacity-10 border border-success border-opacity-25 shadow-sm animate-fade-in-up delay-250">
+                  <div className="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2.5 text-start">
+                    <div className="d-flex align-items-center gap-2.5">
+                      <div className="rounded-circle bg-success text-white p-2 d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '38px', height: '38px' }}>
+                        <i className="bi bi-check-lg fs-5"></i>
+                      </div>
+                      <div>
+                        <div className="fw-bold text-dark fs-6">
+                          {language === 'am'
+                            ? `እንኳን ደህና መጡ፣ ${customer?.fullName || 'ደንበኛ'}!`
+                            : `Welcome back, ${customer?.fullName || 'Customer'}!`}
+                        </div>
+                        <div className="text-muted small" style={{ fontSize: '0.78rem' }}>
+                          {language === 'am' ? 'የትዕዛዝዎን ሁኔታ ይከታተሉ ወይም አዲስ ግዢ ይጀምሩ' : 'Track ongoing deliveries or explore fresh arrivals'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <Link href="/orders" className="btn btn-sm btn-outline-success rounded-pill px-3 py-1.5 fw-bold hover-elevate">
+                        <i className="bi bi-box-seam me-1"></i>
+                        {language === 'am' ? 'ትዕዛዞቼ' : 'My Orders'}
+                      </Link>
+                      <Link href="/account" className="btn btn-sm btn-light border rounded-pill px-3 py-1.5 fw-bold hover-elevate">
+                        <i className="bi bi-person me-1"></i>
+                        {t('common.nav.account', 'Account')}
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Primary Exploration & Shopping Buttons */}
+              <div className="d-flex flex-wrap gap-2.5 justify-content-center justify-content-lg-start mb-4 animate-fade-in-up delay-300">
+                <Link href="/products" className="btn btn-fresh btn-lg px-4 py-2.5 rounded-pill fw-bold shadow-sm hover-elevate d-flex align-items-center gap-2">
+                  <i className="bi bi-basket3-fill"></i>
+                  <span>{t('shop_now', 'Shop Now')}</span>
                 </Link>
-                <Link href="/categories" className="btn btn-outline-secondary btn-lg px-4 py-3 rounded-pill fw-bold hover-elevate">
-                  <i className="bi bi-grid me-2"></i>
-                  {t('explore_products')}
+                <Link href="/categories" className="btn btn-outline-secondary btn-lg px-4 py-2.5 rounded-pill fw-bold hover-elevate d-flex align-items-center gap-2">
+                  <i className="bi bi-grid"></i>
+                  <span>{t('explore_products', 'Explore Categories')}</span>
                 </Link>
               </div>
 

@@ -150,9 +150,9 @@ export function CustomerHeader() {
             {/* Wishlist Link */}
             <Link
               href="/wishlist"
-              className="btn btn-light rounded-circle position-relative p-2 text-dark"
+              className="btn btn-light rounded-circle position-relative p-2 text-dark d-none d-sm-flex align-items-center justify-content-center"
               title={t('common.nav.wishlist', 'Wishlist')}
-              style={{ width: '42px', height: '42px' }}
+              style={{ width: '38px', height: '38px' }}
             >
               <i className="bi bi-heart fs-5"></i>
               {wishlistCount > 0 && (
@@ -165,9 +165,9 @@ export function CustomerHeader() {
             {/* Cart Link */}
             <Link
               href="/cart"
-              className="btn btn-light rounded-circle position-relative p-2 text-dark"
+              className="btn btn-light rounded-circle position-relative p-2 text-dark d-flex align-items-center justify-content-center"
               title={t('common.nav.cart', 'Cart')}
-              style={{ width: '42px', height: '42px' }}
+              style={{ width: '38px', height: '38px' }}
             >
               <i className="bi bi-cart3 fs-5"></i>
               {itemCount > 0 && (
@@ -182,8 +182,9 @@ export function CustomerHeader() {
               <div className="d-flex align-items-center gap-1">
                 <Link
                   href="/account"
-                  className="btn btn-light rounded-pill px-3 d-flex align-items-center gap-2 text-decoration-none"
+                  className="btn btn-light rounded-pill px-2.5 px-sm-3 d-flex align-items-center gap-1.5 text-decoration-none"
                   title={t('common.nav.account', 'My Account')}
+                  style={{ minHeight: '36px' }}
                 >
                   <i className="bi bi-person-circle text-success fs-5"></i>
                   <span className="fw-semibold text-dark d-none d-sm-inline" style={{ maxWidth: '120px' }}>
@@ -199,7 +200,7 @@ export function CustomerHeader() {
                     data-bs-toggle="dropdown"
                     aria-expanded="false"
                     title="Account Menu"
-                    style={{ width: '36px', height: '36px' }}
+                    style={{ width: '34px', height: '34px' }}
                   >
                     <i className="bi bi-chevron-down" style={{ fontSize: '0.75rem' }}></i>
                   </button>
@@ -241,20 +242,20 @@ export function CustomerHeader() {
                 </div>
               </div>
             ) : (
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex align-items-center gap-1.5 gap-sm-2">
                 <Link
-                  href="/account"
-                  className="btn btn-light rounded-circle p-2 text-dark d-flex align-items-center justify-content-center"
-                  title={t('common.nav.account', 'Account')}
-                  style={{ width: '42px', height: '42px' }}
+                  href="/login"
+                  className="btn btn-outline-success btn-sm rounded-pill px-2.5 px-sm-3 fw-bold d-flex align-items-center gap-1"
+                  style={{ fontSize: '0.78rem', minHeight: '34px' }}
                 >
-                  <i className="bi bi-person fs-5"></i>
-                </Link>
-                <Link href="/login" className="btn btn-outline-success btn-sm rounded-pill px-3 fw-bold d-none d-sm-flex align-items-center gap-1">
                   <i className="bi bi-box-arrow-in-right"></i>
                   <span>{t('common.nav.signIn', 'Sign In')}</span>
                 </Link>
-                <Link href="/signup" className="btn btn-fresh btn-sm rounded-pill px-3 fw-bold d-none d-sm-flex align-items-center gap-1 shadow-sm">
+                <Link
+                  href="/signup"
+                  className="btn btn-fresh btn-sm rounded-pill px-2.5 px-sm-3 fw-bold text-white d-flex align-items-center gap-1 shadow-sm"
+                  style={{ fontSize: '0.78rem', minHeight: '34px' }}
+                >
                   <i className="bi bi-person-plus"></i>
                   <span>{t('common.nav.signUp', 'Sign Up')}</span>
                 </Link>
@@ -264,8 +265,9 @@ export function CustomerHeader() {
 
         </div>
 
-        {/* Mobile Search Input (Visible only on mobile) */}
+        {/* Mobile Search & Controls (Visible only on mobile) */}
         <div className="d-block d-md-none mt-2">
+          {/* Mobile Search Input */}
           <form action="/search" method="GET">
             <div className="input-group">
               <span className="input-group-text bg-light border-end-0 text-muted">
@@ -279,6 +281,62 @@ export function CustomerHeader() {
               />
             </div>
           </form>
+
+          {/* Mobile Address (City) & Language Bar - Positioned down in header for optimal mobile visibility & thumb-reach */}
+          <div className="d-flex align-items-center justify-content-between py-1.5 px-2.5 mt-2 bg-light rounded-3 border">
+            {/* Delivery Hub / City Selector */}
+            <div className="dropdown">
+              <button
+                className="btn btn-sm btn-link text-decoration-none dropdown-toggle p-0 text-dark fw-bold d-flex align-items-center gap-1"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                style={{ fontSize: '0.8rem' }}
+              >
+                <i className="bi bi-geo-alt-fill text-success fs-6"></i>
+                <span className="text-muted fw-normal" style={{ fontSize: '0.75rem' }}>
+                  {lang === 'am' ? 'ማድረሻ፡' : 'Delivery:'}
+                </span>
+                <span className="text-dark">{selectedCity}</span>
+              </button>
+              <ul className="dropdown-menu shadow-sm">
+                <li><h6 className="dropdown-header">{t('common.nav.city', 'Delivery Hub')}</h6></li>
+                {cities.map((city) => (
+                  <li key={city}>
+                    <button
+                      className={`dropdown-item ${selectedCity === city ? 'active' : ''}`}
+                      onClick={() => setSelectedCity(city)}
+                    >
+                      {city}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Mobile Language Switcher */}
+            <div className="d-flex align-items-center gap-1">
+              <div className="btn-group btn-group-sm">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${lang === 'am' ? 'btn-success text-white' : 'btn-outline-secondary'}`}
+                  onClick={() => setLang('am')}
+                  style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', minHeight: '28px' }}
+                >
+                  አማርኛ
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${lang === 'en' ? 'btn-success text-white' : 'btn-outline-secondary'}`}
+                  onClick={() => setLang('en')}
+                  style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', minHeight: '28px' }}
+                >
+                  English
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Mobile Fast Links */}
           <div className="d-flex align-items-center gap-2 mt-2 overflow-x-auto pb-1" style={{ whiteSpace: 'nowrap' }}>
             <Link href="/products" className="badge bg-light text-dark text-decoration-none py-2 px-3 rounded-pill fw-normal">

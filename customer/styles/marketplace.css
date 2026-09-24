@@ -363,3 +363,24 @@ button, input, select, textarea, .btn {
   border-radius: 9999px;
 }
 
+/* ==============================================================================
+   Hero First-Comer & Auth Callout Cards
+   ============================================================================== */
+.hero-firstcomer-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(240, 253, 244, 0.85) 100%);
+  border: 1px solid rgba(22, 163, 74, 0.2) !important;
+  box-shadow: 0 4px 16px -2px rgba(16, 138, 78, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(8px);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.hero-firstcomer-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(16, 138, 78, 0.14);
+}
+
+.hero-auth-welcome {
+  background: linear-gradient(135deg, rgba(240, 253, 244, 0.9) 0%, rgba(255, 255, 255, 0.95) 100%);
+  backdrop-filter: blur(8px);
+}
+
