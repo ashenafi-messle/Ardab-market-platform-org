@@ -117,7 +117,7 @@ export class MobileOtpService {
       cooldownSeconds: RESEND_COOLDOWN_SECONDS,
       botUsername: botInfo.username,
       botUrl: botInfo.url,
-      devOtp: rawOtp,
+      ...(process.env.NODE_ENV === 'test' ? { devOtp: rawOtp } : {}),
     };
   }
 

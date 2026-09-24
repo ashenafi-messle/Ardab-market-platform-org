@@ -43,9 +43,6 @@ export default function ForgotPasswordScreen() {
     try {
       const res = await authApi.forgotPassword(cleanId);
       setLoading(false);
-      if (res.devOtp) {
-        setToken(res.devOtp);
-      }
       setSuccessMessage(res.message || t('auth.verificationSent'));
       setStep('reset');
     } catch (err: any) {

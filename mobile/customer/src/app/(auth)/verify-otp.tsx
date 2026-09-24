@@ -28,12 +28,10 @@ export default function VerifyOtpScreen() {
   const method = (params.method as 'email' | 'telegram') || 'email';
   const identifier = (params.identifier as string) || (method === 'email' ? 'customer@ardab.com' : '+251 91 123 4567');
   const city = (params.city as string) || 'Gondar';
-  const botUrl = (params.botUrl as string) || 'https://t.me/ArdabMarketBot';
-  const devOtp = (params.devOtp as string) || '';
+  const botUrl = (params.botUrl as string) || 'https://t.me/Ardab_market_bot';
 
-  // 6-digit OTP state
-  const initialDigits = devOtp && devOtp.length === 6 ? devOtp.split('') : ['', '', '', '', '', ''];
-  const [otp, setOtp] = useState<string[]>(initialDigits);
+  // 6-digit OTP state — always starts completely empty! Never autofilled from backend or route params!
+  const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
   const [timer, setTimer] = useState<number>(60);
   const [loading, setLoading] = useState<boolean>(false);
   const [resending, setResending] = useState<boolean>(false);
@@ -127,7 +125,14 @@ export default function VerifyOtpScreen() {
       });
     } catch (err: any) {
       setLoading(false);
-      setError(err.message || t('errors.general'));
+      const msg = err.message || '';
+      if (msg.includes('expired') || msg.includes('OTP_EXPIRED') || msg.includes('EXPIRED')) {
+        setError(t('auth.otpExpired'));
+      } else if (msg.includes('invalid') || msg.includes('INVALID_OTP') || msg.includes('incorrect') || msg.includes('attempts')) {
+        setError(t('auth.invalidOtp'));
+      } else {
+        setError(msg || t('errors.general'));
+      }
     }
   };
 
@@ -138,18 +143,14 @@ export default function VerifyOtpScreen() {
     setResendNotice('');
 
     try {
-      let res: any = null;
       if (method === 'email') {
-        res = await requestEmailOtp(identifier, city);
+        await requestEmailOtp(identifier, city);
       } else {
-        res = await requestTelegramOtp(identifier, city);
+        await requestTelegramOtp(identifier, city);
       }
       setResending(false);
       setTimer(60);
       setResendNotice(t('auth.codeResent'));
-      if (res?.devOtp) {
-        setOtp(res.devOtp.split(''));
-      }
     } catch (err: any) {
       setResending(false);
       setError(err.message || t('errors.general'));
@@ -158,7 +159,7 @@ export default function VerifyOtpScreen() {
 
   const handleOpenTelegram = () => {
     Linking.openURL(botUrl).catch(() => {
-      Alert.alert(t('common.appName'), 'Could not open Telegram. Please open @ArdabMarketBot manually in your Telegram app.');
+      Alert.alert(t('common.appName'), 'Could not open Telegram. Please open @Ardab_market_bot manually in your Telegram app.');
     });
   };
 
@@ -235,9 +236,12 @@ export default function VerifyOtpScreen() {
                 onChangeText={(text) => handleOtpChange(text, idx)}
                 onKeyPress={(e) => handleKeyPress(e, idx)}
                 keyboardType="number-pad"
-                maxLength={1}
+                maxLength={6}
                 selectTextOnFocus
                 textAlign="center"
+                autoComplete="off"
+                textContentType="none"
+                importantForAutofill="no"
                 style={[
                   styles.otpBox as any,
                   isFilled && (styles.otpBoxFilled as any),

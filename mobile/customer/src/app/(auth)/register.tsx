@@ -58,7 +58,6 @@ export default function RegisterScreen() {
             method: 'email',
             identifier: cleanEmail,
             city,
-            devOtp: res?.devOtp || res?.data?.devOtp || '',
           },
         });
       } catch (err: any) {
@@ -95,8 +94,7 @@ export default function RegisterScreen() {
             method: 'telegram',
             identifier: cleanPhone,
             city,
-            botUrl: res?.data?.botUrl || 'https://t.me/ArdabMarketBot',
-            devOtp: res?.devOtp || res?.data?.devOtp || '',
+            botUrl: res?.data?.botUrl || 'https://t.me/Ardab_market_bot',
           },
         });
       } catch (err: any) {

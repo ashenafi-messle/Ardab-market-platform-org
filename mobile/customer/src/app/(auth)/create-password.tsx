@@ -36,25 +36,6 @@ export default function CreatePasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Password Strength Evaluation
-  const getPasswordStrength = (pwd: string): { label: string; score: number; color: string } => {
-    if (!pwd) return { label: '', score: 0, color: Colors.border };
-    if (pwd.length < 6) return { label: t('auth.weak'), score: 1, color: Colors.error };
-    const hasLetters = /[a-zA-Z]/.test(pwd);
-    const hasNumbers = /[0-9]/.test(pwd);
-    const hasSpecial = /[^a-zA-Z0-9]/.test(pwd);
-
-    if (pwd.length >= 8 && hasLetters && hasNumbers && hasSpecial) {
-      return { label: t('auth.strong'), score: 3, color: Colors.success };
-    }
-    if (pwd.length >= 6 && hasLetters && hasNumbers) {
-      return { label: t('auth.medium'), score: 2, color: Colors.warning };
-    }
-    return { label: t('auth.weak'), score: 1, color: Colors.error };
-  };
-
-  const strength = getPasswordStrength(password);
-
   const handleCreateAccount = async () => {
     setError('');
 
@@ -161,35 +142,6 @@ export default function CreatePasswordScreen() {
               </TouchableOpacity>
             }
           />
-
-          {/* Password Strength Meter */}
-          {password.length > 0 ? (
-            <View style={styles.strengthContainer}>
-              <View style={styles.strengthBars}>
-                <View
-                  style={[
-                    styles.strengthBar,
-                    strength.score >= 1 && { backgroundColor: strength.color },
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.strengthBar,
-                    strength.score >= 2 && { backgroundColor: strength.color },
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.strengthBar,
-                    strength.score >= 3 && { backgroundColor: strength.color },
-                  ]}
-                />
-              </View>
-              <Text style={[styles.strengthLabel, { color: strength.color }]}>
-                {t('auth.passwordStrength')}: {strength.label}
-              </Text>
-            </View>
-          ) : null}
 
           {/* Confirm Password */}
           <AppInput
@@ -322,25 +274,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
     ...Shadows.sm,
-  },
-  strengthContainer: {
-    marginBottom: Spacing.md,
-    marginTop: -Spacing.xs,
-  },
-  strengthBars: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 4,
-  },
-  strengthBar: {
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.border,
-  },
-  strengthLabel: {
-    fontSize: Typography.fontSize.tiny,
-    fontWeight: Typography.fontWeight.medium,
   },
   errorBox: {
     flexDirection: 'row',

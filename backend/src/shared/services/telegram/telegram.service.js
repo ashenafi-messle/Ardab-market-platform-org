@@ -38,7 +38,7 @@ export class TelegramService {
     }
 
     try {
-      const messageText = `🔐 *Ardab Market Verification Code*\n\nYour 6-digit verification code is:\n\`${otp}\`\n\n_This code is valid for ${expiresMinutes} minutes and can only be used once._\n\n⚠️ *Do not share this code with anyone.*`;
+      const messageText = `Ardab Market verification code\n\nYour verification code is: ${otp}\n\nThis code expires in ${expiresMinutes} minutes.\n\nDo not share this code with anyone.`;
 
       const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',

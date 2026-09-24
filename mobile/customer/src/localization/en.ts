@@ -325,6 +325,8 @@ export const en = {
   'auth.verify': 'Verify & Continue',
   'auth.resendCode': 'Resend Code',
   'auth.codeResent': 'Verification code resent successfully',
+  'auth.otpExpired': 'This verification code has expired. Please request a new code.',
+  'auth.invalidOtp': 'Invalid verification code. Please check and try again.',
   'auth.resetPassword': 'Reset Password',
   'auth.resetPasswordDesc': 'Enter your registered email or phone to receive instructions.',
   'auth.sendResetLink': 'Send Reset Code',

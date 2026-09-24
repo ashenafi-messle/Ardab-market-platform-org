@@ -14,6 +14,7 @@ export const generalRateLimiter = rateLimit({
   max: env.RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => env.NODE_ENV === 'test',
   handler: (req, res) => {
     return ApiResponse.error(
       res,
@@ -32,6 +33,7 @@ export const authRateLimiter = rateLimit({
   max: env.AUTH_RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => env.NODE_ENV === 'test',
   handler: (req, res) => {
     return ApiResponse.error(
       res,
@@ -50,6 +52,7 @@ export const forgotPasswordRateLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => env.NODE_ENV === 'test',
   handler: (req, res) => {
     return ApiResponse.error(
       res,
@@ -68,6 +71,7 @@ export const resetPasswordRateLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => env.NODE_ENV === 'test',
   handler: (req, res) => {
     return ApiResponse.error(
       res,
@@ -86,6 +90,7 @@ export const otpRequestRateLimiter = rateLimit({
   max: 50,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => env.NODE_ENV === 'test',
   handler: (req, res) => {
     return ApiResponse.error(
       res,
@@ -104,6 +109,7 @@ export const otpVerifyRateLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => env.NODE_ENV === 'test',
   handler: (req, res) => {
     return ApiResponse.error(
       res,

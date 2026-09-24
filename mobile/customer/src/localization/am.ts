@@ -327,6 +327,8 @@ export const am: Record<TranslationKey, string> = {
   'auth.verify': 'አረጋግጥ እና ቀጥል',
   'auth.resendCode': 'ኮዱን እንደገና ላክ',
   'auth.codeResent': 'የማረጋገጫ ኮድ በተሳካ ሁኔታ እንደገና ተልኳል',
+  'auth.otpExpired': 'ይህ የማረጋገጫ ኮድ ጊዜው አልፎበታል:: እባክዎ አዲስ ኮድ ይጠይቁ::',
+  'auth.invalidOtp': 'የተሳሳተ የማረጋገጫ ኮድ:: እባክዎ እንደገና ይሞክሩ::',
   'auth.resetPassword': 'የይለፍ ቃል ቀይር',
   'auth.resetPasswordDesc': 'መመሪያዎችን ለመቀበል የተመዘገቡበትን ኢሜይል ወይም ስልክ ያስገቡ።',
   'auth.sendResetLink': 'የማስተካከያ ኮድ ላክ',

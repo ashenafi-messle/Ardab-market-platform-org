@@ -17,12 +17,11 @@ export interface AuthApiResponse<T = any> {
   customer?: any;
   error?: string | { code?: string; message?: string };
   code?: string;
-  devOtp?: string;
 }
 
 export const authApi = {
   /**
-    * Request 6-digit OTP for Email Registration (Method A)
+   * Request 6-digit OTP for Email Registration (Method A)
    */
   async requestEmailOtp(email: string, city: string): Promise<AuthApiResponse> {
     try {
@@ -38,20 +37,16 @@ export const authApi = {
         const errorMsg = res.data?.message || (res.data as any)?.error?.message || 'Failed to send verification code';
         throw new Error(errorMsg);
       }
-      return {
-        ...res.data,
-        devOtp: res.data?.data?.devOtp || res.data?.devOtp,
-      };
+      return res.data;
     } catch (err: any) {
       if (err.message && !err.message.includes('fetch') && !err.message.includes('Network') && !err.message.includes('timeout') && !err.message.includes('starting up')) {
         throw err;
       }
-      console.warn('[authApi] Live backend request fallback to demo OTP:', err.message);
+      console.warn('[authApi] Live backend request fallback:', err.message);
       return {
         success: true,
         message: 'Verification code sent to your email.',
-        data: { method: 'email', email, devOtp: '482196' },
-        devOtp: '482196',
+        data: { method: 'email', email },
       };
     }
   },
@@ -74,13 +69,6 @@ export const authApi = {
     } catch (err: any) {
       if (err.message && !err.message.includes('fetch') && !err.message.includes('Network') && !err.message.includes('timeout') && !err.message.includes('starting up')) {
         throw err;
-      }
-      if (otp.length === 6) {
-        return {
-          success: true,
-          message: 'Email verified successfully',
-          data: { verified: true, email, verificationToken: `vtok_demo_${Date.now()}` },
-        };
       }
       throw err;
     }
@@ -105,29 +93,26 @@ export const authApi = {
       }
       return {
         ...res.data,
-        devOtp: res.data?.data?.devOtp || res.data?.devOtp,
         data: {
           ...(res.data?.data || {}),
-          botUrl: res.data?.data?.botUrl || 'https://t.me/ArdabMarketAuthBot',
-          botUsername: res.data?.data?.botUsername || 'ArdabMarketAuthBot',
+          botUrl: res.data?.data?.botUrl || 'https://t.me/Ardab_market_bot',
+          botUsername: res.data?.data?.botUsername || 'Ardab_market_bot',
         },
       };
     } catch (err: any) {
       if (err.message && !err.message.includes('fetch') && !err.message.includes('Network') && !err.message.includes('timeout') && !err.message.includes('starting up')) {
         throw err;
       }
-      console.warn('[authApi] Live Telegram request fallback to demo OTP:', err.message);
+      console.warn('[authApi] Live Telegram request fallback:', err.message);
       return {
         success: true,
         message: 'Your verification code has been generated. Open Ardab Telegram Bot to receive your code.',
         data: {
           method: 'telegram',
           phone,
-          botUsername: 'ArdabMarketAuthBot',
-          botUrl: 'https://t.me/ArdabMarketAuthBot',
-          devOtp: '839214',
+          botUsername: 'Ardab_market_bot',
+          botUrl: 'https://t.me/Ardab_market_bot',
         },
-        devOtp: '839214',
       };
     }
   },
@@ -405,7 +390,6 @@ export const authApi = {
       return {
         success: true,
         message: 'If an account exists, a 6-digit verification code has been dispatched.',
-        devOtp: '654321',
       };
     }
   },
