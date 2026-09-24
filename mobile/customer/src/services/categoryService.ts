@@ -4,7 +4,7 @@
 // Provides unified hierarchical category data from backend / catalog API
 // with resilient fallback to verified Ethiopian marketplace category tree.
 
-import { Platform } from 'react-native';
+import { API_CONFIG, apiFetch } from '@/constants/api';
 
 export interface CategoryNode {
   id: string;
@@ -20,18 +20,6 @@ export interface CategoryNode {
   featured?: boolean;
   children: CategoryNode[];
 }
-
-// Dynamic API base URL based on environment/platform
-const getApiBaseUrl = (): string => {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
-  }
-  return 'http://localhost:5000/api';
-};
-
-const API_BASE = getApiBaseUrl();
-
-// Pre-seeded comprehensive 3-level Ethiopian Marketplace Category Hierarchy
 export const DEFAULT_CATEGORY_TREE: CategoryNode[] = [
   {
     id: 'cat-groceries',
@@ -349,10 +337,9 @@ export const categoryService = {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/customer/catalog/categories/tree`);
-      if (res.ok) {
-        const json = await res.json();
-        const rawTree = json.data || json;
+      const res = await apiFetch('/customer/catalog/categories/tree');
+      if (res.ok && res.data) {
+        const rawTree = res.data.data || res.data;
         if (Array.isArray(rawTree) && rawTree.length > 0) {
           const mapNode = (node: any): CategoryNode => ({
             id: node.id,

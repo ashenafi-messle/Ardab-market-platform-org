@@ -1,9 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Image, Text } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Radius, Typography, Spacing } from '@/theme';
 import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/constants/mockData';
+import { Product } from '@/types';
+import { productService } from '@/services/productService';
 import { useApp } from '@/store';
 import { AppHeader, Chip } from '@/components/common';
 import { ProductGrid } from '@/components/product';
@@ -15,19 +17,31 @@ export default function CategoryDetailScreen() {
 
   const category = MOCK_CATEGORIES.find((c) => c.id === id) || MOCK_CATEGORIES[0];
   const [selectedSubId, setSelectedSubId] = useState<string | null>(null);
+  const [liveProducts, setLiveProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    if (id) {
+      productService.fetchProducts({ categoryId: id }).then((items) => {
+        if (items && items.length > 0) {
+          setLiveProducts(items);
+        }
+      });
+    }
+  }, [id]);
 
   const displayName = language === 'am' && category.nameAmharic ? category.nameAmharic : category.name;
 
   const categoryProducts = useMemo(() => {
-    return MOCK_PRODUCTS.filter((p) => {
-      const matchesCat = p.categoryId === category.id;
+    const sourceList = liveProducts.length > 0 ? liveProducts : MOCK_PRODUCTS;
+    return sourceList.filter((p) => {
+      const matchesCat = p.categoryId === category.id || (liveProducts.length > 0 && p.categoryId === id);
       if (!matchesCat) return false;
       if (selectedSubId) {
         return p.subcategoryId === selectedSubId;
       }
       return true;
     });
-  }, [category.id, selectedSubId]);
+  }, [category.id, id, selectedSubId, liveProducts]);
 
   return (
     <SafeAreaView style={styles.safeArea}>

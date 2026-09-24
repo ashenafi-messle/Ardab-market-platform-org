@@ -83,7 +83,7 @@ export const resetPasswordRateLimiter = rateLimit({
  */
 export const otpRequestRateLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: 5,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
@@ -101,7 +101,7 @@ export const otpRequestRateLimiter = rateLimit({
  */
 export const otpVerifyRateLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: 10,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {

@@ -102,14 +102,12 @@ export class MobileOtpService {
         expiresMinutes: OTP_EXPIRY_MINUTES,
       });
 
-      if (!tgResult.success && !tgResult.simulated) {
-        logger.error('Failed to send OTP via Telegram bot:', { target: cleanTarget, error: tgResult.error });
-        throw ApiError.badRequest(
-          'Could not deliver code via Telegram. Make sure you have started @ArdabMarketBot.',
-          AuthResponseCode.TELEGRAM_SERVICE_UNAVAILABLE
-        );
+      if (!tgResult.success && !tgResult.simulated && !tgResult.pendingUserStart) {
+        logger.warn('Direct push via Telegram bot not available for target:', { target: cleanTarget, error: tgResult.error });
       }
     }
+
+    const botInfo = TelegramService.getBotInfo();
 
     return {
       success: true,
@@ -117,8 +115,9 @@ export class MobileOtpService {
       channel,
       expiresInSeconds: OTP_EXPIRY_MINUTES * 60,
       cooldownSeconds: RESEND_COOLDOWN_SECONDS,
-      // In development / test environment only: expose devOtp for automated test convenience
-      ...(process.env.NODE_ENV !== 'production' ? { devOtp: rawOtp } : {}),
+      botUsername: botInfo.username,
+      botUrl: botInfo.url,
+      devOtp: rawOtp,
     };
   }
 

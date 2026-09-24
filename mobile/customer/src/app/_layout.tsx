@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { AppProvider, useApp, AuthProvider, useAuth } from '@/store';
 import { Colors } from '@/theme';
+import { wakeBackendServer } from '@/constants/api';
 
 // Keep the splash screen visible while assets/fonts load
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -42,6 +43,9 @@ function NavigationStack() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    wakeBackendServer().catch(() => {});
+  }, []);
 
   return (
     <SafeAreaProvider>

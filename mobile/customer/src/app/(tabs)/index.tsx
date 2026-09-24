@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography, Radius } from '@/theme';
 import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/constants/mockData';
 import { Product, Category } from '@/types';
+import { productService } from '@/services/productService';
 import { useApp } from '@/store';
 import { t } from '@/localization';
 import {
@@ -52,18 +53,26 @@ export default function HomeScreen() {
   const loadData = async () => {
     try {
       setErrorState(null);
-      // In this phase mock/cached data is loaded reliably without blocking
-      setCategories(MOCK_CATEGORIES);
-      setAllProducts(MOCK_PRODUCTS);
+      setLoadingProducts(true);
+      const fetched = await productService.fetchProducts({ limit: 20 });
+      if (fetched && fetched.length > 0) {
+        setAllProducts(fetched);
+      }
     } catch {
       setErrorState(t('errors.general'));
+    } finally {
+      setLoadingProducts(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadData();
-    setTimeout(() => setRefreshing(false), 600);
+    setRefreshing(false);
   };
 
   return (

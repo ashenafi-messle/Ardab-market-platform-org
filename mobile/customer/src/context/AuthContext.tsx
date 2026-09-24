@@ -94,7 +94,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (!liveUser) {
         // Attempt session refresh if /me failed (token expired or need rotation)
-        const refreshed = await authApi.refresh(storedToken);
+        const storedRefreshToken = await secureStorage.getRefreshToken();
+        const refreshed = await authApi.refresh(storedRefreshToken || storedToken);
         if (refreshed) {
           activeToken = refreshed.token;
           liveUser = refreshed.user;

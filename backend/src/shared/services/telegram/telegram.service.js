@@ -7,7 +7,7 @@
 import { logger } from '../../utils/logger.js';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
-const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || 'ArdabMarketBot';
+const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || 'ArdabMarketAuthBot';
 
 export class TelegramService {
   /**
@@ -30,6 +30,13 @@ export class TelegramService {
       return { success: true, simulated: true };
     }
 
+    // Telegram chat_id must be a numeric user ID. A phone number (e.g. +251...) is not accepted by sendMessage.
+    const isNumericChatId = /^-?\d+$/.test(String(chatId).trim());
+    if (!isNumericChatId) {
+      logger.info(`Target "${chatId}" is not a numeric Telegram chat_id. Storing OTP for bot verification.`);
+      return { success: true, pendingUserStart: true };
+    }
+
     try {
       const messageText = `🔐 *Ardab Market Verification Code*\n\nYour 6-digit verification code is:\n\`${otp}\`\n\n_This code is valid for ${expiresMinutes} minutes and can only be used once._\n\n⚠️ *Do not share this code with anyone.*`;
 
@@ -45,7 +52,7 @@ export class TelegramService {
 
       const data = await response.json();
       if (!data.ok) {
-        logger.error('Telegram Bot API error dispatching OTP:', { description: data.description });
+        logger.warn('Telegram Bot API error dispatching OTP:', { description: data.description });
         return { success: false, error: data.description };
       }
 

@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing } from '@/theme';
 import { MOCK_PRODUCTS } from '@/constants/mockData';
+import { Product } from '@/types';
+import { productService } from '@/services/productService';
 import { SearchBar, Chip } from '@/components/common';
 import { ProductGrid } from '@/components/product';
 import { useApp } from '@/store';
@@ -14,12 +16,21 @@ export default function SearchScreen() {
   const router = useRouter();
   const { language } = useApp();
   const [query, setQuery] = useState('');
+  const [liveProducts, setLiveProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [recentSearches, setRecentSearches] = useState([
     'Teff Magna 25kg',
     'Yirgacheffe coffee',
     'Habesha Kemis',
     'Electric Mitad',
   ]);
+
+  useEffect(() => {
+    productService.fetchProducts().then((items) => {
+      if (items && items.length > 0) {
+        setLiveProducts(items);
+      }
+    });
+  }, []);
 
   const popularSearches = [
     'Teff Magna',
@@ -34,14 +45,15 @@ export default function SearchScreen() {
   const searchResults = useMemo(() => {
     if (!query.trim()) return [];
     const q = query.toLowerCase().trim();
-    return MOCK_PRODUCTS.filter(
+    return liveProducts.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.categoryName.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
+        (p.nameAmharic && p.nameAmharic.includes(q)) ||
         (p.origin && p.origin.toLowerCase().includes(q))
     );
-  }, [query]);
+  }, [query, liveProducts]);
 
   const handleSearchSubmit = () => {
     if (query.trim() && !recentSearches.includes(query.trim())) {

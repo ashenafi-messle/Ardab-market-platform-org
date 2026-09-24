@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { MOCK_PRODUCTS } from '@/constants/mockData';
+import { Product } from '@/types';
+import { productService } from '@/services/productService';
 import { useApp } from '@/store';
 import { t, formatPrice } from '@/utils/i18n';
 import { ProductRating, DiscountBadge, ProductCard } from '@/components/product';
@@ -26,7 +28,18 @@ export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isInWishlist, toggleWishlist, addToCart } = useApp();
 
-  const product = MOCK_PRODUCTS.find((p) => p.id === id) || MOCK_PRODUCTS[0];
+  const [product, setProduct] = useState<Product>(() => {
+    return MOCK_PRODUCTS.find((p) => p.id === id) || MOCK_PRODUCTS[0];
+  });
+
+  useEffect(() => {
+    if (id) {
+      productService.fetchProductById(id).then((found) => {
+        if (found) setProduct(found);
+      });
+    }
+  }, [id]);
+
   const isFavorite = isInWishlist(product.id);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
