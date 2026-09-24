@@ -37,6 +37,10 @@ export class ApiError extends Error {
     return new ApiError(message, 409, code);
   }
 
+  static tooManyRequests(message = 'Too many requests', code = 'TOO_MANY_REQUESTS') {
+    return new ApiError(message, 429, code);
+  }
+
   static internal(message = 'Internal server error', code = 'INTERNAL_SERVER_ERROR') {
     return new ApiError(message, 500, code);
   }
@@ -50,13 +54,16 @@ export class ApiError extends Error {
  * Standard API Response Builder
  */
 export class ApiResponse {
-  static success(res, data = null, message = null, statusCode = 200) {
+  static success(res, data = null, message = null, statusCode = 200, meta = null) {
     const payload = {
       success: true,
       data,
     };
     if (message) {
       payload.message = message;
+    }
+    if (meta && typeof meta === 'object') {
+      Object.assign(payload, meta);
     }
     return res.status(statusCode).json(payload);
   }
@@ -83,6 +90,8 @@ export class ApiResponse {
     }
     return res.status(statusCode).json({
       success: false,
+      code,
+      message,
       error: errorPayload,
     });
   }

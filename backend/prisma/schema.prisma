@@ -762,6 +762,7 @@ model Customer {
   deliveryZone       String?
   status             CustomerStatus             @default(ACTIVE)
   verificationStatus CustomerVerificationStatus @default(PENDING)
+  telegramUserId     String?                    @unique
   lastActivityAt     DateTime?
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
@@ -775,16 +776,64 @@ model Customer {
   wishlistItems      CustomerWishlistItem[]
   supportTickets     SupportTicket[]
   feedbacks          Feedback[]
+  mobileSessions     CustomerMobileSession[]
 
   @@index([customerCode])
   @@index([phone])
   @@index([email])
+  @@index([telegramUserId])
   @@index([city])
   @@index([status])
   @@index([verificationStatus])
   @@index([createdAt])
   @@index([lastActivityAt])
   @@map("customers")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Mobile Active Sessions & Refresh Tokens
+// ------------------------------------------------------------------------------
+
+model CustomerMobileSession {
+  id               String        @id @default(uuid())
+  customerId       String
+  refreshTokenHash String        @unique
+  deviceInfo       String?
+  status           SessionStatus @default(ACTIVE)
+  expiresAt        DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  customer         Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("customer_mobile_sessions")
+}
+
+// ------------------------------------------------------------------------------
+// Customer Mobile One-Time Passwords (OTP) & Verification
+// ------------------------------------------------------------------------------
+
+model CustomerMobileOtp {
+  id         String     @id @default(uuid())
+  target     String     // Email address or E.164 phone number
+  channel    String     // 'EMAIL' | 'TELEGRAM'
+  codeHash   String     // SHA-256 hashed 6-digit OTP
+  city       String     @default("Gondar")
+  purpose    OtpPurpose @default(EMAIL_VERIFICATION)
+  attempts   Int        @default(0)
+  isVerified Boolean    @default(false)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([target, channel, purpose])
+  @@index([expiresAt])
+  @@map("customer_mobile_otps")
 }
 
 // ------------------------------------------------------------------------------

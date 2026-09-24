@@ -50,8 +50,16 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const setLang = (newLang: SupportedLanguage) => {
     setLangState(newLang);
-    localStorage.setItem('ardab_customer_lang', newLang);
-    document.documentElement.lang = newLang;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('ardab_customer_lang', newLang);
+      } catch {
+        // storage fallback
+      }
+      if (document?.documentElement) {
+        document.documentElement.lang = newLang;
+      }
+    }
   };
 
   // Clean human fallback dictionary to guarantee zero raw underscores in visible UI
@@ -454,7 +462,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <LanguageContext.Provider value={{ lang, language: lang, setLang, setLanguage: setLang, t }}>
-      {children}
+      <div key={lang} style={{ display: 'contents' }}>
+        {children}
+      </div>
     </LanguageContext.Provider>
   );
 }

@@ -36,6 +36,7 @@ import supportRoutes from './admin/routes/support.routes.js';
 import feedbackRoutes from './admin/routes/feedback.routes.js';
 import securityRoutes from './admin/routes/security.routes.js';
 import customerRouter from './customer/routes/index.js';
+import customerMobileRouter from './customer-mobile/routes/index.js';
 import { getHealth, getLive, getReady } from './admin/controllers/health.controller.js';
 
 export function createApp() {
@@ -143,9 +144,13 @@ export function createApp() {
   app.use('/api/security', securityRoutes);
   app.use('/api/v1/security', securityRoutes);
 
-  // Customer Mobile App Routes
+  // Customer Web App Routes
   app.use('/api/customer', customerRouter);
   app.use('/api/v1/customer', customerRouter);
+
+  // Customer Mobile App Routes (Isolated customer-mobile domain)
+  app.use('/api/customer-mobile', customerMobileRouter);
+  app.use('/api/v1/customer-mobile', customerMobileRouter);
   // app.use('/api/seller', sellerRouter);
   // app.use('/api/delivery', deliveryRouter);
 
