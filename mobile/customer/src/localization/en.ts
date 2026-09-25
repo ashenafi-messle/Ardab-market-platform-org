@@ -50,6 +50,7 @@ export const en = {
   'lang.shortAm': 'አማ',
 
   // Home
+  'home.quickMenu': 'Quick Menu',
   'home.searchPlaceholder': 'Search products, brands, groceries...',
   'home.deliveryTo': 'Deliver to',
   'home.heroTitle': 'Discover More. Shop Smarter.',
@@ -333,6 +334,8 @@ export const en = {
   'auth.accountCreated': 'Account created successfully!',
   'auth.verificationSent': 'Verification email sent',
   'auth.logout': 'Logout',
+  'auth.signedOutSuccess': 'You have been signed out.',
+  'auth.signingOut': 'Signing out...',
 
   // Customer Support
   'support.title': 'Customer Support',

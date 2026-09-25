@@ -218,19 +218,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /**
    * Explicit Sign Out
-   * Terminates backend session and purges device authentication credentials
+   * Safely terminates backend session, revokes refresh token, and unconditionally
+   * purges device authentication credentials and active in-memory state.
    */
   const logout = async () => {
     try {
-      if (token) {
-        authApi.logout(token).catch(() => {});
+      setIsLoading(true);
+      const activeToken = token;
+      if (activeToken) {
+        try {
+          await authApi.logout(activeToken);
+        } catch (apiErr) {
+          console.warn('[AuthContext] Backend logout API failed, continuing local session purge:', apiErr);
+        }
       }
-      await secureStorage.clearAllSession();
     } catch {
-      // ignore
+      // Ignore network or unexpected errors to ensure local session is always destroyed
+    } finally {
+      await secureStorage.clearAllSession();
+      setUser(null);
+      setToken(null);
+      setIsLoading(false);
     }
-    setUser(null);
-    setToken(null);
   };
 
   /**

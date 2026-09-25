@@ -22,7 +22,7 @@ interface AppContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   login: (emailOrPhone: string) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (data: Partial<UserProfile>) => void;
 
   // Cart
@@ -100,8 +100,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     auth.login(emailOrPhone, 'password123').catch(() => {});
   };
 
-  const logout = () => {
-    auth.logout();
+  const logout = async () => {
+    await auth.logout();
+    // Clear customer-specific cached state from memory
+    setCartItems([]);
+    setOrders([]);
   };
 
   const updateUser = (data: Partial<UserProfile>) => {

@@ -20,13 +20,15 @@ export interface ProductCardProps {
   product: Product;
   onPress: () => void;
   layout?: 'grid' | 'horizontal';
+  cardWidth?: number;
   style?: ViewStyle;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({
+export const ProductCardComponent: React.FC<ProductCardProps> = ({
   product,
   onPress,
   layout = 'grid',
+  cardWidth,
   style,
 }) => {
   const { isInWishlist, toggleWishlist, addToCart } = useApp();
@@ -37,11 +39,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     addToCart(product, 1);
   };
 
+  const handleToggleWishlist = (e?: any) => {
+    e?.stopPropagation?.();
+    toggleWishlist(product);
+  };
+
   if (layout === 'horizontal') {
     return (
       <AnimatedPressable
         scaleTo={0.97}
         onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
         style={[styles.horizontalCard, style]}>
         <View style={styles.horizontalImageContainer}>
           <Image
@@ -65,10 +74,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   {product.seller.name}
                 </Text>
               </View>
-            ) : null}
+            ) : <View />}
             <WishlistButton
               isFavorite={isFavorite}
-              onPress={() => toggleWishlist(product)}
+              onPress={handleToggleWishlist}
               size={18}
               style={styles.wishlistMini}
             />
@@ -96,6 +105,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleAddToCart}
+              accessibilityRole="button"
+              accessibilityLabel={t('product.addToCart')}
               style={styles.addToCartMini}>
               <Ionicons name="cart-outline" size={16} color={Colors.textInverse} />
               <Text style={styles.addToCartMiniText}>{t('product.addToCart')}</Text>
@@ -110,8 +121,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     <AnimatedPressable
       scaleTo={0.96}
       onPress={onPress}
-      style={[styles.gridCard, style]}>
-      {/* Top Image area */}
+      accessibilityRole="button"
+      accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
+      style={[
+        styles.gridCard,
+        cardWidth ? { width: cardWidth } : { flex: 1 },
+        style,
+      ]}>
+      {/* Top Image area with consistent 1:1 Aspect Ratio */}
       <View style={styles.imageContainer}>
         <Image
           source={{ uri: product.images[0] }}
@@ -128,14 +145,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {product.origin ? (
           <View style={styles.originTag}>
             <Ionicons name="location" size={10} color={Colors.textInverse} />
-            <Text style={styles.originText}>{product.origin.split('/')[0].trim()}</Text>
+            <Text style={styles.originText} numberOfLines={1}>
+              {product.origin.split('/')[0].trim()}
+            </Text>
           </View>
         ) : null}
 
         <View style={styles.wishlistBtnWrapper}>
           <WishlistButton
             isFavorite={isFavorite}
-            onPress={() => toggleWishlist(product)}
+            onPress={handleToggleWishlist}
             size={18}
           />
         </View>
@@ -173,6 +192,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={handleAddToCart}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('product.addToCart')} ${product.name}`}
           style={styles.addToCartButton}>
           <Ionicons name="cart-outline" size={15} color={Colors.textInverse} />
           <Text style={styles.addToCartText}>+ {t('product.addToCart')}</Text>
@@ -181,6 +202,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </AnimatedPressable>
   );
 };
+
+export const ProductCard = React.memo(ProductCardComponent);
 
 const styles = StyleSheet.create({
   // Grid Card
@@ -191,14 +214,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderLight,
     overflow: 'hidden',
     ...Shadows.sm,
-    flex: 1,
-    minWidth: 155,
   },
   imageContainer: {
     width: '100%',
-    height: 155,
+    aspectRatio: 1,
     backgroundColor: Colors.surface,
     position: 'relative',
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
@@ -206,12 +228,13 @@ const styles = StyleSheet.create({
   },
   discountTag: {
     position: 'absolute',
-    top: Spacing.sm,
-    left: Spacing.sm,
+    top: Spacing.xs + 2,
+    left: Spacing.xs + 2,
     backgroundColor: Colors.ardabRed,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.xs,
+    zIndex: 2,
   },
   discountText: {
     color: Colors.textInverse,
@@ -229,6 +252,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.xs,
+    maxWidth: '75%',
+    zIndex: 2,
   },
   originText: {
     color: Colors.textInverse,
@@ -237,12 +262,12 @@ const styles = StyleSheet.create({
   },
   wishlistBtnWrapper: {
     position: 'absolute',
-    top: Spacing.sm,
-    right: Spacing.sm,
+    top: Spacing.xs + 2,
+    right: Spacing.xs + 2,
+    zIndex: 3,
   },
   body: {
-    padding: Spacing.sm + 2,
-    flex: 1,
+    padding: Spacing.sm,
     justifyContent: 'space-between',
   },
   verifiedRow: {
@@ -271,7 +296,7 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     gap: Spacing.xs,
     flexWrap: 'wrap',
-    marginVertical: 4,
+    marginVertical: 2,
   },
   currentPrice: {
     fontSize: Typography.fontSize.base,
@@ -292,6 +317,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     gap: 4,
     marginTop: 6,
+    minHeight: 34,
   },
   addToCartText: {
     color: Colors.textInverse,

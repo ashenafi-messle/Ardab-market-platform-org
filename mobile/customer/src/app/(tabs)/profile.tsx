@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Alert, Platform, ToastAndroid, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing } from '@/theme';
@@ -14,8 +14,11 @@ export default function ProfileScreen() {
     useApp();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogout = () => {
+    if (isLoggingOut) return;
+
     Alert.alert(
       t('auth.signOutConfirmTitle'),
       t('auth.confirmSignOut'),
@@ -25,8 +28,25 @@ export default function ProfileScreen() {
           text: t('profile.logout'),
           style: 'destructive',
           onPress: async () => {
-            await logout();
-            router.replace('/(auth)/login' as any);
+            if (isLoggingOut) return;
+            setIsLoggingOut(true);
+            try {
+              await logout();
+              if (Platform.OS === 'android') {
+                ToastAndroid.show(t('auth.signedOutSuccess') || 'You have been signed out.', ToastAndroid.SHORT);
+              } else {
+                Alert.alert(t('common.appName'), t('auth.signedOutSuccess') || 'You have been signed out.');
+              }
+              // Reset navigation state so back button cannot navigate back to authenticated screens
+              router.dismissAll();
+              router.replace('/(auth)/login' as any);
+            } catch (err) {
+              console.warn('[ProfileScreen] Logout failed, proceeding to login:', err);
+              router.dismissAll();
+              router.replace('/(auth)/login' as any);
+            } finally {
+              setIsLoggingOut(false);
+            }
           },
         },
       ]
@@ -114,8 +134,8 @@ export default function ProfileScreen() {
         {isAuthenticated ? (
           <View style={styles.logoutWrapper}>
             <ProfileMenuItem
-              icon="log-out-outline"
-              title={t('profile.logout')}
+              icon={isLoggingOut ? 'hourglass-outline' : 'log-out-outline'}
+              title={isLoggingOut ? (t('auth.signingOut') || 'Signing out...') : t('profile.logout')}
               onPress={handleLogout}
               isDestructive
               showChevron={false}

@@ -52,6 +52,7 @@ export const am: Record<TranslationKey, string> = {
   'lang.shortAm': 'አማ',
 
   // Home
+  'home.quickMenu': 'ፈጣን ማውጫ',
   'home.searchPlaceholder': 'ምርቶችን ይፈልጉ...',
   'home.deliveryTo': 'የማድረሻ ቦታ',
   'home.heroTitle': 'ተጨማሪ ያግኙ። በብልሃት ይግዙ።',
@@ -335,6 +336,8 @@ export const am: Record<TranslationKey, string> = {
   'auth.accountCreated': 'መለያዎ በተሳካ ሁኔታ ተፈጥሯል!',
   'auth.verificationSent': 'የማረጋገጫ ኢሜይል ተልኳል',
   'auth.logout': 'ውጣ',
+  'auth.signedOutSuccess': 'ከመለያዎ በተሳካ ሁኔታ ወጥተዋል',
+  'auth.signingOut': 'በመውጣት ላይ...',
 
   // Customer Support
   'support.title': 'የደንበኞች ድጋፍ',

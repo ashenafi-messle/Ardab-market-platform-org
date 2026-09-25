@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Image, Text } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { View, StyleSheet, ScrollView, Image, Text, TouchableOpacity } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing } from '@/theme';
 import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/constants/mockData';
 import { Product } from '@/types';
@@ -12,6 +13,7 @@ import { ProductGrid } from '@/components/product';
 import { t } from '@/localization';
 
 export default function CategoryDetailScreen() {
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { language } = useApp();
 
@@ -45,7 +47,19 @@ export default function CategoryDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <AppHeader title={displayName} showBack />
+      <AppHeader
+        title={displayName}
+        showBack
+        rightAction={
+          <TouchableOpacity
+            onPress={() => router.push('/products/search' as any)}
+            accessibilityRole="button"
+            accessibilityLabel={t('nav.search') || 'Search'}
+            style={styles.searchActionBtn}>
+            <Ionicons name="search-outline" size={20} color={Colors.text} />
+          </TouchableOpacity>
+        }
+      />
 
       {/* Subcategory Filter Chips */}
       <View style={styles.chipsBar}>
@@ -97,5 +111,15 @@ const styles = StyleSheet.create({
   chipsScroll: {
     paddingHorizontal: Spacing.lg,
     gap: Spacing.xs,
+  },
+  searchActionBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
 });
