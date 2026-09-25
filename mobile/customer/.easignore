@@ -1,0 +1,14 @@
+node_modules/
+.git/
+.github/
+.expo/
+dist/
+build/
+coverage/
+*.log
+*.zip
+*.tar
+.env
+.env.*
+README.md
+docs/
