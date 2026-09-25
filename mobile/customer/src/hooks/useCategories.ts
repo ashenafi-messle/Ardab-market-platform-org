@@ -8,19 +8,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { CategoryNode, categoryService, DEFAULT_CATEGORY_TREE } from '@/services/categoryService';
 
 export function useCategories() {
-  const [categoryTree, setCategoryTree] = useState<CategoryNode[]>(DEFAULT_CATEGORY_TREE);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [categoryTree, setCategoryTree] = useState<CategoryNode[]>(
+    () => categoryService.getCachedTree() || DEFAULT_CATEGORY_TREE
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(!categoryService.hasCachedTree());
   const [error, setError] = useState<string | null>(null);
 
   const loadCategories = useCallback(async (forceRefresh = false) => {
-    try {
+    // Only show loading if cache is empty or user explicitly requested refresh
+    if (forceRefresh || !categoryService.hasCachedTree()) {
       setIsLoading(true);
+    }
+    try {
       setError(null);
       const data = await categoryService.getCategoryTree(forceRefresh);
       setCategoryTree(data);
     } catch (err: any) {
       setError(err?.message || 'Failed to load categories');
-      setCategoryTree(DEFAULT_CATEGORY_TREE);
     } finally {
       setIsLoading(false);
     }

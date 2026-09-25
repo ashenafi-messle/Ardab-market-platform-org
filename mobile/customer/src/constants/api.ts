@@ -1,25 +1,40 @@
 // ==============================================================================
-// Ardab Market - Mobile API Configuration & Deployed Backend Client
+// Ardab Market - Centralized High-Performance Mobile API Client
 // ==============================================================================
-// Configured to connect directly to the deployed Render backend:
-// https://ardab-market-platform-org.onrender.com
-// Includes cold-start resilience, background wake ping, and retry backoff.
+// - Centralized API client with base URL from NEXT_PUBLIC_API_URL / EXPO_PUBLIC_API_URL
+// - Automatic authentication header attachment via secureStorage
+// - In-flight request deduplication (request coalescing) to eliminate duplicate network calls
+// - Safe retry logic ONLY for read-only GET requests (never duplicate mutations/orders)
+// - Fast timeout (12s) to prevent frozen screens with AbortController cancellation
+// - Integrated performance instrumentation
+// ==============================================================================
+
+import { secureStorage } from '@/services/secureStorage';
+import { perfMonitor } from '@/utils/perfMonitor';
+
+// Resolve base URL from environment (supporting NEXT_PUBLIC_API_URL and EXPO_PUBLIC_API_URL)
+const resolvedApiUrl =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.EXPO_PUBLIC_API_URL ||
+  'https://ardab-market-platform-org.onrender.com/api';
+
+const resolvedRootUrl = resolvedApiUrl.replace(/\/api\/?$/, '');
 
 export const API_CONFIG = {
-  // Deployed Render backend base URL
-  BASE_URL: process.env.EXPO_PUBLIC_API_URL || 'https://ardab-market-platform-org.onrender.com/api',
-  ROOT_URL: 'https://ardab-market-platform-org.onrender.com',
-  // Generous timeout to gracefully accommodate Render free/starter instance cold starts
-  TIMEOUT_MS: 35000,
-  // Retries for transient 502/503/504 gateway wake-up errors
-  MAX_RETRIES: 2,
+  BASE_URL: resolvedApiUrl,
+  ROOT_URL: resolvedRootUrl,
+  DEFAULT_TIMEOUT_MS: 12000,
+  MAX_GET_RETRIES: 2,
 };
 
 let isWarmingUp = false;
 let isServerAwake = false;
 
+// In-flight GET requests map for deduplication / promise coalescing
+const inFlightRequests = new Map<string, Promise<{ ok: boolean; status: number; data: any }>>();
+
 /**
- * Triggers a non-blocking background ping to wake up the Render instance from sleep
+ * Triggers a non-blocking background ping to wake up the server if needed
  */
 export async function wakeBackendServer(): Promise<boolean> {
   if (isServerAwake || isWarmingUp) return isServerAwake;
@@ -27,7 +42,7 @@ export async function wakeBackendServer(): Promise<boolean> {
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timer = setTimeout(() => controller.abort(), 8000);
 
     const res = await fetch(`${API_CONFIG.ROOT_URL}/health`, {
       method: 'GET',
@@ -40,7 +55,7 @@ export async function wakeBackendServer(): Promise<boolean> {
       isServerAwake = true;
     }
   } catch {
-    // Non-critical background ping; silent fallback
+    // Non-critical background ping
   } finally {
     isWarmingUp = false;
   }
@@ -48,72 +63,131 @@ export async function wakeBackendServer(): Promise<boolean> {
   return isServerAwake;
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number;
+  skipAuth?: boolean;
+  skipDeduplication?: boolean;
+}
+
 /**
- * Robust fetch wrapper with timeout, cold-start retry backoff, and JSON parsing
+ * Centralized API fetch wrapper with timeout, token injection, deduplication, and safe retry
  */
 export async function apiFetch<T = any>(
   endpoint: string,
-  options: RequestInit = {},
-  retries = API_CONFIG.MAX_RETRIES
+  options: ApiFetchOptions = {},
+  retries?: number
 ): Promise<{ ok: boolean; status: number; data: T }> {
-  const url = endpoint.startsWith('http') ? endpoint : `${API_CONFIG.BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+  const method = (options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${API_CONFIG.BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT_MS);
-
-    try {
-      const res = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          ...(options.headers || {}),
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-      isServerAwake = true;
-
-      // Handle server waking up (Render 502/503/504 Bad Gateway during instance spin-up)
-      if ([502, 503, 504].includes(res.status) && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)));
-        continue;
-      }
-
-      let parsedData: any = null;
-      const text = await res.text();
-      try {
-        parsedData = text ? JSON.parse(text) : null;
-      } catch {
-        parsedData = { message: text };
-      }
-
-      return {
-        ok: res.ok,
-        status: res.status,
-        data: parsedData as T,
-      };
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-
-      const isTimeout = err.name === 'AbortError';
-      const isNetworkErr = err.message && (err.message.includes('Network') || err.message.includes('fetch'));
-
-      if ((isTimeout || isNetworkErr) && attempt < retries) {
-        // Render cold start retry backoff
-        await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
-        continue;
-      }
-
-      throw new Error(
-        isTimeout
-          ? 'Server is starting up. Please check your connection and try again.'
-          : err.message || 'Unable to communicate with Ardab Market server.'
-      );
+  // In-flight deduplication for identical concurrent GET requests
+  const dedupeKey = `${method}:${url}`;
+  if (isGet && !options.skipDeduplication) {
+    const inFlight = inFlightRequests.get(dedupeKey);
+    if (inFlight) {
+      return inFlight as Promise<{ ok: boolean; status: number; data: T }>;
     }
   }
 
-  throw new Error('Connection timeout. Please try again.');
+  const fetchPromise = (async () => {
+    // Only retry safe GET requests on cold starts / 502/503/504
+    // Never auto-retry state-changing mutations (POST, PUT, DELETE) to prevent duplicate orders/actions!
+    const effectiveRetries = retries !== undefined
+      ? retries
+      : (isGet ? API_CONFIG.MAX_GET_RETRIES : 0);
+
+    const timeoutDuration = options.timeoutMs || API_CONFIG.DEFAULT_TIMEOUT_MS;
+
+    // Attach Bearer token automatically if not explicitly provided
+    let authHeader: Record<string, string> = {};
+    if (!options.skipAuth && (!options.headers || !('Authorization' in (options.headers as any)))) {
+      const storedToken = await secureStorage.getAuthToken();
+      if (storedToken) {
+        authHeader = { Authorization: `Bearer ${storedToken}` };
+      }
+    }
+
+    const stopTimer = perfMonitor.startTimer(`HTTP ${method} ${endpoint}`);
+
+    for (let attempt = 0; attempt <= effectiveRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+
+      // Support external cancellation signal if provided
+      if (options.signal) {
+        options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+
+      try {
+        const res = await fetch(url, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            ...authHeader,
+            ...(options.headers || {}),
+          },
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        isServerAwake = true;
+
+        // Handle server cold start (Render 502/503/504 Bad Gateway during instance spin-up) for GET only
+        if (isGet && [502, 503, 504].includes(res.status) && attempt < effectiveRetries) {
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+
+        let parsedData: any = null;
+        const text = await res.text();
+        try {
+          parsedData = text ? JSON.parse(text) : null;
+        } catch {
+          parsedData = { message: text };
+        }
+
+        stopTimer({ status: res.status, attempt });
+
+        return {
+          ok: res.ok,
+          status: res.status,
+          data: parsedData as T,
+        };
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+
+        const isTimeout = err.name === 'AbortError';
+        const isNetworkErr = err.message && (err.message.includes('Network') || err.message.includes('fetch'));
+
+        if (isGet && (isTimeout || isNetworkErr) && attempt < effectiveRetries) {
+          // Cold start retry backoff for read queries only
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+
+        stopTimer({ error: err.message, isTimeout, attempt });
+
+        throw new Error(
+          isTimeout
+            ? 'Request timed out. Please check your connection.'
+            : err.message || 'Unable to communicate with Ardab Market server.'
+        );
+      }
+    }
+
+    throw new Error('Connection timeout. Please try again.');
+  })();
+
+  if (isGet && !options.skipDeduplication) {
+    inFlightRequests.set(dedupeKey, fetchPromise);
+    fetchPromise.finally(() => {
+      inFlightRequests.delete(dedupeKey);
+    });
+  }
+
+  return fetchPromise;
 }

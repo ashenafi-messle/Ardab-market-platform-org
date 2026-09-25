@@ -9,6 +9,7 @@ import {
   getCustomerCategories,
   getCustomerCategoryTree,
   getCustomerCategoryById,
+  getCustomerCategoryDescendants,
   getCustomerCategoryAttributes,
   getCustomerCities,
   getCustomerSellers,
@@ -32,6 +33,7 @@ router.get('/products/:id', publicApiCache(60), asyncHandler(getCustomerProductD
 router.get('/categories', publicApiCache(300), asyncHandler(getCustomerCategories));
 router.get('/categories/tree', publicApiCache(300), asyncHandler(getCustomerCategoryTree));
 router.get('/categories/:id', publicApiCache(300), asyncHandler(getCustomerCategoryById));
+router.get('/categories/:id/descendants', publicApiCache(300), asyncHandler(getCustomerCategoryDescendants));
 router.get('/categories/:id/attributes', publicApiCache(300), asyncHandler(getCustomerCategoryAttributes));
 router.get('/cities', publicApiCache(600), asyncHandler(getCustomerCities));
 router.get('/sellers', publicApiCache(300), asyncHandler(getCustomerSellers));

@@ -8,6 +8,7 @@ import {
   ViewStyle,
   useWindowDimensions,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,10 +21,13 @@ import { t } from '@/utils/i18n';
 export interface ProductGridProps {
   products: Product[];
   loading?: boolean;
+  loadingMore?: boolean;
   refreshing?: boolean;
   error?: string | null;
   onRefresh?: () => void;
   onRetry?: () => void;
+  onEndReached?: () => void;
+  onEndReachedThreshold?: number;
   headerComponent?: React.ReactElement;
   footerComponent?: React.ReactElement;
   emptyTitle?: string;
@@ -35,10 +39,13 @@ export interface ProductGridProps {
 export const ProductGrid: React.FC<ProductGridProps> = ({
   products,
   loading = false,
+  loadingMore = false,
   refreshing = false,
   error = null,
   onRefresh,
   onRetry,
+  onEndReached,
+  onEndReachedThreshold = 0.4,
   headerComponent,
   footerComponent,
   emptyTitle,
@@ -116,10 +123,25 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
     );
   }
 
+  const keyExtractor = React.useCallback((item: Product) => item.id, []);
+
+  const handleProductPress = React.useCallback((productId: string) => {
+    router.push(`/products/${productId}` as any);
+  }, [router]);
+
+  const renderProductItem = React.useCallback(({ item }: { item: Product }) => (
+    <ProductCard
+      product={item}
+      cardWidth={cardWidth}
+      onPress={() => handleProductPress(item.id)}
+    />
+  ), [cardWidth, handleProductPress]);
+
   return (
     <FlatList
       data={products}
-      keyExtractor={(item) => item.id}
+      keyExtractor={keyExtractor}
+      renderItem={renderProductItem}
       numColumns={2}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={[
@@ -132,10 +154,22 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
         { gap: columnGap, marginBottom: columnGap },
       ]}
       ListHeaderComponent={headerComponent}
-      ListFooterComponent={footerComponent}
+      ListFooterComponent={
+        footerComponent ? (
+          footerComponent
+        ) : loadingMore ? (
+          <View style={styles.loadingMoreFooter}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.loadingMoreText}>{t('common.loading') || 'Loading more...'}</Text>
+          </View>
+        ) : null
+      }
+      onEndReached={onEndReached}
+      onEndReachedThreshold={onEndReachedThreshold}
       initialNumToRender={6}
-      maxToRenderPerBatch={8}
-      windowSize={7}
+      maxToRenderPerBatch={6}
+      windowSize={5}
+      removeClippedSubviews={true}
       refreshControl={
         onRefresh ? (
           <RefreshControl
@@ -169,13 +203,6 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
           ) : null}
         </View>
       }
-      renderItem={({ item }) => (
-        <ProductCard
-          product={item}
-          cardWidth={cardWidth}
-          onPress={() => router.push(`/products/${item.id}` as any)}
-        />
-      )}
     />
   );
 };
@@ -281,5 +308,16 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.semibold,
+  },
+  loadingMoreFooter: {
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: Spacing.xs,
+  },
+  loadingMoreText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
   },
 });

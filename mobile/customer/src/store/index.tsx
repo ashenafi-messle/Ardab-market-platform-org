@@ -3,6 +3,7 @@ import { Product, CartItem, Order, UserProfile, Address } from '@/types';
 import { MOCK_PRODUCTS, MOCK_ORDERS, MOCK_USER, MOCK_ADDRESSES, CITIES } from '@/constants/mockData';
 import { Language, getLanguage, setLanguage as setI18nLanguage, subscribeLanguage, initLanguage, t, formatPrice, TranslationKey } from '@/localization';
 import { useAuth, AuthProvider } from '@/context/AuthContext';
+import { secureStorage } from '@/services/secureStorage';
 
 export { useAuth, AuthProvider };
 
@@ -54,6 +55,11 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const STORAGE_CART_KEY = 'ardab_cart_items';
+const STORAGE_WISHLIST_KEY = 'ardab_wishlist_ids';
+const STORAGE_WISHLIST_MAP_KEY = 'ardab_wishlist_map';
+const STORAGE_ORDERS_KEY = 'ardab_saved_orders';
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLangState] = useState<Language>(getLanguage());
   const [currentCity, setCurrentCity] = useState<string>('Gondar');
@@ -61,6 +67,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'prod-yirgacheffe-coffee',
     'prod-habesha-kemis',
   ]);
+  const [wishlistMap, setWishlistMap] = useState<Record<string, Product>>(() => {
+    const initialMap: Record<string, Product> = {};
+    MOCK_PRODUCTS.forEach((p) => { initialMap[p.id] = p; });
+    return initialMap;
+  });
   const [addresses, setAddresses] = useState<Address[]>(MOCK_ADDRESSES);
   const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
 
@@ -84,10 +95,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const auth = useAuth();
 
+  // Restore persisted state on mount
   useEffect(() => {
     initLanguage().then((saved) => {
       setLangState(saved);
     });
+
+    // Background restore persisted cart, wishlist & orders without blocking UI
+    (async () => {
+      try {
+        const [savedCart, savedWishlistIds, savedWishlistMap, savedOrders] = await Promise.all([
+          secureStorage.getItem(STORAGE_CART_KEY),
+          secureStorage.getItem(STORAGE_WISHLIST_KEY),
+          secureStorage.getItem(STORAGE_WISHLIST_MAP_KEY),
+          secureStorage.getItem(STORAGE_ORDERS_KEY),
+        ]);
+
+        if (savedCart) {
+          const parsed = JSON.parse(savedCart);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCartItems(parsed);
+          }
+        }
+        if (savedWishlistIds) {
+          const parsedIds = JSON.parse(savedWishlistIds);
+          if (Array.isArray(parsedIds)) {
+            setWishlistProductIds(parsedIds);
+          }
+        }
+        if (savedWishlistMap) {
+          const parsedMap = JSON.parse(savedWishlistMap);
+          if (parsedMap && typeof parsedMap === 'object') {
+            setWishlistMap((prev) => ({ ...prev, ...parsedMap }));
+          }
+        }
+        if (savedOrders) {
+          const parsedOrders = JSON.parse(savedOrders);
+          if (Array.isArray(parsedOrders) && parsedOrders.length > 0) {
+            setOrders(parsedOrders);
+          }
+        }
+      } catch {
+        // Silently preserve in-memory defaults
+      }
+    })();
+
     return subscribeLanguage((lang) => setLangState(lang));
   }, []);
 
@@ -102,9 +154,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = async () => {
     await auth.logout();
-    // Clear customer-specific cached state from memory
+    // Clear customer-specific cached state from memory and storage
     setCartItems([]);
     setOrders([]);
+    secureStorage.deleteItem(STORAGE_CART_KEY).catch(() => {});
+    secureStorage.deleteItem(STORAGE_ORDERS_KEY).catch(() => {});
   };
 
   const updateUser = (data: Partial<UserProfile>) => {
@@ -181,18 +235,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const cartDelivery = selectedCartItems.length > 0 ? 150 : 0;
   const cartTotal = cartSubtotal + cartDelivery;
 
-  // Wishlist operations
+  // Automatically sync cart to storage
+  useEffect(() => {
+    if (cartItems.length > 0) {
+      secureStorage.setItem(STORAGE_CART_KEY, JSON.stringify(cartItems)).catch(() => {});
+    }
+  }, [cartItems]);
+
+  // Automatically sync orders to storage
+  useEffect(() => {
+    if (orders.length > 0) {
+      secureStorage.setItem(STORAGE_ORDERS_KEY, JSON.stringify(orders)).catch(() => {});
+    }
+  }, [orders]);
+
+  // Wishlist operations (immediate optimistic update)
   const toggleWishlist = (product: Product) => {
-    setWishlistProductIds((prev) =>
-      prev.includes(product.id)
-        ? prev.filter((id) => id !== product.id)
-        : [...prev, product.id]
-    );
+    const isFav = wishlistProductIds.includes(product.id);
+    const newIds = isFav
+      ? wishlistProductIds.filter((id) => id !== product.id)
+      : [...wishlistProductIds, product.id];
+
+    setWishlistProductIds(newIds);
+
+    setWishlistMap((prev) => {
+      const updated = { ...prev, [product.id]: product };
+      secureStorage.setItem(STORAGE_WISHLIST_MAP_KEY, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+
+    secureStorage.setItem(STORAGE_WISHLIST_KEY, JSON.stringify(newIds)).catch(() => {});
   };
 
   const isInWishlist = (productId: string) => wishlistProductIds.includes(productId);
 
-  const wishlistProducts = MOCK_PRODUCTS.filter((p) => wishlistProductIds.includes(p.id));
+  // Derives full product list for wishlist from both live backend cache and mock fallback
+  const wishlistProducts = wishlistProductIds
+    .map((id) => wishlistMap[id] || MOCK_PRODUCTS.find((p) => p.id === id))
+    .filter(Boolean) as Product[];
 
   // Orders
   const placeOrder = (paymentMethod: string, address: Address): Order => {

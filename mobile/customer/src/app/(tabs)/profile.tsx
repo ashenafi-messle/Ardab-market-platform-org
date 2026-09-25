@@ -14,43 +14,35 @@ export default function ProfileScreen() {
     useApp();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const performLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(t('auth.signedOutSuccess') || 'You have been signed out.', ToastAndroid.SHORT);
+      }
+    } catch (err) {
+      console.warn('[ProfileScreen] Logout error:', err);
+    } finally {
+      setIsLoggingOut(false);
+      setLogoutModalVisible(false);
+      try {
+        if (router.canDismiss()) {
+          router.dismissAll();
+        }
+      } catch {}
+      // Unconditionally redirect to sign in / login screen
+      router.replace('/(auth)/login' as any);
+    }
+  };
 
   const handleLogout = () => {
     if (isLoggingOut) return;
-
-    Alert.alert(
-      t('auth.signOutConfirmTitle'),
-      t('auth.confirmSignOut'),
-      [
-        { text: t('auth.cancel'), style: 'cancel' },
-        {
-          text: t('profile.logout'),
-          style: 'destructive',
-          onPress: async () => {
-            if (isLoggingOut) return;
-            setIsLoggingOut(true);
-            try {
-              await logout();
-              if (Platform.OS === 'android') {
-                ToastAndroid.show(t('auth.signedOutSuccess') || 'You have been signed out.', ToastAndroid.SHORT);
-              } else {
-                Alert.alert(t('common.appName'), t('auth.signedOutSuccess') || 'You have been signed out.');
-              }
-              // Reset navigation state so back button cannot navigate back to authenticated screens
-              router.dismissAll();
-              router.replace('/(auth)/login' as any);
-            } catch (err) {
-              console.warn('[ProfileScreen] Logout failed, proceeding to login:', err);
-              router.dismissAll();
-              router.replace('/(auth)/login' as any);
-            } finally {
-              setIsLoggingOut(false);
-            }
-          },
-        },
-      ]
-    );
+    setLogoutModalVisible(true);
   };
 
   return (
@@ -188,6 +180,33 @@ export default function ProfileScreen() {
         </Text>
         <Text style={styles.aboutVersion}>{t('profile.version')}</Text>
       </Modal>
+
+      {/* Sign Out Confirmation Modal */}
+      <Modal
+        visible={logoutModalVisible}
+        onClose={() => !isLoggingOut && setLogoutModalVisible(false)}
+        title={t('auth.signOutConfirmTitle') || t('profile.logout')}>
+        <Text style={styles.modalDesc}>
+          {t('auth.confirmSignOut') || t('profile.logoutConfirm') || 'Are you sure you want to sign out?'}
+        </Text>
+        <View style={styles.logoutModalActions}>
+          <AppButton
+            title={t('auth.cancel') || 'Cancel'}
+            variant="outline"
+            disabled={isLoggingOut}
+            onPress={() => setLogoutModalVisible(false)}
+            style={styles.modalActionBtn}
+          />
+          <AppButton
+            title={isLoggingOut ? (t('auth.signingOut') || 'Signing out...') : (t('profile.logout') || 'Sign Out')}
+            variant="danger"
+            loading={isLoggingOut}
+            disabled={isLoggingOut}
+            onPress={performLogout}
+            style={styles.modalActionBtn}
+          />
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -229,6 +248,14 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginBottom: Spacing.lg,
     lineHeight: 20,
+  },
+  logoutModalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  modalActionBtn: {
+    flex: 1,
   },
   langOptions: {
     gap: Spacing.md,

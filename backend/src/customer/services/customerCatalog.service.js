@@ -7,7 +7,7 @@
 
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
-import { getDescendantCategoryIds } from '../../admin/services/category.service.js';
+import { getDescendantCategoryIds, getCategoryPath } from '../../admin/services/category.service.js';
 import { getPublicProductRatingSummaries } from './review.service.js';
 
 /**
@@ -127,14 +127,16 @@ export async function listCustomerProducts(query = {}) {
   }
 
   // Whitelisted Sorting mapping directly to indexed database columns
-  const sortParam = query.sort || query.sortBy || 'createdAt_desc';
+  const sortParam = (query.sort || query.sortBy || 'createdAt_desc').toString();
   let orderBy = { createdAt: 'desc' };
 
   switch (sortParam) {
+    case 'PRICE_LOW':
     case 'price_asc':
     case 'price:asc':
       orderBy = { sellingPrice: 'asc' };
       break;
+    case 'PRICE_HIGH':
     case 'price_desc':
     case 'price:desc':
       orderBy = { sellingPrice: 'desc' };
@@ -147,8 +149,11 @@ export async function listCustomerProducts(query = {}) {
     case 'name:desc':
       orderBy = { name: 'desc' };
       break;
-    case 'newest':
+    case 'RATING':
+    case 'rating':
+    case 'POPULAR':
     case 'popular':
+    case 'newest':
     case 'createdAt_desc':
     default:
       orderBy = { createdAt: 'desc' };
@@ -204,10 +209,14 @@ export async function listCustomerProducts(query = {}) {
   ]);
 
   const ratingSummaries = await getPublicProductRatingSummaries(products.map((product) => product.id));
-  const formattedProducts = products.map((product) => formatCustomerProductCard({
+  let formattedProducts = products.map((product) => formatCustomerProductCard({
     ...product,
     rating: ratingSummaries.get(product.id),
   }));
+
+  if (sortParam === 'rating' || sortParam === 'RATING') {
+    formattedProducts.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0));
+  }
 
   const totalPages = Math.ceil(total / limit) || 1;
 
@@ -220,7 +229,9 @@ export async function listCustomerProducts(query = {}) {
       total,
       totalPages,
       hasNext: page < totalPages,
+      hasNextPage: page < totalPages,
       hasPrev: page > 1,
+      hasPrevPage: page > 1,
     },
   };
 }
@@ -331,6 +342,22 @@ export async function getCustomerProductDetails(productId) {
 
   const ratingSummary = ratingSummaries.get(product.id) || { average: null, count: 0 };
 
+  let categoryPath = [];
+  if (product.category?.id) {
+    try {
+      categoryPath = await getCategoryPath(product.category.id);
+    } catch {
+      categoryPath = [
+        {
+          id: product.category.id,
+          name: product.category.name,
+          slug: product.category.slug,
+          isActive: true,
+        },
+      ];
+    }
+  }
+
   return {
     ...product,
     weight: product.weight !== null && product.weight !== undefined ? Number(product.weight) : null,
@@ -341,6 +368,7 @@ export async function getCustomerProductDetails(productId) {
     averageRating: ratingSummary.average,
     reviewCount: ratingSummary.count,
     ratingCount: ratingSummary.count,
+    categoryPath,
     attributeValues: formattedAttributeValues,
   };
 }

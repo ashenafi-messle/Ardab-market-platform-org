@@ -11,6 +11,7 @@ import {
   listCategories,
   getCategoryTree,
   getCategoryById,
+  getDescendantCategoryIds,
 } from '../../admin/services/category.service.js';
 import { resolveEffectiveCategoryAttributes } from '../../admin/services/categoryAttribute.service.js';
 import { citiesService } from '../../admin/services/cities.service.js';
@@ -44,10 +45,14 @@ export async function getCustomerProductDetails(req, res) {
 
 /**
  * GET /api/customer/catalog/categories
- * Flat category list
+ * Flat category list (supports ?root=true for top-level root categories)
  */
 export async function getCustomerCategories(req, res) {
-  const result = await listCategories({ activeOnly: 'true', ...req.query });
+  const query = { activeOnly: 'true', ...req.query };
+  if (req.query.root === 'true' || req.query.root === true) {
+    query.parentId = null;
+  }
+  const result = await listCategories(query);
   return ApiResponse.success(res, result, 'Categories retrieved');
 }
 
@@ -66,6 +71,19 @@ export async function getCustomerCategoryTree(req, res) {
 export async function getCustomerCategoryById(req, res) {
   const category = await getCategoryById(req.params.id);
   return ApiResponse.success(res, category, 'Category details retrieved');
+}
+
+/**
+ * GET /api/customer/catalog/categories/:id/descendants
+ * Efficient server-side descendant IDs retrieval for category product filtering
+ */
+export async function getCustomerCategoryDescendants(req, res) {
+  const descendantIds = await getDescendantCategoryIds(req.params.id);
+  return ApiResponse.success(res, {
+    categoryId: req.params.id,
+    descendantIds,
+    allCategoryIds: [req.params.id, ...descendantIds],
+  }, 'Category descendants retrieved');
 }
 
 /**

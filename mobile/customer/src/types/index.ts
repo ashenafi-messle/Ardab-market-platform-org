@@ -13,8 +13,48 @@ export interface ProductAttribute {
   options: string[];
 }
 
+export interface CategoryPathItem {
+  id: string;
+  name: string;
+  slug: string;
+  isActive?: boolean;
+}
+
+export interface CategoryTreeNode {
+  id: string;
+  name: string;
+  nameAmharic?: string;
+  slug: string;
+  icon?: string;
+  image?: string;
+  imageUrl?: string;
+  bannerImage?: string;
+  parentId?: string | null;
+  productCount: number;
+  featured?: boolean;
+  children: CategoryTreeNode[];
+}
+
+export interface Pagination {
+  page: number;
+  pageSize?: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasNextPage?: boolean;
+  hasPrev: boolean;
+  hasPrevPage?: boolean;
+}
+
+export interface ProductListResponse {
+  items: Product[];
+  pagination: Pagination;
+}
+
 export interface Product {
   id: string;
+  itemCode?: string;
   name: string;
   nameAmharic?: string;
   description: string;
@@ -22,13 +62,17 @@ export interface Product {
   oldPrice?: number;
   discountPercentage?: number;
   rating: number;
+  averageRating?: number | null;
   reviewCount: number;
+  ratingCount?: number;
   soldCount: number;
   images: string[];
+  primaryImage?: { id?: string; url: string; publicId?: string; isPrimary?: boolean };
   categoryId: string;
   categoryName: string;
   subcategoryId?: string;
   subcategoryName?: string;
+  categoryPath?: CategoryPathItem[];
   seller: Seller;
   stock: number;
   unit?: string; // e.g. 'kg', 'pack', 'piece', 'quintal'
@@ -54,10 +98,13 @@ export interface Category {
   slug: string;
   icon: string;
   image: string;
+  imageUrl?: string;
   bannerImage?: string;
+  parentId?: string | null;
   productCount: number;
   featured?: boolean;
   subcategories: Subcategory[];
+  children?: CategoryTreeNode[];
 }
 
 export interface CartItem {

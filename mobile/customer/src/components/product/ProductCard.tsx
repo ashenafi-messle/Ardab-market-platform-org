@@ -2,17 +2,18 @@ import React from 'react';
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   StyleSheet,
   ViewStyle,
   Platform,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { Product } from '@/types';
 import { useApp } from '@/store';
 import { t, formatPrice } from '@/utils/i18n';
+import { ImagePresets, DEFAULT_BLURHASH } from '@/utils/imageOptimizer';
 import { WishlistButton } from './WishlistButton';
 import { ProductRating } from './ProductRating';
 import { AnimatedPressable } from '../common/AnimatedPressable';
@@ -54,10 +55,13 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
         accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
         style={[styles.horizontalCard, style]}>
         <View style={styles.horizontalImageContainer}>
-          <Image
-            source={{ uri: product.images[0] }}
+          <ExpoImage
+            source={{ uri: ImagePresets.miniThumbnail(product.images[0]) }}
             style={styles.horizontalImage}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            placeholder={{ blurhash: DEFAULT_BLURHASH }}
+            transition={150}
           />
           {product.discountPercentage ? (
             <View style={styles.discountTag}>
@@ -131,10 +135,13 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
       ]}>
       {/* Top Image area with consistent 1:1 Aspect Ratio */}
       <View style={styles.imageContainer}>
-        <Image
-          source={{ uri: product.images[0] }}
+        <ExpoImage
+          source={{ uri: ImagePresets.thumbnail(product.images[0]) }}
           style={styles.image}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          placeholder={{ blurhash: DEFAULT_BLURHASH }}
+          transition={150}
         />
 
         {product.discountPercentage ? (

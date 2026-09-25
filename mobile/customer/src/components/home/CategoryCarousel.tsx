@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, ScrollView, Image, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
@@ -8,6 +9,7 @@ import { SectionHeader } from '../common/SectionHeader';
 import { AnimatedPressable } from '../common/AnimatedPressable';
 import { useApp } from '@/store';
 import { t } from '@/localization';
+import { ImagePresets, DEFAULT_BLURHASH } from '@/utils/imageOptimizer';
 
 export interface CategoryCarouselProps {
   categories: Category[];
@@ -42,10 +44,13 @@ export const CategoryCarousel: React.FC<CategoryCarouselProps> = ({
             style={styles.itemWrapper}>
             <View style={styles.iconCircle}>
               {category.image ? (
-                <Image
-                  source={{ uri: category.image }}
+                <ExpoImage
+                  source={{ uri: ImagePresets.category(category.image) }}
                   style={styles.categoryImage}
-                  resizeMode="cover"
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  placeholder={{ blurhash: DEFAULT_BLURHASH }}
+                  transition={150}
                 />
               ) : (
                 <Ionicons

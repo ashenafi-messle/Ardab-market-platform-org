@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, Image, Text, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,38 +12,139 @@ import { AppHeader, Chip } from '@/components/common';
 import { ProductGrid } from '@/components/product';
 import { t } from '@/localization';
 
+import { categoryService, CategoryNode } from '@/services/categoryService';
+import { useCategories } from '@/hooks/useCategories';
+
 export default function CategoryDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { language } = useApp();
+  const { categoryTree } = useCategories();
 
-  const category = MOCK_CATEGORIES.find((c) => c.id === id) || MOCK_CATEGORIES[0];
+  const [category, setCategory] = useState<CategoryNode | null>(() => {
+    if (id) {
+      const fromTree = categoryService.findCategory(categoryTree, id);
+      if (fromTree) return fromTree;
+    }
+    const mockCat = MOCK_CATEGORIES.find((c) => c.id === id) || MOCK_CATEGORIES[0];
+    return {
+      id: mockCat.id,
+      name: mockCat.name,
+      nameAmharic: mockCat.nameAmharic,
+      slug: mockCat.slug,
+      icon: mockCat.icon,
+      image: mockCat.image,
+      productCount: mockCat.productCount,
+      children: mockCat.subcategories.map((s) => ({
+        id: s.id,
+        name: s.name,
+        nameAmharic: s.nameAmharic,
+        slug: s.id,
+        parentId: mockCat.id,
+        productCount: s.productCount,
+        children: [],
+      })),
+    };
+  });
+
   const [selectedSubId, setSelectedSubId] = useState<string | null>(null);
   const [liveProducts, setLiveProducts] = useState<Product[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // In-flight request cancellation reference
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (id) {
-      productService.fetchProducts({ categoryId: id }).then((items) => {
-        if (items && items.length > 0) {
-          setLiveProducts(items);
-        }
+      categoryService.getCategoryById(id).then((cat) => {
+        if (cat) setCategory(cat);
       });
     }
   }, [id]);
 
-  const displayName = language === 'am' && category.nameAmharic ? category.nameAmharic : category.name;
+  const loadProducts = useCallback(async (targetPage = 1, isRefresh = false) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-  const categoryProducts = useMemo(() => {
-    const sourceList = liveProducts.length > 0 ? liveProducts : MOCK_PRODUCTS;
-    return sourceList.filter((p) => {
-      const matchesCat = p.categoryId === category.id || (liveProducts.length > 0 && p.categoryId === id);
-      if (!matchesCat) return false;
-      if (selectedSubId) {
-        return p.subcategoryId === selectedSubId;
+    const targetCatId = selectedSubId || id;
+    if (!targetCatId) return;
+
+    try {
+      if (targetPage === 1 && !isRefresh) {
+        setLoading(true);
+      } else if (targetPage > 1) {
+        setLoadingMore(true);
       }
-      return true;
-    });
-  }, [category.id, id, selectedSubId, liveProducts]);
+
+      const res = await productService.getProducts(
+        {
+          categoryId: targetCatId,
+          page: targetPage,
+          limit: 20,
+          forceRefresh: isRefresh,
+        },
+        { signal: controller.signal }
+      );
+
+      if (targetPage === 1) {
+        setLiveProducts(res.items);
+      } else {
+        setLiveProducts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newItems = res.items.filter((item) => !existingIds.has(item.id));
+          return [...prev, ...newItems];
+        });
+      }
+
+      setPage(res.pagination.page);
+      setHasNextPage(Boolean(res.pagination.hasNext || res.pagination.hasNextPage));
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      console.warn('[CategoryDetailScreen] Live fetch notice:', err.message);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [id, selectedSubId]);
+
+  useEffect(() => {
+    setPage(1);
+    setHasNextPage(true);
+    loadProducts(1);
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [loadProducts]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadProducts(1, true);
+    setRefreshing(false);
+  };
+
+  const handleLoadMore = () => {
+    if (!loading && !loadingMore && hasNextPage) {
+      loadProducts(page + 1);
+    }
+  };
+
+  const displayName = category
+    ? language === 'am' && category.nameAmharic
+      ? category.nameAmharic
+      : category.name
+    : 'Category';
+
+  const subcategories = category?.children || [];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -62,34 +163,42 @@ export default function CategoryDetailScreen() {
       />
 
       {/* Subcategory Filter Chips */}
-      <View style={styles.chipsBar}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsScroll}>
-          <Chip
-            label={t('orders.tabAll')}
-            selected={selectedSubId === null}
-            onPress={() => setSelectedSubId(null)}
-          />
-          {category.subcategories.map((sub) => {
-            const subName = language === 'am' && sub.nameAmharic ? sub.nameAmharic : sub.name;
-            return (
-              <Chip
-                key={sub.id}
-                label={subName}
-                count={sub.productCount}
-                selected={selectedSubId === sub.id}
-                onPress={() => setSelectedSubId(selectedSubId === sub.id ? null : sub.id)}
-              />
-            );
-          })}
-        </ScrollView>
-      </View>
+      {subcategories.length > 0 ? (
+        <View style={styles.chipsBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsScroll}>
+            <Chip
+              label={t('orders.tabAll')}
+              selected={selectedSubId === null}
+              onPress={() => setSelectedSubId(null)}
+            />
+            {subcategories.map((sub) => {
+              const subName = language === 'am' && sub.nameAmharic ? sub.nameAmharic : sub.name;
+              return (
+                <Chip
+                  key={sub.id}
+                  label={subName}
+                  count={sub.productCount}
+                  selected={selectedSubId === sub.id}
+                  onPress={() => setSelectedSubId(selectedSubId === sub.id ? null : sub.id)}
+                />
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
 
       {/* Products Grid */}
       <ProductGrid
-        products={categoryProducts}
+        products={liveProducts}
+        loading={loading && page === 1}
+        loadingMore={loadingMore}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        onRetry={() => loadProducts(1)}
+        onEndReached={handleLoadMore}
         emptyTitle={t('empty.products')}
         emptyMessage={t('search.noResultsSub')}
       />

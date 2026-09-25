@@ -327,6 +327,19 @@ let cachedTree: CategoryNode[] | null = null;
 
 export const categoryService = {
   /**
+   * Returns whether category tree is already cached in memory
+   */
+  hasCachedTree(): boolean {
+    return cachedTree !== null;
+  },
+
+  /**
+   * Synchronously returns cached category tree if available
+   */
+  getCachedTree(): CategoryNode[] | null {
+    return cachedTree;
+  },
+  /**
    * Fetches the category tree from the live backend catalog endpoint.
    * If live backend is reachable and returns categories, maps them cleanly.
    * Otherwise falls back to DEFAULT_CATEGORY_TREE.
@@ -337,7 +350,12 @@ export const categoryService = {
     }
 
     try {
-      const res = await apiFetch('/customer/catalog/categories/tree');
+      // Primary: customer-mobile domain, fallback: customer/catalog
+      let res = await apiFetch('/customer-mobile/categories/tree');
+      if (!res.ok) {
+        res = await apiFetch('/customer/catalog/categories/tree');
+      }
+
       if (res.ok && res.data) {
         const rawTree = res.data.data || res.data;
         if (Array.isArray(rawTree) && rawTree.length > 0) {
@@ -366,6 +384,94 @@ export const categoryService = {
 
     cachedTree = DEFAULT_CATEGORY_TREE;
     return DEFAULT_CATEGORY_TREE;
+  },
+
+  /**
+   * Fetches active top-level / root categories
+   */
+  async getRootCategories(): Promise<CategoryNode[]> {
+    try {
+      let res = await apiFetch('/customer-mobile/categories?root=true');
+      if (!res.ok) {
+        res = await apiFetch('/customer/catalog/categories?root=true');
+      }
+
+      if (res.ok && res.data) {
+        const list = res.data.data || res.data;
+        if (Array.isArray(list) && list.length > 0) {
+          return list.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            nameAmharic: item.nameAmharic || item.name,
+            slug: item.slug || item.id,
+            icon: item.icon || 'grid-outline',
+            image: item.imageUrl || item.image || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+            imageUrl: item.imageUrl || item.image,
+            bannerImage: item.imageUrl || item.image,
+            parentId: null,
+            productCount: item.productCount || 0,
+            children: [],
+          }));
+        }
+      }
+    } catch {
+      // fallback to top-level of cached/default tree
+    }
+    const tree = await this.getCategoryTree();
+    return tree.map((node) => ({ ...node, children: [] }));
+  },
+
+  /**
+   * Fetches single category details by ID
+   */
+  async getCategoryById(id: string): Promise<CategoryNode | null> {
+    try {
+      let res = await apiFetch(`/customer-mobile/categories/${id}`);
+      if (!res.ok) {
+        res = await apiFetch(`/customer/catalog/categories/${id}`);
+      }
+
+      if (res.ok && res.data?.data) {
+        const c = res.data.data;
+        return {
+          id: c.id,
+          name: c.name,
+          nameAmharic: c.nameAmharic || c.name,
+          slug: c.slug || c.id,
+          icon: c.icon || 'grid-outline',
+          image: c.imageUrl || c.image || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+          imageUrl: c.imageUrl || c.image,
+          bannerImage: c.imageUrl || c.image,
+          parentId: c.parentId || null,
+          productCount: c.productCount || 0,
+          children: Array.isArray(c.children) ? c.children : [],
+        };
+      }
+    } catch {
+      // fallback
+    }
+    const tree = await this.getCategoryTree();
+    return this.findCategory(tree, id);
+  },
+
+  /**
+   * Fetches server-calculated descendant IDs for a category
+   */
+  async getCategoryDescendants(id: string): Promise<string[]> {
+    try {
+      let res = await apiFetch(`/customer-mobile/categories/${id}/descendants`);
+      if (!res.ok) {
+        res = await apiFetch(`/customer/catalog/categories/${id}/descendants`);
+      }
+
+      if (res.ok && res.data?.data?.descendantIds) {
+        return res.data.data.descendantIds;
+      }
+    } catch {
+      // fallback
+    }
+    const tree = await this.getCategoryTree();
+    return this.getAllDescendantIds(tree, id);
   },
 
   /**

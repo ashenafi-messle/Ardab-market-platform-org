@@ -285,6 +285,21 @@ export class MobileAuthService {
   static async getMe(customerId) {
     const customer = await prisma.customer.findUnique({
       where: { id: customerId },
+      select: {
+        id: true,
+        customerCode: true,
+        fullName: true,
+        phone: true,
+        email: true,
+        city: true,
+        deliveryZone: true,
+        profileImageUrl: true,
+        telegramUserId: true,
+        status: true,
+        verificationStatus: true,
+        createdAt: true,
+        lastActivityAt: true,
+      },
     });
 
     if (!customer) {

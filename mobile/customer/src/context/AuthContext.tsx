@@ -62,65 +62,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /**
    * Bootstraps authenticated session on app launch
-   * Checks secure storage, restores user without asking to sign in again.
+   * Checks secure storage, restores user instantly from cache, and revalidates in background.
    */
   const restoreSession = useCallback(async (): Promise<boolean> => {
     try {
-      setIsLoading(true);
+      // 1. Parallelize local storage reads for instant (<5ms) access
+      const [storedIdentity, storedToken, cachedUser] = await Promise.all([
+        secureStorage.getSavedIdentity(),
+        secureStorage.getAuthToken(),
+        secureStorage.getUserData<UserProfile>(),
+      ]);
 
-      // 1. Read saved identity for returning user UI
-      const storedIdentity = await secureStorage.getSavedIdentity();
       if (storedIdentity) {
         setSavedIdentity(storedIdentity);
       }
 
-      // 2. Read stored auth token
-      const storedToken = await secureStorage.getAuthToken();
       if (!storedToken) {
         setIsLoading(false);
         return false;
       }
 
-      // 3. Read cached user data for instant UI render
-      const cachedUser = await secureStorage.getUserData<UserProfile>();
+      // 2. If cached user data is available, restore UI INSTANTLY without waiting for network!
       if (cachedUser) {
         setUser(cachedUser);
         setToken(storedToken);
+        setIsLoading(false); // Unblock app shell immediately!
       }
 
-      // 4. Validate token with backend /me or attempt token refresh
-      let liveUser = await authApi.getMe(storedToken);
-      let activeToken = storedToken;
+      // 3. Revalidate session in the background (stale-while-revalidate)
+      const validateSessionInBackground = async () => {
+        try {
+          let liveUser = await authApi.getMe(storedToken);
+          let activeToken = storedToken;
 
-      if (!liveUser) {
-        // Attempt session refresh if /me failed (token expired or need rotation)
-        const storedRefreshToken = await secureStorage.getRefreshToken();
-        const refreshed = await authApi.refresh(storedRefreshToken || storedToken);
-        if (refreshed) {
-          activeToken = refreshed.token;
-          liveUser = refreshed.user;
-          await secureStorage.saveAuthToken(activeToken);
-          await secureStorage.saveUserData(liveUser);
+          if (!liveUser) {
+            // Attempt session refresh if /me failed
+            const storedRefreshToken = await secureStorage.getRefreshToken();
+            const refreshed = await authApi.refresh(storedRefreshToken || storedToken);
+            if (refreshed) {
+              activeToken = refreshed.token;
+              liveUser = refreshed.user;
+              await Promise.all([
+                secureStorage.saveAuthToken(activeToken),
+                secureStorage.saveUserData(liveUser),
+              ]);
+            }
+          }
+
+          if (liveUser) {
+            setUser(liveUser);
+            setToken(activeToken);
+            await secureStorage.saveUserData(liveUser);
+          } else if (!cachedUser) {
+            // Token expired and no valid cache
+            await secureStorage.clearAuthToken();
+            setUser(null);
+            setToken(null);
+          }
+        } catch (bgErr) {
+          console.warn('[AuthContext] Background session revalidation notice:', bgErr);
+        } finally {
+          setIsLoading(false);
         }
-      }
+      };
 
-      if (liveUser) {
-        setUser(liveUser);
-        setToken(activeToken);
-        await secureStorage.saveUserData(liveUser);
-        setIsLoading(false);
-        return true;
-      } else if (cachedUser) {
-        // Retain offline session if network temporarily unreachable
-        setIsLoading(false);
+      if (cachedUser) {
+        // Non-blocking background revalidation
+        validateSessionInBackground();
         return true;
       } else {
-        // Invalid or expired token that could not be refreshed
-        await secureStorage.clearAuthToken();
-        setUser(null);
-        setToken(null);
-        setIsLoading(false);
-        return false;
+        // No cache yet (first login / fresh state): wait for validation
+        await validateSessionInBackground();
+        return Boolean(storedToken);
       }
     } catch (err) {
       console.warn('[AuthContext] Session restore error:', err);

@@ -3,12 +3,12 @@ import {
   View,
   Text,
   ScrollView,
-  Image,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
   Share,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +18,7 @@ import { Product } from '@/types';
 import { productService } from '@/services/productService';
 import { useApp } from '@/store';
 import { t, formatPrice } from '@/utils/i18n';
+import { ImagePresets, DEFAULT_BLURHASH } from '@/utils/imageOptimizer';
 import { ProductRating, DiscountBadge, ProductCard } from '@/components/product';
 import { QuantitySelector, AppButton, Divider } from '@/components/common';
 
@@ -29,7 +30,13 @@ export default function ProductDetailScreen() {
   const { isInWishlist, toggleWishlist, addToCart } = useApp();
 
   const [product, setProduct] = useState<Product>(() => {
-    return MOCK_PRODUCTS.find((p) => p.id === id) || MOCK_PRODUCTS[0];
+    if (id) {
+      const fromCache = productService.getProductFromCache(id);
+      if (fromCache) return fromCache;
+      const fromMock = MOCK_PRODUCTS.find((p) => p.id === id);
+      if (fromMock) return fromMock;
+    }
+    return MOCK_PRODUCTS[0];
   });
 
   useEffect(() => {
@@ -119,7 +126,14 @@ export default function ProductDetailScreen() {
             scrollEventThrottle={16}>
             {product.images.map((imgUri, index) => (
               <View key={index} style={styles.imageSlide}>
-                <Image source={{ uri: imgUri }} style={styles.productImage} resizeMode="cover" />
+                <ExpoImage
+                  source={{ uri: ImagePresets.detail(imgUri) }}
+                  style={styles.productImage}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  placeholder={{ blurhash: DEFAULT_BLURHASH }}
+                  transition={200}
+                />
               </View>
             ))}
           </ScrollView>
@@ -148,6 +162,64 @@ export default function ProductDetailScreen() {
 
         {/* Product Info Section */}
         <View style={styles.infoSection}>
+          {/* Category Ancestry Path Breadcrumb */}
+          {product.categoryPath && product.categoryPath.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.breadcrumbBar}>
+              {product.categoryPath.map((item, index) => {
+                const isLast = index === product.categoryPath!.length - 1;
+                return (
+                  <View key={item.id} style={styles.breadcrumbItemWrap}>
+                    <TouchableOpacity
+                      disabled={isLast}
+                      onPress={() =>
+                        router.push(
+                          `/products?categoryId=${item.id}&title=${encodeURIComponent(item.name)}` as any
+                        )
+                      }
+                      activeOpacity={0.7}>
+                      <Text
+                        style={[
+                          styles.breadcrumbText,
+                          isLast && styles.breadcrumbTextActive,
+                        ]}
+                        numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                    </TouchableOpacity>
+                    {!isLast ? (
+                      <Ionicons
+                        name="chevron-forward"
+                        size={12}
+                        color={Colors.textSecondary}
+                        style={styles.breadcrumbChevron}
+                      />
+                    ) : null}
+                  </View>
+                );
+              })}
+            </ScrollView>
+          ) : product.categoryName ? (
+            <View style={styles.breadcrumbBar}>
+              <Text style={styles.breadcrumbText}>{product.categoryName}</Text>
+              {product.subcategoryName ? (
+                <>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={12}
+                    color={Colors.textSecondary}
+                    style={styles.breadcrumbChevron}
+                  />
+                  <Text style={[styles.breadcrumbText, styles.breadcrumbTextActive]}>
+                    {product.subcategoryName}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+          ) : null}
+
           <View style={styles.priceRow}>
             <View>
               <Text style={styles.priceText}>{formatPrice(product.price)}</Text>
@@ -724,5 +796,29 @@ const styles = StyleSheet.create({
   },
   barBuyNowBtn: {
     flex: 1,
+  },
+  breadcrumbBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginBottom: Spacing.sm,
+    gap: 4,
+  },
+  breadcrumbItemWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  breadcrumbText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
+  },
+  breadcrumbTextActive: {
+    color: Colors.primary,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  breadcrumbChevron: {
+    marginHorizontal: 2,
   },
 });

@@ -28,42 +28,112 @@ export default function ProductListingScreen() {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [selectedOrigin, setSelectedOrigin] = useState<string | null>(null);
 
-  // Live products & loading state
+  // Live products, pagination & loading state
   const [liveProducts, setLiveProducts] = useState<Product[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // In-flight request cancellation reference
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   // Origins for filter modal
   const origins = ['Gondar', 'Yirgacheffe', 'Addis Ababa', 'Lalibela'];
 
-  const loadProducts = useCallback(async () => {
+  const getBackendSort = (sort: SortOption): string => {
+    switch (sort) {
+      case 'PRICE_LOW':
+        return 'price_asc';
+      case 'PRICE_HIGH':
+        return 'price_desc';
+      case 'RATING':
+        return 'rating';
+      case 'POPULAR':
+      default:
+        return 'popular';
+    }
+  };
+
+  const loadProducts = useCallback(async (targetPage = 1, isRefresh = false) => {
+    // Abort previous in-flight request if user quickly changed category or sort
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      setError(null);
-      setLoading(true);
-      const fetched = await productService.fetchProducts({
-        categoryId: categoryId || undefined,
-        limit: 40,
-      });
-      if (fetched && fetched.length > 0) {
-        setLiveProducts(fetched);
+      if (targetPage === 1 && !isRefresh) {
+        setLoading(true);
+      } else if (targetPage > 1) {
+        setLoadingMore(true);
       }
+      setError(null);
+
+      const targetCategoryId = subcategoryId || categoryId || undefined;
+      const res = await productService.getProducts(
+        {
+          categoryId: targetCategoryId,
+          sort: getBackendSort(sortBy),
+          page: targetPage,
+          limit: 20,
+          forceRefresh: isRefresh,
+        },
+        { signal: controller.signal }
+      );
+
+      if (targetPage === 1) {
+        setLiveProducts(res.items);
+      } else {
+        setLiveProducts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newItems = res.items.filter((item) => !existingIds.has(item.id));
+          return [...prev, ...newItems];
+        });
+      }
+
+      setPage(res.pagination.page);
+      setHasNextPage(Boolean(res.pagination.hasNext || res.pagination.hasNextPage));
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // Obsolete request cancelled cleanly
+        return;
+      }
       console.warn('[ProductListingScreen] Live fetch notice:', err.message);
-      // Fallback seamlessly to mock catalog
+      if (targetPage === 1) {
+        setError(err.message || 'Failed to load products');
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [categoryId]);
+  }, [categoryId, subcategoryId, sortBy]);
 
   useEffect(() => {
-    loadProducts();
+    setPage(1);
+    setHasNextPage(true);
+    loadProducts(1);
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [loadProducts]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadProducts();
+    await loadProducts(1, true);
     setRefreshing(false);
+  };
+
+  const handleLoadMore = () => {
+    if (!loading && !loadingMore && hasNextPage) {
+      loadProducts(page + 1);
+    }
   };
 
   const handleResetFilters = () => {
@@ -72,27 +142,10 @@ export default function ProductListingScreen() {
     setFilterModalVisible(false);
   };
 
-  // Filtered & sorted products computation
+  // Filtered products computation for client-only filters (origin, deals, popular flag)
   const filteredProducts = useMemo(() => {
     let list = liveProducts.length > 0 ? [...liveProducts] : [...MOCK_PRODUCTS];
 
-    if (categoryId) {
-      const matchIds = getAllDescendantIds(String(categoryId));
-      list = list.filter(
-        (p) =>
-          matchIds.includes(p.categoryId) ||
-          (p.subcategoryId ? matchIds.includes(p.subcategoryId) : false) ||
-          p.categoryId === categoryId
-      );
-    }
-    if (subcategoryId) {
-      const matchSubIds = getAllDescendantIds(String(subcategoryId));
-      list = list.filter(
-        (p) =>
-          (p.subcategoryId ? matchSubIds.includes(p.subcategoryId) : false) ||
-          p.subcategoryId === subcategoryId
-      );
-    }
     if (filterType === 'deals') {
       list = list.filter((p) => p.isFlashDeal);
     } else if (filterType === 'popular') {
@@ -103,24 +156,8 @@ export default function ProductListingScreen() {
       list = list.filter((p) => p.origin && p.origin.toLowerCase().includes(selectedOrigin.toLowerCase()));
     }
 
-    switch (sortBy) {
-      case 'PRICE_LOW':
-        list.sort((a, b) => a.price - b.price);
-        break;
-      case 'PRICE_HIGH':
-        list.sort((a, b) => b.price - a.price);
-        break;
-      case 'RATING':
-        list.sort((a, b) => b.rating - a.rating);
-        break;
-      case 'POPULAR':
-      default:
-        list.sort((a, b) => b.soldCount - a.soldCount);
-        break;
-    }
-
     return list;
-  }, [liveProducts, categoryId, subcategoryId, filterType, selectedOrigin, sortBy, getAllDescendantIds]);
+  }, [liveProducts, filterType, selectedOrigin]);
 
   const getSortLabel = () => {
     switch (sortBy) {
@@ -198,11 +235,13 @@ export default function ProductListingScreen() {
       {/* 2-Column Responsive Products Grid */}
       <ProductGrid
         products={filteredProducts}
-        loading={loading}
+        loading={loading && page === 1}
+        loadingMore={loadingMore}
         refreshing={refreshing}
         error={error}
         onRefresh={handleRefresh}
-        onRetry={loadProducts}
+        onRetry={() => loadProducts(1)}
+        onEndReached={handleLoadMore}
         emptyTitle={t('search.noResults')}
         emptyMessage={t('search.noResultsSub')}
         onResetFilters={selectedOrigin || sortBy !== 'POPULAR' ? handleResetFilters : undefined}

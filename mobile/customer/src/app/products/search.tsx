@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,7 +16,13 @@ export default function SearchScreen() {
   const router = useRouter();
   const { language } = useApp();
   const [query, setQuery] = useState('');
-  const [liveProducts, setLiveProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [recentSearches, setRecentSearches] = useState([
     'Teff Magna 25kg',
     'Yirgacheffe coffee',
@@ -24,13 +30,94 @@ export default function SearchScreen() {
     'Electric Mitad',
   ]);
 
-  useEffect(() => {
-    productService.fetchProducts().then((items) => {
-      if (items && items.length > 0) {
-        setLiveProducts(items);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+  const debounceTimerRef = React.useRef<any>(null);
+
+  const performSearch = useCallback(async (searchQuery: string, targetPage = 1) => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      setLoading(false);
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      if (targetPage === 1) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
       }
-    });
+      setError(null);
+
+      const res = await productService.searchProducts(
+        trimmed,
+        { page: targetPage, limit: 20 },
+        { signal: controller.signal }
+      );
+
+      if (targetPage === 1) {
+        setSearchResults(res.items);
+      } else {
+        setSearchResults((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newItems = res.items.filter((item) => !existingIds.has(item.id));
+          return [...prev, ...newItems];
+        });
+      }
+
+      setPage(res.pagination.page);
+      setHasNextPage(Boolean(res.pagination.hasNext || res.pagination.hasNextPage));
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      console.warn('[SearchScreen] Search notice:', err.message);
+      if (targetPage === 1) {
+        setError(err.message || 'Search failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   }, []);
+
+  // Debounce typing (350ms)
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    if (!query.trim()) {
+      setSearchResults([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    debounceTimerRef.current = setTimeout(() => {
+      setPage(1);
+      performSearch(query, 1);
+    }, 350);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [query, performSearch]);
+
+  const handleLoadMore = () => {
+    if (!loading && !loadingMore && hasNextPage && query.trim()) {
+      performSearch(query, page + 1);
+    }
+  };
 
   const popularSearches = [
     'Teff Magna',
@@ -42,22 +129,13 @@ export default function SearchScreen() {
     'Clay Jebena',
   ];
 
-  const searchResults = useMemo(() => {
-    if (!query.trim()) return [];
-    const q = query.toLowerCase().trim();
-    return liveProducts.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.categoryName.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q) ||
-        (p.nameAmharic && p.nameAmharic.includes(q)) ||
-        (p.origin && p.origin.toLowerCase().includes(q))
-    );
-  }, [query, liveProducts]);
-
   const handleSearchSubmit = () => {
-    if (query.trim() && !recentSearches.includes(query.trim())) {
-      setRecentSearches((prev) => [query.trim(), ...prev.slice(0, 5)]);
+    const trimmed = query.trim();
+    if (trimmed) {
+      if (!recentSearches.includes(trimmed)) {
+        setRecentSearches((prev) => [trimmed, ...prev.slice(0, 5)]);
+      }
+      performSearch(trimmed, 1);
     }
   };
 
@@ -149,6 +227,11 @@ export default function SearchScreen() {
           </View>
           <ProductGrid
             products={searchResults}
+            loading={loading && page === 1}
+            loadingMore={loadingMore}
+            error={error}
+            onRetry={() => performSearch(query, 1)}
+            onEndReached={handleLoadMore}
             emptyTitle={t('search.noResults')}
             emptyMessage={t('search.noResultsSub')}
           />
