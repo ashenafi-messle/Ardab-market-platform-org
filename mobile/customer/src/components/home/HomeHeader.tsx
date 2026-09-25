@@ -122,9 +122,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
         onRequestClose={handleCloseMenu}>
         <Pressable
           style={styles.modalBackdrop}
-          onPress={handleCloseMenu}
-          accessibilityRole="button"
-          accessibilityLabel="Close menu">
+          onPress={handleCloseMenu}>
           <SafeAreaView style={styles.modalSafeArea} edges={['top', 'right']}>
             <Pressable
               style={styles.menuCard}

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ViewStyle,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
@@ -49,7 +50,7 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
       <AnimatedPressable
         scaleTo={0.97}
         onPress={onPress}
-        accessibilityRole="button"
+        accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
         accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
         style={[styles.horizontalCard, style]}>
         <View style={styles.horizontalImageContainer}>
@@ -121,7 +122,7 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
     <AnimatedPressable
       scaleTo={0.96}
       onPress={onPress}
-      accessibilityRole="button"
+      accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
       accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
       style={[
         styles.gridCard,
