@@ -61,3 +61,23 @@ export async function getMobileCategoryDescendantsHandler(req, res) {
   const result = await MobileCatalogService.getCategoryDescendants(req.params.id);
   return ApiResponse.success(res, result, 'Category descendants retrieved successfully');
 }
+
+/**
+ * GET /api/customer-mobile/categories/:id/products
+ * Products belonging to a specific category and its descendants
+ */
+export async function getMobileCategoryProductsHandler(req, res) {
+  const query = { ...req.query, categoryId: req.params.id };
+  const result = await MobileCatalogService.listProducts(query);
+  return ApiResponse.success(res, result, 'Category products retrieved successfully');
+}
+
+/**
+ * GET /api/customer-mobile/products/special-offers
+ * Products with active Super Admin discounts
+ */
+export async function getMobileSpecialOffersHandler(req, res) {
+  const result = await MobileCatalogService.getSpecialOffers(req.query);
+  return ApiResponse.success(res, result, 'Special offers retrieved successfully');
+}
+

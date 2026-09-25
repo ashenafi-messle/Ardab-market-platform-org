@@ -197,7 +197,9 @@ export interface CreateProductInput {
   unit?: string | null;
   weight?: number | null;
   costPrice?: number | null;
+  originalPrice?: number | null;
   sellingPrice: number;
+  discountPercent?: number | null;
   attributeValues?: ProductAttributeValueInput[];
   images?: string[];
   cityAvailability?: string[];
@@ -212,7 +214,9 @@ export interface UpdateProductInput {
   unit?: string | null;
   weight?: number | null;
   costPrice?: number | null;
+  originalPrice?: number | null;
   sellingPrice?: number;
+  discountPercent?: number | null;
   attributeValues?: ProductAttributeValueInput[];
   images?: string[];
   cityAvailability?: string[];

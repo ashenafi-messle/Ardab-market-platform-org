@@ -783,7 +783,9 @@ export default function ProductsPage() {
           unit: finalUnit,
           weight: finalWeight,
           costPrice: formData.costPrice > 0 ? Number(formData.costPrice) : null,
+          originalPrice: formData.originalPrice > 0 ? Number(formData.originalPrice) : null,
           sellingPrice: Number(formData.sellingPrice),
+          discountPercent: Number(formData.discountPercent || 0),
           cityAvailability: formData.cityAvailability,
           status: formData.status,
           attributeValues: preparedAttributeValues,
@@ -809,7 +811,11 @@ export default function ProductsPage() {
         if (formData.costPrice > 0) {
           formPayload.append('costPrice', String(formData.costPrice));
         }
+        if (formData.originalPrice > 0) {
+          formPayload.append('originalPrice', String(formData.originalPrice));
+        }
         formPayload.append('sellingPrice', String(formData.sellingPrice));
+        formPayload.append('discountPercent', String(formData.discountPercent || 0));
         formPayload.append('status', formData.status);
         formData.cityAvailability.forEach((city) => {
           formPayload.append('cityAvailability', city);

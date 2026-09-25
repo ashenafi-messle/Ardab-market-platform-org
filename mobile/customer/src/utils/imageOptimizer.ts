@@ -27,8 +27,8 @@ export function getOptimizedImageUrl(
   originalUrl?: string | null,
   options: ImageOptimizationOptions = {}
 ): string {
-  if (!originalUrl) {
-    return 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
+  if (!originalUrl || typeof originalUrl !== 'string' || originalUrl.trim().length === 0) {
+    return '';
   }
 
   const {

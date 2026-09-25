@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing } from '@/theme';
-import { MOCK_PRODUCTS } from '@/constants/mockData';
 import { Product } from '@/types';
 import { AppHeader, Modal } from '@/components/common';
 import { ProductGrid } from '@/components/product';
@@ -74,16 +73,28 @@ export default function ProductListingScreen() {
       setError(null);
 
       const targetCategoryId = subcategoryId || categoryId || undefined;
-      const res = await productService.getProducts(
-        {
-          categoryId: targetCategoryId,
-          sort: getBackendSort(sortBy),
-          page: targetPage,
-          limit: 20,
-          forceRefresh: isRefresh,
-        },
-        { signal: controller.signal }
-      );
+      let res;
+      if (filterType === 'deals') {
+        res = await productService.getSpecialOffers(
+          {
+            page: targetPage,
+            limit: 20,
+            forceRefresh: isRefresh,
+          },
+          { signal: controller.signal }
+        );
+      } else {
+        res = await productService.getProducts(
+          {
+            categoryId: targetCategoryId,
+            sort: getBackendSort(sortBy),
+            page: targetPage,
+            limit: 20,
+            forceRefresh: isRefresh,
+          },
+          { signal: controller.signal }
+        );
+      }
 
       if (targetPage === 1) {
         setLiveProducts(res.items);
@@ -110,7 +121,7 @@ export default function ProductListingScreen() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [categoryId, subcategoryId, sortBy]);
+  }, [categoryId, subcategoryId, sortBy, filterType]);
 
   useEffect(() => {
     setPage(1);
@@ -144,10 +155,10 @@ export default function ProductListingScreen() {
 
   // Filtered products computation for client-only filters (origin, deals, popular flag)
   const filteredProducts = useMemo(() => {
-    let list = liveProducts.length > 0 ? [...liveProducts] : [...MOCK_PRODUCTS];
+    let list = [...liveProducts];
 
     if (filterType === 'deals') {
-      list = list.filter((p) => p.isFlashDeal);
+      list = list.filter((p) => p.isFlashDeal || (p.discountPercentage && p.discountPercentage > 0));
     } else if (filterType === 'popular') {
       list = list.filter((p) => p.isPopular);
     }

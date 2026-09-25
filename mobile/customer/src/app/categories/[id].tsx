@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing } from '@/theme';
-import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/constants/mockData';
 import { Product } from '@/types';
 import { productService } from '@/services/productService';
 import { useApp } from '@/store';
@@ -23,28 +22,9 @@ export default function CategoryDetailScreen() {
 
   const [category, setCategory] = useState<CategoryNode | null>(() => {
     if (id) {
-      const fromTree = categoryService.findCategory(categoryTree, id);
-      if (fromTree) return fromTree;
+      return categoryService.findCategory(categoryTree, id);
     }
-    const mockCat = MOCK_CATEGORIES.find((c) => c.id === id) || MOCK_CATEGORIES[0];
-    return {
-      id: mockCat.id,
-      name: mockCat.name,
-      nameAmharic: mockCat.nameAmharic,
-      slug: mockCat.slug,
-      icon: mockCat.icon,
-      image: mockCat.image,
-      productCount: mockCat.productCount,
-      children: mockCat.subcategories.map((s) => ({
-        id: s.id,
-        name: s.name,
-        nameAmharic: s.nameAmharic,
-        slug: s.id,
-        parentId: mockCat.id,
-        productCount: s.productCount,
-        children: [],
-      })),
-    };
+    return null;
   });
 
   const [selectedSubId, setSelectedSubId] = useState<string | null>(null);

@@ -1,34 +1,33 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   ScrollView,
-  Image,
   StyleSheet,
   Animated,
   Dimensions,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
+import { Product } from '@/types';
 import { SectionHeader } from '../common/SectionHeader';
 import { AnimatedPressable } from '../common/AnimatedPressable';
-import { t } from '@/localization';
+import { t, formatPrice } from '@/localization';
+import { productService } from '@/services/productService';
+import { ImagePresets, DEFAULT_BLURHASH } from '@/utils/imageOptimizer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-export interface OfferBanner {
-  id: string;
-  badge: string;
-  discount: string;
-  title: string;
-  subtitle: string;
-  imageUrl: string;
-  linkFilter: string;
+export interface SpecialOffersProps {
+  products?: Product[];
 }
 
-export const SpecialOffers: React.FC = () => {
+export const SpecialOffers: React.FC<SpecialOffersProps> = ({ products: initialProducts }) => {
   const router = useRouter();
+  const [offers, setOffers] = useState<Product[]>(initialProducts || []);
+  const [loading, setLoading] = useState<boolean>(!initialProducts);
 
   // Subtle animated glow pulse
   const glowAnim = useRef(new Animated.Value(0.4)).current;
@@ -52,38 +51,38 @@ export const SpecialOffers: React.FC = () => {
     return () => loop.stop();
   }, []);
 
-  const offers: OfferBanner[] = [
-    {
-      id: 'offer-1',
-      badge: 'LIMITED TIME',
-      discount: 'UP TO 40% OFF',
-      title: 'Ethiopian New Harvest',
-      subtitle: 'Pure Gojjam Magna Teff & Yirgacheffe Coffee',
-      imageUrl:
-        'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80',
-      linkFilter: 'deals',
-    },
-    {
-      id: 'offer-2',
-      badge: 'PRODUCER DIRECT',
-      discount: '25% OFF',
-      title: 'Authentic Sheba Tibeb',
-      subtitle: 'Handcrafted Habesha Kemis & cotton Netela',
-      imageUrl:
-        'https://images.unsplash.com/photo-1566174053879-31528523f8ae?auto=format&fit=crop&w=400&q=80',
-      linkFilter: 'deals',
-    },
-    {
-      id: 'offer-3',
-      badge: 'ENERGY DEALS',
-      discount: 'SAVE 30%',
-      title: 'Solar & Emergency Power',
-      subtitle: 'Heavy duty powerbanks & rechargeable lamps',
-      imageUrl:
-        'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?auto=format&fit=crop&w=400&q=80',
-      linkFilter: 'deals',
-    },
-  ];
+  useEffect(() => {
+    if (initialProducts) {
+      setOffers(initialProducts.filter((p) => p.discountPercentage && p.discountPercentage > 0));
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    productService
+      .getSpecialOffers({ limit: 10 })
+      .then((res) => {
+        if (isMounted) {
+          setOffers(res.items || []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setOffers([]);
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [initialProducts]);
+
+  // If loading or zero discounted products: Hide section completely (NO demo data, NO fake products)
+  if (loading || offers.length === 0) {
+    return null;
+  }
 
   return (
     <View style={styles.container}>
@@ -99,48 +98,72 @@ export const SpecialOffers: React.FC = () => {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
-        {offers.map((offer) => (
-          <AnimatedPressable
-            key={offer.id}
-            scaleTo={0.97}
-            accessibilityLabel={offer.title}
-            onPress={() => router.push(`/products?filter=${offer.linkFilter}` as any)}
-            style={styles.card}>
-            {/* Animated Glow Border */}
-            <Animated.View style={[styles.glowBackground, { opacity: glowAnim }]} />
+        {offers.map((product) => {
+          const discountText = product.discountPercentage
+            ? `${product.discountPercentage}% OFF`
+            : 'DISCOUNT';
+          const imageUrl = product.images?.[0] || product.primaryImage?.url || '';
 
-            <View style={styles.innerCard}>
-              {/* Left Content */}
-              <View style={styles.textContainer}>
-                <View style={styles.badgeRow}>
-                  <View style={styles.redBadge}>
-                    <Text style={styles.redBadgeText}>{offer.discount}</Text>
+          return (
+            <AnimatedPressable
+              key={product.id}
+              scaleTo={0.97}
+              accessibilityLabel={`${product.name} - ${discountText}`}
+              onPress={() => router.push(`/products/${product.id}` as any)}
+              style={styles.card}>
+              {/* Animated Glow Border */}
+              <Animated.View style={[styles.glowBackground, { opacity: glowAnim }]} />
+
+              <View style={styles.innerCard}>
+                {/* Left Content */}
+                <View style={styles.textContainer}>
+                  <View style={styles.badgeRow}>
+                    <View style={styles.redBadge}>
+                      <Text style={styles.redBadgeText}>{discountText}</Text>
+                    </View>
+                    <Text style={styles.badgeLabel}>
+                      {product.seller?.city || 'Direct Platform'}
+                    </Text>
                   </View>
-                  <Text style={styles.badgeLabel}>{offer.badge}</Text>
+
+                  <Text style={styles.cardTitle} numberOfLines={2}>
+                    {product.name}
+                  </Text>
+
+                  <View style={styles.priceRow}>
+                    <Text style={styles.currentPrice}>{formatPrice(product.price)}</Text>
+                    {product.oldPrice && product.oldPrice > product.price ? (
+                      <Text style={styles.oldPrice}>{formatPrice(product.oldPrice)}</Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.shopNowBtn}>
+                    <Text style={styles.shopNowText}>{t('home.shopNow')}</Text>
+                    <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
+                  </View>
                 </View>
 
-                <Text style={styles.cardTitle}>{offer.title}</Text>
-                <Text style={styles.cardSubtitle} numberOfLines={2}>
-                  {offer.subtitle}
-                </Text>
-
-                <View style={styles.shopNowBtn}>
-                  <Text style={styles.shopNowText}>{t('home.shopNow')}</Text>
-                  <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
+                {/* Right Image */}
+                <View style={styles.imageWrapper}>
+                  {imageUrl ? (
+                    <ExpoImage
+                      source={{ uri: ImagePresets.thumbnail(imageUrl) }}
+                      style={styles.productImage}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      placeholder={{ blurhash: DEFAULT_BLURHASH }}
+                      transition={150}
+                    />
+                  ) : (
+                    <View style={styles.placeholderBox}>
+                      <Ionicons name="pricetag-outline" size={36} color={Colors.primaryDark} />
+                    </View>
+                  )}
                 </View>
               </View>
-
-              {/* Right Image */}
-              <View style={styles.imageWrapper}>
-                <Image
-                  source={{ uri: offer.imageUrl }}
-                  style={styles.productImage}
-                  resizeMode="cover"
-                />
-              </View>
-            </View>
-          </AnimatedPressable>
-        ))}
+            </AnimatedPressable>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -148,41 +171,46 @@ export const SpecialOffers: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,
-    gap: Spacing.md,
+    gap: Spacing.sm,
     paddingVertical: Spacing.xs,
   },
   card: {
-    width: Math.min(SCREEN_WIDTH - 48, 330),
-    height: 146,
-    borderRadius: Radius.xl,
-    overflow: 'hidden',
+    width: SCREEN_WIDTH * 0.82,
+    maxWidth: 340,
+    borderRadius: Radius.lg,
     position: 'relative',
-    ...Shadows.md,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    ...Shadows.sm,
   },
   glowBackground: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: '#00C853',
-    borderRadius: Radius.xl,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: Radius.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.ardabRed,
+    backgroundColor: 'transparent',
+    zIndex: 1,
   },
   innerCard: {
-    flex: 1,
-    margin: 1.5,
-    borderRadius: Radius.xl - 1,
-    backgroundColor: '#003B18',
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.md,
-    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radius.lg,
     overflow: 'hidden',
+    padding: Spacing.sm,
   },
   textContainer: {
-    flex: 1.2,
-    justifyContent: 'space-between',
+    flex: 1,
     paddingRight: Spacing.xs,
+    justifyContent: 'center',
   },
   badgeRow: {
     flexDirection: 'row',
@@ -194,59 +222,73 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.ardabRed,
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Radius.pill,
   },
   redBadgeText: {
     color: '#FFFFFF',
     fontSize: 10,
-    fontWeight: Typography.fontWeight.heavy,
+    fontWeight: Typography.fontWeight.bold,
+    letterSpacing: 0.2,
   },
   badgeLabel: {
-    color: '#E6F7E6',
-    fontSize: 9,
-    fontWeight: Typography.fontWeight.semibold,
-    letterSpacing: 0.4,
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontWeight: Typography.fontWeight.medium,
   },
   cardTitle: {
-    fontSize: Typography.fontSize.base,
+    fontSize: 14,
     fontWeight: Typography.fontWeight.bold,
-    color: '#FFFFFF',
-    lineHeight: 20,
+    color: Colors.text,
+    marginBottom: 4,
+    lineHeight: 18,
   },
-  cardSubtitle: {
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  currentPrice: {
+    fontSize: 14,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primaryDark,
+  },
+  oldPrice: {
     fontSize: 11,
-    color: Colors.primaryMuted,
-    lineHeight: 15,
-    marginTop: 2,
-    marginBottom: Spacing.xs,
+    color: Colors.textMuted,
+    textDecorationLine: 'line-through',
   },
   shopNowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.primary,
-    paddingVertical: 5,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.pill,
     alignSelf: 'flex-start',
-    marginTop: 2,
+    backgroundColor: Colors.primaryDark,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    gap: 4,
   },
   shopNowText: {
-    fontSize: 11,
-    fontWeight: Typography.fontWeight.bold,
     color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: Typography.fontWeight.semibold,
   },
   imageWrapper: {
-    width: 96,
-    height: 96,
-    borderRadius: Radius.lg,
+    width: 100,
+    height: 100,
+    borderRadius: Radius.md,
     overflow: 'hidden',
-    backgroundColor: Colors.surface,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#F3F6F4',
   },
   productImage: {
     width: '100%',
     height: '100%',
+  },
+  placeholderBox: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F6F4',
   },
 });

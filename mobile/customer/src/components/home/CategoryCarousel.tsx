@@ -23,6 +23,10 @@ export const CategoryCarousel: React.FC<CategoryCarouselProps> = ({
   const router = useRouter();
   const { language } = useApp();
 
+  if (!categories || categories.length === 0) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
       <SectionHeader
@@ -35,36 +39,43 @@ export const CategoryCarousel: React.FC<CategoryCarouselProps> = ({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
-        {categories.map((category) => (
-          <AnimatedPressable
-            key={category.id}
-            scaleTo={0.92}
-            accessibilityLabel={category.name}
-            onPress={() => router.push(`/categories/${category.id}` as any)}
-            style={styles.itemWrapper}>
-            <View style={styles.iconCircle}>
-              {category.image ? (
-                <ExpoImage
-                  source={{ uri: ImagePresets.category(category.image) }}
-                  style={styles.categoryImage}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  placeholder={{ blurhash: DEFAULT_BLURHASH }}
-                  transition={150}
-                />
-              ) : (
-                <Ionicons
-                  name={(category.icon as any) || 'grid-outline'}
-                  size={24}
-                  color={Colors.primaryDark}
-                />
-              )}
-            </View>
-            <Text style={styles.label} numberOfLines={2}>
-              {language === 'am' && category.nameAmharic ? category.nameAmharic : category.name}
-            </Text>
-          </AnimatedPressable>
-        ))}
+        {categories.map((category) => {
+          const imgUrl = (category.imageUrl || category.image || '').trim();
+          const hasRealImage = imgUrl.length > 0 && !imgUrl.includes('unsplash.com');
+
+          return (
+            <AnimatedPressable
+              key={category.id}
+              scaleTo={0.92}
+              accessibilityLabel={category.name}
+              onPress={() => router.push(`/categories/${category.id}` as any)}
+              style={styles.itemWrapper}>
+              <View style={styles.iconCircle}>
+                {hasRealImage ? (
+                  <ExpoImage
+                    source={{ uri: ImagePresets.category(imgUrl) }}
+                    style={styles.categoryImage}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    placeholder={{ blurhash: DEFAULT_BLURHASH }}
+                    transition={150}
+                  />
+                ) : (
+                  <View style={styles.fallbackIconContainer}>
+                    <Ionicons
+                      name={(category.icon as any) || 'grid-outline'}
+                      size={24}
+                      color={Colors.primaryDark}
+                    />
+                  </View>
+                )}
+              </View>
+              <Text style={styles.label} numberOfLines={2}>
+                {language === 'am' && category.nameAmharic ? category.nameAmharic : category.name}
+              </Text>
+            </AnimatedPressable>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -98,6 +109,13 @@ const styles = StyleSheet.create({
   categoryImage: {
     width: '100%',
     height: '100%',
+  },
+  fallbackIconContainer: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F6F4',
   },
   label: {
     fontSize: 11,

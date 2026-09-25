@@ -11,7 +11,6 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography, Radius } from '@/theme';
-import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/constants/mockData';
 import { Product, Category } from '@/types';
 import { productService } from '@/services/productService';
 import { categoryService } from '@/services/categoryService';
@@ -38,46 +37,49 @@ export default function HomeScreen() {
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
 
   // State management for independent section loading & resilience
-  const [loadingCategories, setLoadingCategories] = useState(false);
-  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState<boolean>(() => !categoryService.hasCachedTree());
+  const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
 
-  const mapNodeToCategory = (node: any): Category => ({
-    id: node.id,
-    name: node.name,
-    nameAmharic: node.nameAmharic,
-    slug: node.slug || node.id,
-    icon: node.icon || 'grid-outline',
-    image: node.image || node.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
-    productCount: node.productCount || 0,
-    subcategories: (node.children || []).map((c: any) => ({
-      id: c.id,
-      name: c.name,
-      nameAmharic: c.nameAmharic,
-      image: c.image || c.imageUrl,
-      productCount: c.productCount || 0,
-    })),
-  });
+  const mapNodeToCategory = (node: any): Category => {
+    const imgUrl = (node.imageUrl || node.image || '').trim();
+    return {
+      id: node.id,
+      name: node.name,
+      nameAmharic: node.nameAmharic,
+      slug: node.slug || node.id,
+      icon: node.icon || 'grid-outline',
+      image: imgUrl,
+      imageUrl: imgUrl || undefined,
+      productCount: node.productCount || 0,
+      subcategories: (node.children || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        nameAmharic: c.nameAmharic,
+        image: (c.imageUrl || c.image || '').trim(),
+        productCount: c.productCount || 0,
+      })),
+    };
+  };
 
   const [categories, setCategories] = useState<Category[]>(() => {
     const cached = categoryService.getCachedTree();
     if (cached && cached.length > 0) {
       return cached.map(mapNodeToCategory);
     }
-    return MOCK_CATEGORIES;
+    return [];
   });
-  const [allProducts, setAllProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
 
   // Trending & Recommended subsets
-  const trendingProducts = allProducts.filter((p) => p.isPopular || p.isFlashDeal);
+  const trendingProducts = allProducts.filter((p) => p.isPopular || p.isFlashDeal || (p.rating && p.rating >= 4));
   const recommendedProducts = allProducts.filter((p) => p.isRecommended || !p.isPopular);
   const heroProducts = allProducts.slice(0, 2);
 
   const loadData = async (force = false) => {
     try {
       setErrorState(null);
-      // Non-blocking if products already present
       if (allProducts.length === 0) {
         setLoadingProducts(true);
       }
@@ -88,11 +90,11 @@ export default function HomeScreen() {
         categoryService.getCategoryTree(force),
       ]);
 
-      if (productRes.status === 'fulfilled' && productRes.value && productRes.value.length > 0) {
+      if (productRes.status === 'fulfilled' && productRes.value) {
         setAllProducts(productRes.value);
       }
 
-      if (categoryRes.status === 'fulfilled' && categoryRes.value && categoryRes.value.length > 0) {
+      if (categoryRes.status === 'fulfilled' && categoryRes.value) {
         setCategories(categoryRes.value.map(mapNodeToCategory));
       }
     } catch {

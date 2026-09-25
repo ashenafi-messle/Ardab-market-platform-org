@@ -5,11 +5,11 @@
 // error state, and refresh triggers across the entire application.
 
 import { useState, useEffect, useCallback } from 'react';
-import { CategoryNode, categoryService, DEFAULT_CATEGORY_TREE } from '@/services/categoryService';
+import { CategoryNode, categoryService } from '@/services/categoryService';
 
 export function useCategories() {
   const [categoryTree, setCategoryTree] = useState<CategoryNode[]>(
-    () => categoryService.getCachedTree() || DEFAULT_CATEGORY_TREE
+    () => categoryService.getCachedTree() || []
   );
   const [isLoading, setIsLoading] = useState<boolean>(!categoryService.hasCachedTree());
   const [error, setError] = useState<string | null>(null);

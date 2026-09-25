@@ -33,12 +33,27 @@ function formatMobileProductCard(product) {
 
   const primaryImage = images.find((i) => i.isPrimary) || images[0] || null;
   const ratingSummary = product.rating || { average: null, count: 0 };
+  const rawSelling = Number(product.sellingPrice);
+  const rawOriginal = product.originalPrice !== null && product.originalPrice !== undefined ? Number(product.originalPrice) : null;
+  const discountPercent = product.discountPercent !== null && product.discountPercent !== undefined ? Number(product.discountPercent) : 0;
+
+  const hasDiscount = discountPercent > 0 || (rawOriginal !== null && rawOriginal > rawSelling);
+  const originalPrice = rawOriginal !== null ? rawOriginal : (hasDiscount && discountPercent > 0 ? Math.round(rawSelling / (1 - discountPercent / 100)) : rawSelling);
+  const discountedPrice = rawSelling;
+  const discount = hasDiscount ? (discountPercent > 0 ? discountPercent : Math.round(((originalPrice - rawSelling) / originalPrice) * 100)) : 0;
 
   return {
     id: product.id,
     itemCode: product.itemCode,
     name: product.name,
-    sellingPrice: Number(product.sellingPrice),
+    description: product.description || null,
+    price: hasDiscount ? originalPrice : rawSelling,
+    sellingPrice: rawSelling,
+    originalPrice: hasDiscount ? originalPrice : null,
+    discountedPrice: hasDiscount ? discountedPrice : null,
+    discount: hasDiscount ? discount : 0,
+    discountPercent: hasDiscount ? discount : 0,
+    hasDiscount,
     unit: product.unit || 'pc',
     status: product.status,
     cityAvailability: product.cityAvailability || ['All Cities'],
@@ -52,6 +67,7 @@ function formatMobileProductCard(product) {
     } : null,
     images,
     primaryImage,
+    thumbnail: primaryImage ? primaryImage.url : null,
     rating: ratingSummary,
     averageRating: ratingSummary.average,
     reviewCount: ratingSummary.count,
@@ -179,8 +195,11 @@ export class MobileCatalogService {
           id: true,
           itemCode: true,
           name: true,
+          description: true,
           unit: true,
           sellingPrice: true,
+          originalPrice: true,
+          discountPercent: true,
           status: true,
           cityAvailability: true,
           createdAt: true,
@@ -189,6 +208,7 @@ export class MobileCatalogService {
               id: true,
               name: true,
               slug: true,
+              imageUrl: true,
               icon: true,
             },
           },
@@ -266,6 +286,8 @@ export class MobileCatalogService {
         unit: true,
         weight: true,
         sellingPrice: true,
+        originalPrice: true,
+        discountPercent: true,
         status: true,
         cityAvailability: true,
         createdAt: true,
@@ -274,6 +296,7 @@ export class MobileCatalogService {
             id: true,
             name: true,
             slug: true,
+            imageUrl: true,
             icon: true,
             description: true,
           },
@@ -368,18 +391,130 @@ export class MobileCatalogService {
       }
     }
 
+    const rawSelling = Number(product.sellingPrice);
+    const rawOriginal = product.originalPrice !== null && product.originalPrice !== undefined ? Number(product.originalPrice) : null;
+    const discountPercent = product.discountPercent !== null && product.discountPercent !== undefined ? Number(product.discountPercent) : 0;
+
+    const hasDiscount = discountPercent > 0 || (rawOriginal !== null && rawOriginal > rawSelling);
+    const originalPrice = rawOriginal !== null ? rawOriginal : (hasDiscount && discountPercent > 0 ? Math.round(rawSelling / (1 - discountPercent / 100)) : rawSelling);
+    const discountedPrice = rawSelling;
+    const discount = hasDiscount ? (discountPercent > 0 ? discountPercent : Math.round(((originalPrice - rawSelling) / originalPrice) * 100)) : 0;
+
     return {
       ...product,
       weight: product.weight !== null && product.weight !== undefined ? Number(product.weight) : null,
-      sellingPrice: Number(product.sellingPrice),
+      price: hasDiscount ? originalPrice : rawSelling,
+      sellingPrice: rawSelling,
+      originalPrice: hasDiscount ? originalPrice : null,
+      discountedPrice: hasDiscount ? discountedPrice : null,
+      discount: hasDiscount ? discount : 0,
+      discountPercent: hasDiscount ? discount : 0,
+      hasDiscount,
       images,
       primaryImage,
+      thumbnail: primaryImage ? primaryImage.url : null,
       rating: ratingSummary,
       averageRating: ratingSummary.average,
       reviewCount: ratingSummary.count,
       ratingCount: ratingSummary.count,
       categoryPath,
       attributeValues: formattedAttributeValues,
+    };
+  }
+
+  /**
+   * Get products with active Super Admin discounts for Special Offers section
+   */
+  static async getSpecialOffers(query = {}) {
+    const page = Math.max(1, parseInt(query.page || 1, 10));
+    const limit = Math.min(48, Math.max(1, parseInt(query.limit || query.pageSize || 10, 10)));
+    const skip = (page - 1) * limit;
+
+    const where = {
+      status: 'ACTIVE',
+      discountPercent: { gt: 0 },
+    };
+
+    if (query.city && query.city !== 'All Cities') {
+      where.cityAvailability = {
+        hasSome: [query.city, 'All Cities'],
+      };
+    }
+
+    const [total, products] = await Promise.all([
+      prisma.product.count({ where }),
+      prisma.product.findMany({
+        where,
+        select: {
+          id: true,
+          itemCode: true,
+          name: true,
+          description: true,
+          unit: true,
+          sellingPrice: true,
+          originalPrice: true,
+          discountPercent: true,
+          status: true,
+          cityAvailability: true,
+          createdAt: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              imageUrl: true,
+              icon: true,
+            },
+          },
+          seller: {
+            select: {
+              id: true,
+              companyName: true,
+              name: true,
+              city: true,
+            },
+          },
+          images: {
+            select: {
+              id: true,
+              url: true,
+              publicId: true,
+              isPrimary: true,
+              sortOrder: true,
+            },
+            orderBy: { sortOrder: 'asc' },
+            take: 2,
+          },
+        },
+        orderBy: [{ discountPercent: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    const ratingSummaries = await getPublicProductRatingSummaries(products.map((p) => p.id));
+    const formattedProducts = products.map((product) =>
+      formatMobileProductCard({
+        ...product,
+        rating: ratingSummaries.get(product.id),
+      })
+    );
+
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    return {
+      items: formattedProducts,
+      pagination: {
+        page,
+        pageSize: limit,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasNextPage: page < totalPages,
+        hasPrev: page > 1,
+        hasPrevPage: page > 1,
+      },
     };
   }
 

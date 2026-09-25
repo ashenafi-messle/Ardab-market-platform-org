@@ -518,7 +518,9 @@ export const productsApi = {
         unit: p.unit !== undefined && p.unit !== null ? p.unit.trim() : null,
         weight: p.weight !== undefined && p.weight !== null ? Number(p.weight) : null,
         costPrice: p.costPrice !== undefined && p.costPrice !== null ? Number(p.costPrice) : null,
+        originalPrice: p.originalPrice !== undefined && p.originalPrice !== null ? Number(p.originalPrice) : null,
         sellingPrice: Number(p.sellingPrice),
+        discountPercent: p.discountPercent !== undefined && p.discountPercent !== null ? Number(p.discountPercent) : 0,
         attributeValues: p.attributeValues || [],
         images: p.images || [],
         cityAvailability: p.cityAvailability && p.cityAvailability.length > 0 ? p.cityAvailability : ['All Cities'],
@@ -581,7 +583,9 @@ export const productsApi = {
     if (input.unit !== undefined) payload.unit = input.unit !== null ? input.unit.trim() : null;
     if (input.weight !== undefined) payload.weight = input.weight !== null ? Number(input.weight) : null;
     if (input.costPrice !== undefined) payload.costPrice = input.costPrice !== null ? Number(input.costPrice) : null;
+    if (input.originalPrice !== undefined) payload.originalPrice = input.originalPrice !== null ? Number(input.originalPrice) : null;
     if (input.sellingPrice !== undefined) payload.sellingPrice = Number(input.sellingPrice);
+    if (input.discountPercent !== undefined) payload.discountPercent = input.discountPercent !== null ? Number(input.discountPercent) : 0;
     if (input.attributeValues !== undefined) payload.attributeValues = input.attributeValues;
     if (input.images !== undefined) payload.images = input.images;
     if (input.cityAvailability !== undefined) payload.cityAvailability = input.cityAvailability;

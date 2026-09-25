@@ -7,13 +7,13 @@ import {
   StyleSheet,
   Dimensions,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
-import { MOCK_PRODUCTS } from '@/constants/mockData';
 import { Product } from '@/types';
 import { productService } from '@/services/productService';
 import { useApp } from '@/store';
@@ -29,53 +29,91 @@ export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isInWishlist, toggleWishlist, addToCart } = useApp();
 
-  const [product, setProduct] = useState<Product>(() => {
+  const [product, setProduct] = useState<Product | null>(() => {
     if (id) {
-      const fromCache = productService.getProductFromCache(id);
-      if (fromCache) return fromCache;
-      const fromMock = MOCK_PRODUCTS.find((p) => p.id === id);
-      if (fromMock) return fromMock;
+      return productService.getProductFromCache(id);
     }
-    return MOCK_PRODUCTS[0];
+    return null;
   });
+  const [loading, setLoading] = useState<boolean>(() => !product);
+  const [notFound, setNotFound] = useState(false);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
 
   useEffect(() => {
     if (id) {
-      productService.fetchProductById(id).then((found) => {
-        if (found) setProduct(found);
-      });
+      let isMounted = true;
+      if (!productService.getProductFromCache(id)) {
+        setLoading(true);
+      }
+      productService
+        .fetchProductById(id)
+        .then((found) => {
+          if (!isMounted) return;
+          if (found) {
+            setProduct(found);
+            setNotFound(false);
+            if (found.categoryId) {
+              productService
+                .fetchProducts({ categoryId: found.categoryId, limit: 6 })
+                .then((items) => {
+                  if (isMounted) {
+                    setRelatedProducts(items.filter((p) => p.id !== found.id));
+                  }
+                })
+                .catch(() => {});
+            }
+          } else {
+            setNotFound(true);
+          }
+          setLoading(false);
+        })
+        .catch(() => {
+          if (isMounted) {
+            setLoading(false);
+            if (!product) setNotFound(true);
+          }
+        });
+
+      return () => {
+        isMounted = false;
+      };
     }
   }, [id]);
 
-  const isFavorite = isInWishlist(product.id);
+  const isFavorite = product ? isInWishlist(product.id) : false;
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
-  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    if (product.attributes) {
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
+  const [addedToast, setAddedToast] = useState(false);
+
+  useEffect(() => {
+    if (product?.attributes) {
+      const initial: Record<string, string> = {};
       Object.entries(product.attributes).forEach(([key, options]) => {
         if (options && options.length > 0) {
           initial[key] = options[0];
         }
       });
+      setSelectedAttributes(initial);
     }
-    return initial;
-  });
-  const [addedToast, setAddedToast] = useState(false);
+  }, [product?.id]);
 
   const handleAddToCart = () => {
+    if (!product) return;
     addToCart(product, quantity, selectedAttributes);
     setAddedToast(true);
     setTimeout(() => setAddedToast(false), 2000);
   };
 
   const handleBuyNow = () => {
+    if (!product) return;
     addToCart(product, quantity, selectedAttributes);
     router.push('/checkout' as any);
   };
 
   const handleShare = async () => {
+    if (!product) return;
     try {
       await Share.share({
         message: `Check out ${product.name} on Ardab Market for ${formatPrice(product.price)}!`,
@@ -83,10 +121,47 @@ export default function ProductDetailScreen() {
     } catch {}
   };
 
-  // Related products from same category
-  const relatedProducts = MOCK_PRODUCTS.filter(
-    (p) => p.categoryId === product.categoryId && p.id !== product.id
-  );
+  if (loading && !product) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.navBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.navBtn}>
+            <Ionicons name="arrow-back" size={22} color={Colors.text} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>{t('common.loading') || 'Loading...'}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!product || notFound) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.navBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.navBtn}>
+            <Ionicons name="arrow-back" size={22} color={Colors.text} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.centerState}>
+          <Ionicons name="alert-circle-outline" size={54} color={Colors.textMuted} />
+          <Text style={styles.notFoundTitle}>{t('product.unavailable') || 'Product Unavailable'}</Text>
+          <Text style={styles.notFoundSubtitle}>
+            {t('product.unavailableDesc') || 'This product is no longer available or was not found.'}
+          </Text>
+          <AppButton
+            title={t('common.explore') || 'Explore Products'}
+            variant="primary"
+            size="md"
+            onPress={() => router.replace('/products' as any)}
+            style={{ marginTop: Spacing.md }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -820,5 +895,30 @@ const styles = StyleSheet.create({
   },
   breadcrumbChevron: {
     marginHorizontal: 2,
+  },
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.huge,
+  },
+  loadingText: {
+    marginTop: Spacing.md,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
+  },
+  notFoundTitle: {
+    marginTop: Spacing.md,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+  },
+  notFoundSubtitle: {
+    marginTop: Spacing.xs,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
 });

@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing } from '@/theme';
-import { MOCK_PRODUCTS } from '@/constants/mockData';
 import { Product } from '@/types';
 import { productService } from '@/services/productService';
 import { SearchBar, Chip } from '@/components/common';

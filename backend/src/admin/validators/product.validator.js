@@ -66,11 +66,29 @@ export const createProductSchema = z
         .optional()
         .nullable()
     ),
+    originalPrice: z.preprocess(
+      numericPreprocess,
+      z
+        .number()
+        .min(0, 'Original price cannot be negative')
+        .optional()
+        .nullable()
+    ),
     sellingPrice: z.preprocess(
       numericPreprocess,
       z
         .number({ required_error: 'Marketplace selling price is required' })
         .min(0, 'Selling price cannot be negative')
+    ),
+    discountPercent: z.preprocess(
+      numericPreprocess,
+      z
+        .number()
+        .min(0, 'Discount percent cannot be negative')
+        .max(100, 'Discount percent cannot exceed 100')
+        .optional()
+        .nullable()
+        .default(0)
     ),
     attributeValues: z.preprocess(
       jsonPreprocess,
@@ -168,12 +186,29 @@ export const updateProductSchema = z
         .optional()
         .nullable()
     ),
+    originalPrice: z.preprocess(
+      numericPreprocess,
+      z
+        .number()
+        .min(0, 'Original price cannot be negative')
+        .optional()
+        .nullable()
+    ),
     sellingPrice: z.preprocess(
       numericPreprocess,
       z
         .number()
         .min(0, 'Selling price cannot be negative')
         .optional()
+    ),
+    discountPercent: z.preprocess(
+      numericPreprocess,
+      z
+        .number()
+        .min(0, 'Discount percent cannot be negative')
+        .max(100, 'Discount percent cannot exceed 100')
+        .optional()
+        .nullable()
     ),
     attributeValues: z.preprocess(
       jsonPreprocess,

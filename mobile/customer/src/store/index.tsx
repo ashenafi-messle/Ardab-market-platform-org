@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, CartItem, Order, UserProfile, Address } from '@/types';
-import { MOCK_PRODUCTS, MOCK_ORDERS, MOCK_USER, MOCK_ADDRESSES, CITIES } from '@/constants/mockData';
+import { MOCK_USER, MOCK_ADDRESSES, CITIES } from '@/constants/mockData';
 import { Language, getLanguage, setLanguage as setI18nLanguage, subscribeLanguage, initLanguage, t, formatPrice, TranslationKey } from '@/localization';
 import { useAuth, AuthProvider } from '@/context/AuthContext';
 import { secureStorage } from '@/services/secureStorage';
+import { productService } from '@/services/productService';
 
 export { useAuth, AuthProvider };
 
@@ -63,35 +64,13 @@ const STORAGE_ORDERS_KEY = 'ardab_saved_orders';
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLangState] = useState<Language>(getLanguage());
   const [currentCity, setCurrentCity] = useState<string>('Gondar');
-  const [wishlistProductIds, setWishlistProductIds] = useState<string[]>([
-    'prod-yirgacheffe-coffee',
-    'prod-habesha-kemis',
-  ]);
-  const [wishlistMap, setWishlistMap] = useState<Record<string, Product>>(() => {
-    const initialMap: Record<string, Product> = {};
-    MOCK_PRODUCTS.forEach((p) => { initialMap[p.id] = p; });
-    return initialMap;
-  });
+  const [wishlistProductIds, setWishlistProductIds] = useState<string[]>([]);
+  const [wishlistMap, setWishlistMap] = useState<Record<string, Product>>({});
   const [addresses, setAddresses] = useState<Address[]>(MOCK_ADDRESSES);
-  const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
 
-  // Initial cart with 2 realistic items
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    {
-      id: 'cart-1',
-      product: MOCK_PRODUCTS[0], // Magna Teff
-      quantity: 1,
-      selected: true,
-      selectedAttributes: { 'Packaging': '25kg Sack' },
-    },
-    {
-      id: 'cart-2',
-      product: MOCK_PRODUCTS[3], // Berbere
-      quantity: 2,
-      selected: true,
-      selectedAttributes: { 'Heat Level': 'Medium Spicy' },
-    },
-  ]);
+  // Initial cart starts empty (populated only from user actions or secure storage)
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
   const auth = useAuth();
 
@@ -269,9 +248,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isInWishlist = (productId: string) => wishlistProductIds.includes(productId);
 
-  // Derives full product list for wishlist from both live backend cache and mock fallback
+  // Derives full product list for wishlist strictly from real products
   const wishlistProducts = wishlistProductIds
-    .map((id) => wishlistMap[id] || MOCK_PRODUCTS.find((p) => p.id === id))
+    .map((id) => wishlistMap[id])
     .filter(Boolean) as Product[];
 
   // Orders

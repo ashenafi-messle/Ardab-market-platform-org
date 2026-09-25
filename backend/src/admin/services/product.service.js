@@ -93,7 +93,9 @@ function formatProduct(product, rating = null) {
   return {
     ...product,
     costPrice: product.costPrice !== null && product.costPrice !== undefined ? Number(product.costPrice) : null,
+    originalPrice: product.originalPrice !== null && product.originalPrice !== undefined ? Number(product.originalPrice) : null,
     sellingPrice: Number(product.sellingPrice),
+    discountPercent: product.discountPercent !== null && product.discountPercent !== undefined ? Number(product.discountPercent) : 0,
     weight: product.weight !== null && product.weight !== undefined ? Number(product.weight) : null,
     images: formattedImages,
     primaryImage: formattedImages.find((img) => img.isPrimary) || formattedImages[0] || null,
@@ -557,7 +559,9 @@ export async function createProduct(data, filesOrAdmin = [], adminOrIp = null, m
           unit: finalUnit,
           weight: finalWeight,
           costPrice: data.costPrice !== undefined && data.costPrice !== null ? data.costPrice : null,
+          originalPrice: data.originalPrice !== undefined && data.originalPrice !== null ? data.originalPrice : null,
           sellingPrice: data.sellingPrice,
+          discountPercent: data.discountPercent !== undefined && data.discountPercent !== null ? Number(data.discountPercent) : 0,
           status: data.status || 'ACTIVE',
           cityAvailability: Array.isArray(data.cityAvailability) && data.cityAvailability.length > 0
             ? data.cityAvailability
@@ -727,7 +731,9 @@ export async function updateProduct(id, data, adminUser = null, ipAddress = null
   }
 
   if (data.costPrice !== undefined) updateData.costPrice = data.costPrice;
+  if (data.originalPrice !== undefined) updateData.originalPrice = data.originalPrice;
   if (data.sellingPrice !== undefined) updateData.sellingPrice = data.sellingPrice;
+  if (data.discountPercent !== undefined) updateData.discountPercent = Number(data.discountPercent);
   if (data.cityAvailability !== undefined) updateData.cityAvailability = data.cityAvailability;
   if (data.status !== undefined) updateData.status = data.status;
 
