@@ -44,7 +44,7 @@ async function recordProductAuditLog({ adminUser, action, productId, ipAddress, 
 /**
  * Helper to sanitize and format product representation for API responses
  */
-function formatProduct(product) {
+function formatProduct(product, rating = null) {
   if (!product) return null;
 
   const formattedImages = (product.images || []).map((img) => {
