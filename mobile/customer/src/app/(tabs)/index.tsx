@@ -43,7 +43,7 @@ export default function HomeScreen() {
   const [errorState, setErrorState] = useState<string | null>(null);
 
   const mapNodeToCategory = (node: any): Category => {
-    const imgUrl = (node.imageUrl || node.image || '').trim();
+    const imgUrl = (node.latestProductImage || node.imageUrl || node.image || '').trim();
     return {
       id: node.id,
       name: node.name,
@@ -57,7 +57,7 @@ export default function HomeScreen() {
         id: c.id,
         name: c.name,
         nameAmharic: c.nameAmharic,
-        image: (c.imageUrl || c.image || '').trim(),
+        image: (c.latestProductImage || c.imageUrl || c.image || '').trim(),
         productCount: c.productCount || 0,
       })),
     };

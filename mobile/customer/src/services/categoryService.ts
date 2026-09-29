@@ -15,6 +15,7 @@ export interface CategoryNode {
   icon?: string;
   image?: string;
   imageUrl?: string;
+  latestProductImage?: string;
   bannerImage?: string;
   parentId?: string | null;
   productCount: number;
@@ -61,20 +62,24 @@ export const categoryService = {
       if (res.ok && res.data) {
         const rawTree = res.data.data || res.data;
         if (Array.isArray(rawTree) && rawTree.length > 0) {
-          const mapNode = (node: any): CategoryNode => ({
-            id: node.id,
-            name: node.name,
-            nameAmharic: node.nameAmharic || node.name,
-            slug: node.slug || node.id,
-            icon: node.icon || 'grid-outline',
-            image: node.imageUrl || node.image || '',
-            imageUrl: node.imageUrl || node.image || undefined,
-            bannerImage: node.imageUrl || node.image || undefined,
-            parentId: node.parentId || null,
-            productCount: node.productCount || 0,
-            featured: Boolean(node.featured),
-            children: Array.isArray(node.children) ? node.children.map(mapNode) : [],
-          });
+          const mapNode = (node: any): CategoryNode => {
+            const effectiveImg = (node.latestProductImage || node.imageUrl || node.image || '').trim();
+            return {
+              id: node.id,
+              name: node.name,
+              nameAmharic: node.nameAmharic || node.name,
+              slug: node.slug || node.id,
+              icon: node.icon || 'grid-outline',
+              image: effectiveImg,
+              imageUrl: effectiveImg || undefined,
+              latestProductImage: node.latestProductImage || undefined,
+              bannerImage: effectiveImg || undefined,
+              parentId: node.parentId || null,
+              productCount: node.productCount || 0,
+              featured: Boolean(node.featured),
+              children: Array.isArray(node.children) ? node.children.map(mapNode) : [],
+            };
+          };
           const mapped = rawTree.map(mapNode);
           cachedTree = mapped;
           return mapped;
@@ -101,19 +106,23 @@ export const categoryService = {
       if (res.ok && res.data) {
         const list = res.data.data || res.data;
         if (Array.isArray(list) && list.length > 0) {
-          return list.map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            nameAmharic: item.nameAmharic || item.name,
-            slug: item.slug || item.id,
-            icon: item.icon || 'grid-outline',
-            image: item.imageUrl || item.image || '',
-            imageUrl: item.imageUrl || item.image || undefined,
-            bannerImage: item.imageUrl || item.image || undefined,
-            parentId: null,
-            productCount: item.productCount || 0,
-            children: [],
-          }));
+          return list.map((item: any) => {
+            const effectiveImg = (item.latestProductImage || item.imageUrl || item.image || '').trim();
+            return {
+              id: item.id,
+              name: item.name,
+              nameAmharic: item.nameAmharic || item.name,
+              slug: item.slug || item.id,
+              icon: item.icon || 'grid-outline',
+              image: effectiveImg,
+              imageUrl: effectiveImg || undefined,
+              latestProductImage: item.latestProductImage || undefined,
+              bannerImage: effectiveImg || undefined,
+              parentId: null,
+              productCount: item.productCount || 0,
+              children: [],
+            };
+          });
         }
       }
     } catch {
@@ -135,15 +144,17 @@ export const categoryService = {
 
       if (res.ok && res.data?.data) {
         const c = res.data.data;
+        const effectiveImg = (c.latestProductImage || c.imageUrl || c.image || '').trim();
         return {
           id: c.id,
           name: c.name,
           nameAmharic: c.nameAmharic || c.name,
           slug: c.slug || c.id,
           icon: c.icon || 'grid-outline',
-          image: c.imageUrl || c.image || '',
-          imageUrl: c.imageUrl || c.image || undefined,
-          bannerImage: c.imageUrl || c.image || undefined,
+          image: effectiveImg,
+          imageUrl: effectiveImg || undefined,
+          latestProductImage: c.latestProductImage || undefined,
+          bannerImage: effectiveImg || undefined,
           parentId: c.parentId || null,
           productCount: c.productCount || 0,
           children: Array.isArray(c.children) ? c.children : [],

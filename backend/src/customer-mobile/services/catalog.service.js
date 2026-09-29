@@ -519,28 +519,55 @@ export class MobileCatalogService {
   }
 
   /**
-   * Get categories flat or root only
+   * Get complete hierarchical category tree with unlimited depth,
+   * enriched with the latest added product images for each category.
+   */
+  static async getCategoryTree() {
+    const rawTree = await fetchAdminCategoryTree({ activeOnly: 'true' });
+    return attachLatestProductImagesToCategoryTree(rawTree);
+  }
+
+  /**
+   * Get categories flat or root only, enriched with the latest added product images
    */
   static async listCategories(query = {}) {
     const params = { activeOnly: 'true', ...query };
     if (query.root === 'true' || query.root === true) {
       params.parentId = null;
     }
-    return fetchAdminCategories(params);
+    const categories = await fetchAdminCategories(params);
+    const tree = await this.getCategoryTree();
+    const imageMap = buildLatestImageMapFromTree(tree);
+
+    return categories.map((cat) => {
+      const imgInfo = imageMap.get(cat.id);
+      const effectiveImg = imgInfo ? (imgInfo.latestProductImage || imgInfo.imageUrl) : cat.imageUrl;
+      return {
+        ...cat,
+        latestProductImage: imgInfo ? imgInfo.latestProductImage : null,
+        imageUrl: effectiveImg,
+        image: effectiveImg,
+      };
+    });
   }
 
   /**
-   * Get complete hierarchical category tree with unlimited depth
-   */
-  static async getCategoryTree() {
-    return fetchAdminCategoryTree({ activeOnly: 'true' });
-  }
-
-  /**
-   * Get category detail by ID
+   * Get category detail by ID, enriched with latest product image
    */
   static async getCategoryById(id) {
-    return fetchAdminCategoryById(id);
+    const category = await fetchAdminCategoryById(id);
+    if (!category) return null;
+    const tree = await this.getCategoryTree();
+    const imageMap = buildLatestImageMapFromTree(tree);
+    const imgInfo = imageMap.get(category.id);
+    const effectiveImg = imgInfo ? (imgInfo.latestProductImage || imgInfo.imageUrl) : category.imageUrl;
+
+    return {
+      ...category,
+      latestProductImage: imgInfo ? imgInfo.latestProductImage : null,
+      imageUrl: effectiveImg,
+      image: effectiveImg,
+    };
   }
 
   /**
@@ -555,3 +582,99 @@ export class MobileCatalogService {
     };
   }
 }
+
+/**
+ * Attaches the latest added active product's primary image to each category in the tree.
+ * Propagates upwards so root and parent categories display the latest added product image
+ * from across their subcategory trees.
+ */
+async function attachLatestProductImagesToCategoryTree(roots) {
+  try {
+    const latestProducts = await prisma.product.findMany({
+      where: { status: 'ACTIVE' },
+      distinct: ['marketplaceCategoryId'],
+      orderBy: [
+        { marketplaceCategoryId: 'asc' },
+        { createdAt: 'desc' },
+      ],
+      select: {
+        id: true,
+        name: true,
+        marketplaceCategoryId: true,
+        createdAt: true,
+        images: {
+          select: { url: true },
+          orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+          take: 1,
+        },
+      },
+    });
+
+    const productByCatId = new Map();
+    latestProducts.forEach((p) => {
+      if (p.images && p.images[0]?.url) {
+        productByCatId.set(p.marketplaceCategoryId, {
+          image: p.images[0].url,
+          createdAt: new Date(p.createdAt).getTime(),
+          productName: p.name,
+        });
+      }
+    });
+
+    function processNode(node) {
+      const directProduct = productByCatId.get(node.id);
+      let latestImage = directProduct ? directProduct.image : null;
+      let latestTime = directProduct ? directProduct.createdAt : 0;
+
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+          const childLatest = processNode(child);
+          if (childLatest.latestTime > latestTime && childLatest.latestImage) {
+            latestTime = childLatest.latestTime;
+            latestImage = childLatest.latestImage;
+          }
+        }
+      }
+
+      node.latestProductImage = latestImage;
+      node.latestProductCreatedAt = latestTime;
+
+      // Requirement: Explore categories on the mobile app should show
+      // the images of each category from the latest added product by the super admin on each category
+      if (latestImage) {
+        node.imageUrl = latestImage;
+        node.image = latestImage;
+      }
+
+      return { latestImage, latestTime };
+    }
+
+    for (const root of roots) {
+      processNode(root);
+    }
+  } catch (err) {
+    // If error occurs, preserve existing tree structure
+  }
+
+  return roots;
+}
+
+function buildLatestImageMapFromTree(roots) {
+  const map = new Map();
+  function traverse(node) {
+    if (node.latestProductImage || node.imageUrl) {
+      map.set(node.id, {
+        latestProductImage: node.latestProductImage || node.imageUrl,
+        imageUrl: node.imageUrl || node.latestProductImage,
+      });
+    }
+    if (Array.isArray(node.children)) {
+      node.children.forEach(traverse);
+    }
+  }
+  if (Array.isArray(roots)) {
+    roots.forEach(traverse);
+  }
+  return map;
+}
+
