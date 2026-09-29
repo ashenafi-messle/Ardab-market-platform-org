@@ -5,47 +5,55 @@
 -- 1. Add new notification types to NotificationType enum if not exist
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'NEW_PRODUCT' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'NEW_PRODUCT';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'PRODUCT_DISCOUNT' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'PRODUCT_DISCOUNT';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_PLACED' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'ORDER_PLACED';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_CONFIRMED' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'ORDER_CONFIRMED';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'PAYMENT_CONFIRMED' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'PAYMENT_CONFIRMED';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_PROCESSING' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'ORDER_PROCESSING';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_PACKED' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'ORDER_PACKED';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_OUT_FOR_DELIVERY' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'ORDER_OUT_FOR_DELIVERY';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_DELIVERED' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'ORDER_DELIVERED';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_CANCELLED' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'ORDER_CANCELLED';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'SYSTEM' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'SYSTEM';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'PROMOTION' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'PROMOTION';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'SUPPORT' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'SUPPORT';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'SECURITY' AND enumtypid = 'NotificationType'::regtype) THEN
-    ALTER TYPE "NotificationType" ADD VALUE 'SECURITY';
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'NotificationType') THEN
+    CREATE TYPE "NotificationType" AS ENUM (
+      'NEW_PRODUCT', 'PRODUCT_DISCOUNT', 'ORDER_PLACED', 'ORDER_CONFIRMED',
+      'PAYMENT_CONFIRMED', 'ORDER_PROCESSING', 'ORDER_PACKED', 'ORDER_OUT_FOR_DELIVERY',
+      'ORDER_DELIVERED', 'ORDER_CANCELLED', 'SYSTEM', 'PROMOTION', 'SUPPORT', 'SECURITY'
+    );
+  ELSE
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'NEW_PRODUCT' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'NEW_PRODUCT';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'PRODUCT_DISCOUNT' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'PRODUCT_DISCOUNT';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_PLACED' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'ORDER_PLACED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_CONFIRMED' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'ORDER_CONFIRMED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'PAYMENT_CONFIRMED' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'PAYMENT_CONFIRMED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_PROCESSING' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'ORDER_PROCESSING';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_PACKED' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'ORDER_PACKED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_OUT_FOR_DELIVERY' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'ORDER_OUT_FOR_DELIVERY';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_DELIVERED' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'ORDER_DELIVERED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ORDER_CANCELLED' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'ORDER_CANCELLED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'SYSTEM' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'SYSTEM';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'PROMOTION' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'PROMOTION';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'SUPPORT' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'SUPPORT';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'SECURITY' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')) THEN
+      ALTER TYPE "NotificationType" ADD VALUE 'SECURITY';
+    END IF;
   END IF;
 END $$;
 
