@@ -158,6 +158,28 @@ export const orderService = {
     const cacheKey = `${STORAGE_KEYS.ORDER_DETAIL_PREFIX}${orderId}`;
     const timestampKey = `${STORAGE_KEYS.LAST_FETCH_PREFIX}detail_${orderId}`;
 
+    // Handle legacy local/mock orders gracefully without failing
+    if (orderId.startsWith('ord-')) {
+      const savedOrdersRaw = await secureStorage.getItem('ardab_saved_orders');
+      if (savedOrdersRaw) {
+        try {
+          const list = JSON.parse(savedOrdersRaw);
+          const found = Array.isArray(list)
+            ? list.find((o: any) => o.id === orderId || o.orderNumber === orderId)
+            : null;
+          if (found) {
+            return {
+              order: found,
+              isOffline: true,
+              lastUpdated: found.createdAt || null,
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     try {
       const res = await apiFetch<{
         success: boolean;
@@ -182,10 +204,11 @@ export const orderService = {
 
       throw new Error(res.data?.message || 'Order not found');
     } catch (err: any) {
-      // Offline fallback
-      const [cachedRaw, lastUpdated] = await Promise.all([
+      // Offline fallback: 1. check detail cache, 2. check saved orders list
+      const [cachedRaw, lastUpdated, savedOrdersRaw] = await Promise.all([
         secureStorage.getItem(cacheKey),
         secureStorage.getItem(timestampKey),
+        secureStorage.getItem('ardab_saved_orders'),
       ]);
 
       if (cachedRaw) {
@@ -201,6 +224,24 @@ export const orderService = {
         }
       }
 
+      if (savedOrdersRaw) {
+        try {
+          const list = JSON.parse(savedOrdersRaw);
+          const found = Array.isArray(list)
+            ? list.find((o: any) => o.id === orderId || o.orderNumber === orderId)
+            : null;
+          if (found) {
+            return {
+              order: found,
+              isOffline: true,
+              lastUpdated: found.createdAt || null,
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       throw err;
     }
   },
@@ -211,6 +252,42 @@ export const orderService = {
   async getOrderTimeline(orderId: string): Promise<OrderTrackingResult> {
     const cacheKey = `${STORAGE_KEYS.TRACKING_PREFIX}${orderId}`;
     const timestampKey = `${STORAGE_KEYS.LAST_FETCH_PREFIX}track_${orderId}`;
+
+    // Handle legacy local/mock orders gracefully
+    if (orderId.startsWith('ord-')) {
+      const savedOrdersRaw = await secureStorage.getItem('ardab_saved_orders');
+      if (savedOrdersRaw) {
+        try {
+          const list = JSON.parse(savedOrdersRaw);
+          const found = Array.isArray(list)
+            ? list.find((o: any) => o.id === orderId || o.orderNumber === orderId)
+            : null;
+          if (found) {
+            return {
+              orderId: found.id,
+              orderNumber: found.orderNumber,
+              status: found.status,
+              paymentStatus: found.paymentStatus,
+              isCancellable: false,
+              milestones: found.milestones || [],
+              timeline: found.timeline || [],
+              delivery: found.delivery || null,
+              deliveryAddress: found.deliveryAddressSnapshot || null,
+              support: {
+                telegramBotUrl: 'https://t.me/Ardab_market_bot',
+                supportPhone: '+251911000000',
+                supportEmail: 'support@ardabmarket.com',
+                orderReference: found.orderNumber,
+              },
+              isOffline: true,
+              lastUpdated: found.createdAt || null,
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
 
     try {
       const res = await apiFetch<{

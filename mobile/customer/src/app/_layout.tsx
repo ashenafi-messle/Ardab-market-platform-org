@@ -29,15 +29,15 @@ function NavigationStack() {
         animation: 'slide_from_right',
       }}>
       <Stack.Screen name="index" />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      <Stack.Screen name="products" options={{ headerShown: false }} />
-      <Stack.Screen name="categories" options={{ headerShown: false }} />
-      <Stack.Screen name="wishlist" options={{ headerShown: false }} />
-      <Stack.Screen name="checkout" options={{ headerShown: false }} />
-      <Stack.Screen name="orders" options={{ headerShown: false }} />
-      <Stack.Screen name="profile" options={{ headerShown: false }} />
-      <Stack.Screen name="support" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="products" />
+      <Stack.Screen name="categories" />
+      <Stack.Screen name="wishlist" />
+      <Stack.Screen name="checkout" />
+      <Stack.Screen name="orders/[id]" />
+      <Stack.Screen name="orders/tracking" />
+      <Stack.Screen name="support" />
     </Stack>
   );
 }

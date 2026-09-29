@@ -19,10 +19,12 @@ import { AppHeader, AppButton, Divider } from '@/components/common';
 import { OrderStatus, OrderTimeline } from '@/components/order';
 import { CustomerOrder } from '@/types';
 import { orderService } from '@/services/orderService';
+import { useApp } from '@/store';
 
 export default function OrderDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { orders: storeOrders } = useApp();
 
   const [order, setOrder] = useState<CustomerOrder | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -42,13 +44,19 @@ export default function OrderDetailsScreen() {
       setOrder(res.order);
       setIsOffline(!!res.isOffline);
     } catch (err: any) {
-      console.warn('[OrderDetailsScreen] Failed to load order:', err);
-      setErrorMsg(err.message || 'Unable to load order details');
+      console.warn('[OrderDetailsScreen] Failed to load order from API:', err.message);
+      const local = storeOrders?.find((o) => o.id === id || o.orderNumber === id);
+      if (local) {
+        setOrder(local);
+        setIsOffline(true);
+      } else {
+        setErrorMsg(err.message || 'Unable to load order details');
+      }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [id]);
+  }, [id, storeOrders]);
 
   useEffect(() => {
     loadOrderDetails();

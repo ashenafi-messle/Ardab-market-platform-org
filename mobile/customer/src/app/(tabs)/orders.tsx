@@ -19,6 +19,7 @@ import { OrderCard } from '@/components/order';
 import { EmptyState } from '@/components/common';
 import { orderService } from '@/services/orderService';
 import { useAuth } from '@/context/AuthContext';
+import { useApp } from '@/store';
 
 const TABS: { key: OrderFilterTab; label: string }[] = [
   { key: 'ALL', label: 'All' },
@@ -30,6 +31,7 @@ const TABS: { key: OrderFilterTab; label: string }[] = [
 export default function OrdersScreen() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const { orders: storeOrders } = useApp();
 
   const [activeTab, setActiveTab] = useState<OrderFilterTab>('ALL');
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
@@ -66,10 +68,31 @@ export default function OrdersScreen() {
         });
 
         if (pageToLoad === 1) {
-          setOrders(res.orders);
+          const combined = [...res.orders];
+          const existingIds = new Set(res.orders.map((o) => o.id));
+          const existingNumbers = new Set(res.orders.map((o) => o.orderNumber));
+          for (const local of storeOrders || []) {
+            if (!existingIds.has(local.id) && !existingNumbers.has(local.orderNumber)) {
+              if (activeTab === 'ALL') {
+                combined.push(local);
+              } else if (
+                activeTab === 'ACTIVE' &&
+                ['PENDING', 'CONFIRMED', 'PROCESSING', 'READY_FOR_DELIVERY', 'ASSIGNED_TO_TRIP', 'PICKED_UP', 'IN_TRANSIT', 'SHIPPING'].includes(local.status)
+              ) {
+                combined.push(local);
+              } else if (activeTab === 'COMPLETED' && local.status === 'DELIVERED') {
+                combined.push(local);
+              } else if (
+                activeTab === 'CANCELLED' &&
+                ['CANCELLED', 'REJECTED', 'FAILED', 'RETURNED'].includes(local.status)
+              ) {
+                combined.push(local);
+              }
+            }
+          }
+          setOrders(combined);
         } else {
           setOrders((prev) => {
-            // Deduplicate incoming orders by id
             const existingIds = new Set(prev.map((o) => o.id));
             const fresh = res.orders.filter((o) => !existingIds.has(o.id));
             return [...prev, ...fresh];

@@ -16,10 +16,12 @@ import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { AppHeader } from '@/components/common';
 import { OrderTimeline, OrderStatus } from '@/components/order';
 import { orderService, OrderTrackingResult } from '@/services/orderService';
+import { useApp } from '@/store';
 
 export default function OrderTrackingScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { orders: storeOrders } = useApp();
 
   const [tracking, setTracking] = useState<OrderTrackingResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -45,7 +47,29 @@ export default function OrderTrackingScreen() {
         setLastUpdated(res.lastUpdated || new Date().toISOString());
       } catch (err: any) {
         console.warn('[OrderTrackingScreen] Error fetching tracking:', err);
-        if (!tracking) {
+        const local = storeOrders?.find((o) => o.id === id || o.orderNumber === id);
+        if (local) {
+          setTracking({
+            orderId: local.id,
+            orderNumber: local.orderNumber,
+            status: local.status,
+            paymentStatus: local.paymentStatus,
+            isCancellable: false,
+            milestones: local.milestones || [],
+            timeline: local.timeline || [],
+            delivery: local.delivery || null,
+            deliveryAddress: local.deliveryAddressSnapshot || null,
+            support: {
+              telegramBotUrl: 'https://t.me/Ardab_market_bot',
+              supportPhone: '+251911000000',
+              supportEmail: 'support@ardabmarket.com',
+              orderReference: local.orderNumber,
+            },
+            isOffline: true,
+            lastUpdated: local.createdAt || null,
+          });
+          setIsOffline(true);
+        } else if (!tracking) {
           setErrorMsg(err.message || 'Tracking information unavailable');
         }
       } finally {
@@ -53,7 +77,7 @@ export default function OrderTrackingScreen() {
         setIsRefreshing(false);
       }
     },
-    [id, tracking]
+    [id, tracking, storeOrders]
   );
 
   // Initial load
