@@ -53,7 +53,7 @@ export default function TicketConversationScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <AppHeader title={`${t('support.title')} #${initialTicket.ticketNumber}`} showBack />
 
       {/* Ticket Subject Card */}

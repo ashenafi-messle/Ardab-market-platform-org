@@ -15,6 +15,7 @@ import {
   getMeHandler,
   forgotPasswordHandler,
   resetPasswordHandler,
+  telegramWebhookHandler,
 } from '../controllers/auth.controller.js';
 import { mobileAuthMiddleware } from '../middleware/auth.middleware.js';
 import { validate } from '../../shared/middleware/validate.middleware.js';
@@ -90,6 +91,16 @@ router.post(
   otpVerifyRateLimiter,
   validate({ body: verifyTelegramOtpSchema }),
   asyncHandler(verifyTelegramRegistrationHandler)
+);
+
+/**
+ * @route   POST /api/customer-mobile/auth/telegram/webhook
+ * @desc    Receive real-time update events directly from Telegram Bot API
+ * @access  Public (Webhook verified via secret token)
+ */
+router.post(
+  '/telegram/webhook',
+  asyncHandler(telegramWebhookHandler)
 );
 
 /**

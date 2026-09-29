@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { Product } from '@/types';
@@ -28,6 +28,7 @@ export default function ProductDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isInWishlist, toggleWishlist, addToCart } = useApp();
+  const insets = useSafeAreaInsets();
 
   const [product, setProduct] = useState<Product | null>(() => {
     if (id) {
@@ -187,7 +188,7 @@ export default function ProductDetailScreen() {
       </View>
 
       {/* Main Content */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingBottom: 100 + insets.bottom }]}>
         {/* Image Gallery */}
         <View style={styles.imageGalleryContainer}>
           <ScrollView
@@ -477,7 +478,7 @@ export default function ProductDetailScreen() {
       ) : null}
 
       {/* Sticky Bottom Action Bar */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom + 8, Spacing.md) }]}>
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => toggleWishlist(product)}

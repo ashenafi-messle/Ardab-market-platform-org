@@ -96,15 +96,12 @@ export class MobileOtpService {
         throw ApiError.internal('Unable to send verification email. Please try again later.');
       }
     } else if (channel === 'TELEGRAM') {
-      const tgResult = await TelegramService.sendOtpToTelegram({
-        chatId: cleanTarget,
-        otp: rawOtp,
-        expiresMinutes: OTP_EXPIRY_MINUTES,
+      // For Telegram, route through dedicated session handler
+      return this.requestTelegramOtpSession({
+        phone: cleanTarget,
+        city,
+        purpose,
       });
-
-      if (!tgResult.success && !tgResult.simulated && !tgResult.pendingUserStart) {
-        logger.warn('Direct push via Telegram bot not available for target:', { target: cleanTarget, error: tgResult.error });
-      }
     }
 
     const botInfo = TelegramService.getBotInfo();
@@ -122,18 +119,150 @@ export class MobileOtpService {
   }
 
   /**
+   * Initiates or resends Telegram OTP session with deep-link start token
+   */
+  static async requestTelegramOtpSession({ phone, city = 'Gondar', purpose = 'SECURITY_VERIFICATION' }) {
+    const cleanPhone = String(phone).trim();
+    const now = Date.now();
+
+    // 1. Locate active unconsumed session for this target
+    const existingSession = await prisma.customerMobileOtp.findFirst({
+      where: {
+        target: cleanPhone,
+        channel: 'TELEGRAM',
+        purpose,
+        consumedAt: null,
+        isVerified: false,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // 2. Enforce 60-second resend cooldown
+    if (existingSession) {
+      const lastAction = existingSession.updatedAt
+        ? new Date(existingSession.updatedAt).getTime()
+        : new Date(existingSession.createdAt).getTime();
+      const secondsSince = (now - lastAction) / 1000;
+
+      if (secondsSince < RESEND_COOLDOWN_SECONDS) {
+        throw ApiError.tooManyRequests(
+          'Please wait before requesting another verification code.',
+          AuthResponseCode.OTP_RATE_LIMITED
+        );
+      }
+
+      // If Telegram chat is already linked (customer tapped Start earlier and is now requesting resend):
+      if (existingSession.telegramChatId) {
+        const rawOtp = generateNumericOtp();
+        const codeHash = hashToken(rawOtp);
+        const expiresAt = new Date(now + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+        await prisma.customerMobileOtp.update({
+          where: { id: existingSession.id },
+          data: {
+            codeHash,
+            expiresAt,
+            attempts: 0,
+            updatedAt: new Date(),
+          },
+        });
+
+        // Dispatch directly to user's Telegram chat
+        await TelegramService.sendOtpMessage(existingSession.telegramChatId, rawOtp, OTP_EXPIRY_MINUTES);
+
+        const botInfo = TelegramService.getBotInfo();
+        const botUrl = existingSession.telegramToken
+          ? `${botInfo.url}?start=${existingSession.telegramToken}`
+          : botInfo.url;
+
+        logger.info('[Telegram Signup] resendOtpDispatchedDirectly=true', {
+          chatId: existingSession.telegramChatId,
+          target: cleanPhone,
+        });
+
+        return {
+          success: true,
+          target: cleanPhone,
+          channel: 'TELEGRAM',
+          expiresInSeconds: OTP_EXPIRY_MINUTES * 60,
+          cooldownSeconds: RESEND_COOLDOWN_SECONDS,
+          botUsername: botInfo.username,
+          botUrl,
+          message: 'A new verification code has been sent to your Telegram bot.',
+        };
+      }
+    }
+
+    // 3. Invalidate previous pending sessions for this target & purpose
+    await prisma.customerMobileOtp
+      .updateMany({
+        where: {
+          target: cleanPhone,
+          channel: 'TELEGRAM',
+          purpose,
+          consumedAt: null,
+        },
+        data: {
+          consumedAt: new Date(),
+        },
+      })
+      .catch(() => {});
+
+    // 4. Create new pending Telegram verification session with opaque start token
+    // Telegram start parameter accepts up to 64 alphanumeric characters
+    const startToken = `tg_${generateRandomToken().slice(0, 32)}`;
+    const placeholderHash = hashToken(`pending_${startToken}`);
+    const sessionExpiresAt = new Date(now + 15 * 60 * 1000); // 15 minutes to start bot
+
+    await prisma.customerMobileOtp.create({
+      data: {
+        target: cleanPhone,
+        channel: 'TELEGRAM',
+        codeHash: placeholderHash,
+        city,
+        purpose,
+        telegramToken: startToken,
+        expiresAt: sessionExpiresAt,
+        attempts: 0,
+        isVerified: false,
+      },
+    });
+
+    const botInfo = TelegramService.getBotInfo();
+    const deepLinkUrl = `${botInfo.url}?start=${startToken}`;
+
+    logger.info('[Telegram Signup] pendingSessionCreated=true', {
+      target: cleanPhone,
+      city,
+    });
+
+    return {
+      success: true,
+      target: cleanPhone,
+      channel: 'TELEGRAM',
+      expiresInSeconds: 15 * 60,
+      cooldownSeconds: RESEND_COOLDOWN_SECONDS,
+      botUsername: botInfo.username,
+      botUrl: deepLinkUrl,
+      startToken,
+      message: 'Telegram verification session created. Open the bot to receive your code.',
+    };
+  }
+
+  /**
    * Verifies 6-digit OTP code submitted by customer
    */
-  static async verifyOtp({ target, channel, otp, purpose = 'EMAIL_VERIFICATION' }) {
+  static async verifyOtp({ target, channel, otp, purpose }) {
     const cleanTarget = String(target).trim().toLowerCase();
     const cleanOtp = String(otp).trim();
+    const resolvedPurpose = purpose || (channel === 'TELEGRAM' ? 'SECURITY_VERIFICATION' : 'EMAIL_VERIFICATION');
 
     // 1. Locate active OTP record
     const otpRecord = await prisma.customerMobileOtp.findFirst({
       where: {
         target: cleanTarget,
         channel,
-        purpose,
+        purpose: resolvedPurpose,
         consumedAt: null,
       },
       orderBy: { createdAt: 'desc' },
@@ -267,6 +396,7 @@ export class MobileOtpService {
       channel: ticket.channel,
       city: ticket.city,
       purpose: ticket.purpose,
+      telegramChatId: ticket.telegramChatId,
     };
   }
 }

@@ -197,6 +197,7 @@ export class MobileAuthService {
           passwordHash,
           city: ticket.city || 'Gondar',
           deliveryZone: deliveryZone?.trim() || null,
+          telegramUserId: ticket.telegramChatId || null,
           verificationStatus: 'VERIFIED',
           status: 'ACTIVE',
           lastActivityAt: new Date(),

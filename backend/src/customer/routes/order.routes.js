@@ -7,6 +7,7 @@ import {
   customerCheckoutHandler,
   getMyOrdersHandler,
   getMyOrderDetailsHandler,
+  getMyOrderTimelineHandler,
   cancelMyOrderHandler,
 } from '../controllers/order.controller.js';
 import { customerAuthMiddleware } from '../middleware/customerAuth.middleware.js';
@@ -48,6 +49,17 @@ router.get(
   '/:id',
   customerAuthMiddleware,
   asyncHandler(getMyOrderDetailsHandler)
+);
+
+/**
+ * @route   GET /api/customer/orders/:id/tracking
+ * @desc    Get order tracking milestones, progress, and chronological events
+ * @access  Customer (Auth Required)
+ */
+router.get(
+  '/:id/tracking',
+  customerAuthMiddleware,
+  asyncHandler(getMyOrderTimelineHandler)
 );
 
 /**

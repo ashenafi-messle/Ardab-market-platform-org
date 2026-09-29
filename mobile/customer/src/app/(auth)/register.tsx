@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -88,15 +89,17 @@ export default function RegisterScreen() {
       try {
         const res = await requestTelegramOtp(cleanPhone, city);
         setLoading(false);
+        const targetBotUrl = res?.data?.botUrl || res?.botUrl || 'https://t.me/Ardab_market_bot';
         router.push({
           pathname: '/(auth)/verify-otp' as any,
           params: {
             method: 'telegram',
             identifier: cleanPhone,
             city,
-            botUrl: res?.data?.botUrl || 'https://t.me/Ardab_market_bot',
+            botUrl: targetBotUrl,
           },
         });
+        Linking.openURL(targetBotUrl).catch(() => {});
       } catch (err: any) {
         setLoading(false);
         const msg = err.message || '';

@@ -4,6 +4,8 @@
 
 import { ApiResponse } from '../../shared/utils/apiResponse.js';
 import { MobileAuthService } from '../services/auth.service.js';
+import { TelegramService } from '../../shared/services/telegram/telegram.service.js';
+import { logger } from '../../shared/utils/logger.js';
 import { AuthResponseCode } from '../utils/responseCodes.js';
 
 /**
@@ -177,3 +179,31 @@ export async function resetPasswordHandler(req, res) {
     code: result.code,
   });
 }
+
+/**
+ * POST /api/customer-mobile/auth/telegram/webhook
+ * Receives update events directly from Telegram Bot API
+ */
+export async function telegramWebhookHandler(req, res) {
+  // Validate webhook secret token if configured
+  const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
+  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+  if (expectedSecret && secretHeader && secretHeader !== expectedSecret) {
+    logger.warn('[Telegram Webhook] Rejected request with invalid secret header');
+    return res.status(401).json({ error: 'UNAUTHORIZED' });
+  }
+
+  // Telegram expects 200 OK fast
+  res.status(200).json({ ok: true });
+
+  // Handle update asynchronously
+  try {
+    await TelegramService.handleTelegramUpdate(req.body);
+  } catch (err) {
+    logger.error('[Telegram Webhook] Error processing webhook update:', {
+      error: err.message,
+    });
+  }
+}
+

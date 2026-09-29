@@ -7,10 +7,11 @@ import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { useApp } from '@/store';
 import { formatPrice, t } from '@/utils/i18n';
 import { AppHeader, AppButton, Divider } from '@/components/common';
+import { orderService } from '@/services/orderService';
 
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { cartItems, cartSubtotal, cartTotal, addresses, placeOrder, language } = useApp();
+  const { cartItems, cartSubtotal, cartTotal, addresses, placeOrder, removeFromCart, language } = useApp();
 
   const [selectedAddressIndex, setSelectedAddressIndex] = useState(0);
   const [selectedPayment, setSelectedPayment] = useState<'COD' | 'TELEBIRR' | 'CBE_BIRR' | 'BANK'>('COD');
@@ -46,16 +47,62 @@ export default function CheckoutScreen() {
     },
   ];
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     setIsPlacing(true);
     const paymentName =
       paymentOptions.find((p) => p.key === selectedPayment)?.title || 'Cash on Delivery';
 
+    try {
+      const backendPaymentMethod =
+        selectedPayment === 'COD'
+          ? 'CASH_ON_DELIVERY'
+          : selectedPayment === 'TELEBIRR'
+          ? 'TELEBIRR'
+          : selectedPayment === 'CBE_BIRR'
+          ? 'CBE_BIRR'
+          : 'BANK_TRANSFER';
+
+      // Check if product IDs look like valid UUIDs from database
+      const hasValidProductUuids =
+        selectedCartItems.length > 0 &&
+        selectedCartItems.every((i) => i.product.id && i.product.id.length > 20);
+
+      if (hasValidProductUuids && selectedAddress) {
+        const orderPayload = {
+          items: selectedCartItems.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+          })),
+          deliveryAddress: {
+            recipientName: selectedAddress.fullName,
+            phone: selectedAddress.phone,
+            city: selectedAddress.city,
+            deliveryZone: selectedAddress.subcity || undefined,
+            neighborhood: selectedAddress.woreda || undefined,
+            addressLine: selectedAddress.specificAddress || 'Addis Ababa',
+          },
+          paymentMethod: backendPaymentMethod,
+        };
+
+        const liveOrder = await orderService.checkoutOrder(orderPayload);
+        selectedCartItems.forEach((item) => removeFromCart(item.product.id));
+        setIsPlacing(false);
+        router.replace(
+          `/checkout/success?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}` as any
+        );
+        return;
+      }
+    } catch (err: any) {
+      console.warn('[CheckoutScreen] Live backend checkout fallback to local order:', err.message);
+    }
+
     setTimeout(() => {
       setIsPlacing(false);
       const newOrder = placeOrder(paymentName, selectedAddress);
-      router.replace(`/checkout/success?orderId=${newOrder.id}&orderNumber=${newOrder.orderNumber}` as any);
-    }, 900);
+      router.replace(
+        `/checkout/success?orderId=${newOrder.id}&orderNumber=${newOrder.orderNumber}` as any
+      );
+    }, 600);
   };
 
   return (

@@ -130,9 +130,18 @@ export type OrderStatusType =
   | 'PENDING'
   | 'CONFIRMED'
   | 'PROCESSING'
+  | 'READY_FOR_DELIVERY'
+  | 'ASSIGNED_TO_TRIP'
+  | 'PICKED_UP'
+  | 'IN_TRANSIT'
   | 'SHIPPING'
   | 'DELIVERED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'FAILED'
+  | 'RETURNED'
+  | 'REJECTED';
+
+export type OrderFilterTab = 'ALL' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 
 export interface TrackingStep {
   title: string;
@@ -142,28 +151,128 @@ export interface TrackingStep {
   current: boolean;
 }
 
+export interface OrderMilestone {
+  key: string;
+  stage: string;
+  title: string;
+  description: string;
+  timestamp?: string | null;
+  state: 'COMPLETED' | 'CURRENT' | 'UPCOMING' | 'CANCELLED' | 'FAILED';
+}
+
+export interface OrderTimelineEvent {
+  id?: string;
+  type?: string;
+  status: OrderStatusType | string;
+  customerMessage: string;
+  timestamp: string;
+  actor?: string;
+  isCompleted?: boolean;
+}
+
+export interface OrderDeliverySnapshot {
+  recipientName: string;
+  phone: string;
+  city: string;
+  deliveryZone?: string | null;
+  neighborhood?: string | null;
+  addressLine: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export interface OrderDeliveryInfo {
+  id: string;
+  deliveryNumber: string;
+  status: string;
+  estimatedDeliveryAt?: string | null;
+  deliveredAt?: string | null;
+  agentName?: string;
+  agentPhone?: string;
+}
+
+export interface OrderSupportContext {
+  telegramBotUrl: string;
+  supportPhone: string;
+  supportEmail: string;
+  orderReference: string;
+}
+
 export interface OrderItem {
-  product: Product;
+  id?: string;
+  productId?: string | null;
+  productName?: string;
+  product?: Product;
   quantity: number;
-  price: number;
+  unitPrice?: string;
+  unitPriceEtb?: number;
+  price?: number;
+  subtotal?: string;
+  totalPriceEtb?: number;
+  totalWeight?: string;
+  unit?: string;
+  sellerName?: string;
+  productImage?: string | null;
   selectedAttributes?: Record<string, string>;
 }
 
-export interface Order {
+export interface CustomerOrder {
   id: string;
   orderNumber: string;
-  createdAt: string;
   status: OrderStatusType;
-  items: OrderItem[];
-  subtotal: number;
-  deliveryFee: number;
-  discount: number;
-  total: number;
-  shippingAddress: Address;
   paymentMethod: string;
-  paymentStatus: 'PAID' | 'PENDING' | 'FAILED';
-  estimatedDelivery: string;
-  trackingSteps: TrackingStep[];
+  paymentStatus: 'PAID' | 'PENDING' | 'FAILED' | 'REFUNDED';
+  subtotal: string | number;
+  subtotalEtb?: number;
+  deliveryFee: string | number;
+  deliveryFeeEtb?: number;
+  discountAmount?: string | number;
+  discountEtb?: number;
+  totalAmount?: string | number;
+  totalEtb?: number;
+  total?: number;
+  discount?: number;
+  totalWeight?: string;
+  currency?: string;
+  customerNote?: string | null;
+  city?: string;
+  deliveryZone?: string | null;
+  deliveryAddress?: string | null;
+  cancelledReason?: string | null;
+  rejectedReason?: string | null;
+  itemCount?: number;
+  previewImages?: string[];
+  items: OrderItem[];
+  placedAt?: string;
+  confirmedAt?: string | null;
+  processingAt?: string | null;
+  readyAt?: string | null;
+  dispatchedAt?: string | null;
+  deliveredAt?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  estimatedDelivery?: string;
+  canCancel?: boolean;
+  delivery?: OrderDeliveryInfo | null;
+  deliveryAddressSnapshot?: OrderDeliverySnapshot | null;
+  recipientName?: string | null;
+  recipientPhone?: string | null;
+  shippingAddress?: Address;
+  milestones?: OrderMilestone[];
+  timeline?: OrderTimelineEvent[];
+  trackingSteps?: TrackingStep[];
+  support?: OrderSupportContext;
+}
+
+export type Order = CustomerOrder;
+
+export interface OrderPagination {
+  page: number;
+  limit: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface UserProfile {

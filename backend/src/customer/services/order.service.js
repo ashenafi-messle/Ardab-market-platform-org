@@ -1,30 +1,185 @@
 // ==============================================================================
 // Ardab Market - Customer Order Service (Customer-Facing Operations)
 // ==============================================================================
-// Wraps the admin order service with customer-specific IDOR protection,
-// cancellation policy enforcement, and timeline formatting.
+// Wraps the authoritative order system with customer-specific IDOR protection,
+// cancellation policy enforcement, customer-safe timeline formatting,
+// and lifecycle milestones tracking.
 
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
-import {
-  getOrderById,
-  checkoutCustomerOrder,
-} from '../../admin/services/order.service.js';
 
 // Statuses from which a customer is allowed to cancel their own order
 const CUSTOMER_CANCELLABLE_STATUSES = ['PENDING', 'CONFIRMED'];
 
+// Active statuses for filtering
+const ACTIVE_STATUSES = [
+  'PENDING',
+  'CONFIRMED',
+  'PROCESSING',
+  'READY_FOR_DELIVERY',
+  'ASSIGNED_TO_TRIP',
+  'PICKED_UP',
+  'IN_TRANSIT',
+];
+
+const CANCELLED_STATUSES = ['CANCELLED', 'REJECTED', 'FAILED', 'RETURNED'];
+
 /**
- * Lists orders for a specific customer (IDOR-safe, customer-scoped).
+ * Maps order statuses to customer-safe descriptive messages.
+ * Prevents raw internal admin notes or warehouse issues from leaking to customers.
+ */
+export function getCustomerFriendlyStatusMessage(status, actionDescription) {
+  const messages = {
+    PENDING: 'Order placed successfully. Waiting for Ardab Market confirmation.',
+    CONFIRMED: 'Your order has been verified and confirmed by Ardab Market.',
+    PROCESSING: 'Your order is being prepared and packed at the distribution center.',
+    READY_FOR_DELIVERY: 'Your order is packed and ready for delivery dispatch.',
+    ASSIGNED_TO_TRIP: 'A delivery driver has been assigned to your order.',
+    PICKED_UP: 'Your package has been picked up by the delivery agent.',
+    IN_TRANSIT: 'Your package is out for delivery to your address.',
+    DELIVERED: 'Your package has been successfully delivered.',
+    CANCELLED: 'This order was cancelled.',
+    REJECTED: 'This order was rejected and could not be fulfilled.',
+    FAILED: 'Delivery was attempted but could not be completed.',
+    RETURNED: 'Order returned to the warehouse.',
+  };
+
+  if (status && messages[status]) {
+    return messages[status];
+  }
+
+  // If action description does not contain internal phrases, return safe version
+  if (actionDescription && !/internal|admin|warehouse issue|error|debug/i.test(actionDescription)) {
+    return actionDescription;
+  }
+
+  return `Order status updated to ${status || 'updated'}.`;
+}
+
+/**
+ * Generates the standardized lifecycle milestones for visual progress tracking
+ */
+export function buildOrderMilestones(order) {
+  const status = order.status;
+  const isCancelled = ['CANCELLED', 'REJECTED'].includes(status);
+  const isFailed = ['FAILED', 'RETURNED'].includes(status);
+
+  // Standard ordered lifecycle stages
+  const stageOrder = [
+    'PENDING',
+    'CONFIRMED',
+    'PROCESSING',
+    'READY_FOR_DELIVERY',
+    'IN_TRANSIT',
+    'DELIVERED',
+  ];
+
+  const currentIdx = stageOrder.indexOf(
+    ['ASSIGNED_TO_TRIP', 'PICKED_UP'].includes(status) ? 'IN_TRANSIT' : status
+  );
+
+  const getStageState = (stage, stageIdx) => {
+    if (isCancelled) {
+      if (stage === 'PENDING') return 'COMPLETED';
+      return stage === status ? 'CANCELLED' : 'UPCOMING';
+    }
+    if (isFailed && stage === 'IN_TRANSIT') {
+      return 'FAILED';
+    }
+    if (currentIdx === -1) {
+      return 'UPCOMING';
+    }
+    if (stageIdx < currentIdx || status === 'DELIVERED') {
+      return 'COMPLETED';
+    }
+    if (stageIdx === currentIdx) {
+      return 'CURRENT';
+    }
+    return 'UPCOMING';
+  };
+
+  const stages = [
+    {
+      key: 'PLACED',
+      stage: 'PENDING',
+      title: 'Order Placed',
+      description: 'Your order was received and queued.',
+      timestamp: order.placedAt ? order.placedAt.toISOString() : order.createdAt.toISOString(),
+      state: getStageState('PENDING', 0),
+    },
+    {
+      key: 'CONFIRMED',
+      stage: 'CONFIRMED',
+      title: 'Order Confirmed',
+      description: 'Verified and confirmed by Ardab Market.',
+      timestamp: order.confirmedAt ? order.confirmedAt.toISOString() : null,
+      state: getStageState('CONFIRMED', 1),
+    },
+    {
+      key: 'PROCESSING',
+      stage: 'PROCESSING',
+      title: 'Preparing Order',
+      description: 'Being prepared and packed at the distribution hub.',
+      timestamp: order.processingAt ? order.processingAt.toISOString() : null,
+      state: getStageState('PROCESSING', 2),
+    },
+    {
+      key: 'READY_FOR_DELIVERY',
+      stage: 'READY_FOR_DELIVERY',
+      title: 'Ready for Delivery',
+      description: 'Package staged and assigned for local transit.',
+      timestamp: order.readyAt ? order.readyAt.toISOString() : null,
+      state: getStageState('READY_FOR_DELIVERY', 3),
+    },
+    {
+      key: 'OUT_FOR_DELIVERY',
+      stage: 'IN_TRANSIT',
+      title: 'Out for Delivery',
+      description: 'Courier is en route to your delivery address.',
+      timestamp: order.dispatchedAt ? order.dispatchedAt.toISOString() : null,
+      state: getStageState('IN_TRANSIT', 4),
+    },
+    {
+      key: 'DELIVERED',
+      stage: 'DELIVERED',
+      title: 'Delivered',
+      description: 'Package safely delivered to recipient.',
+      timestamp: order.deliveredAt ? order.deliveredAt.toISOString() : null,
+      state: getStageState('DELIVERED', 5),
+    },
+  ];
+
+  if (isCancelled) {
+    stages.push({
+      key: 'CANCELLED',
+      stage: status,
+      title: status === 'REJECTED' ? 'Order Rejected' : 'Order Cancelled',
+      description: order.cancelledReason || order.rejectedReason || 'Order was cancelled.',
+      timestamp: order.cancelledAt
+        ? order.cancelledAt.toISOString()
+        : order.rejectedAt
+        ? order.rejectedAt.toISOString()
+        : order.updatedAt.toISOString(),
+      state: 'CANCELLED',
+    });
+  }
+
+  return stages;
+}
+
+/**
+ * Lists orders for an authenticated customer (Strict IDOR scope).
+ * Supports filters: ALL, ACTIVE, COMPLETED, CANCELLED.
  *
- * @param {string} customerId
+ * @param {string} customerId Authenticated Customer ID
  * @param {object} queryOptions
  * @returns {Promise<{orders: any[], pagination: object}>}
  */
 export async function getMyOrders(customerId, queryOptions = {}) {
   const {
     page = 1,
-    pageSize = 10,
+    limit,
+    pageSize,
     status,
     paymentStatus,
     startDate,
@@ -33,18 +188,28 @@ export async function getMyOrders(customerId, queryOptions = {}) {
     sortOrder = 'desc',
   } = queryOptions;
 
-  const take = Math.min(Math.max(Number(pageSize), 1), 50);
+  const rawLimit = limit || pageSize || 20;
+  const take = Math.min(Math.max(Number(rawLimit), 1), 50);
   const skip = (Math.max(Number(page), 1) - 1) * take;
 
-  // Base where: always scoped to the authenticated customer
+  // Strict ownership filter: ONLY orders belonging to this customer
   const where = { customerId };
 
   if (status && status !== 'ALL') {
-    where.status = status;
+    const upperStatus = String(status).toUpperCase();
+    if (upperStatus === 'ACTIVE') {
+      where.status = { in: ACTIVE_STATUSES };
+    } else if (upperStatus === 'COMPLETED') {
+      where.status = 'DELIVERED';
+    } else if (upperStatus === 'CANCELLED') {
+      where.status = { in: CANCELLED_STATUSES };
+    } else {
+      where.status = upperStatus;
+    }
   }
 
   if (paymentStatus && paymentStatus !== 'ALL') {
-    where.paymentStatus = paymentStatus;
+    where.paymentStatus = String(paymentStatus).toUpperCase();
   }
 
   if (startDate || endDate) {
@@ -55,7 +220,7 @@ export async function getMyOrders(customerId, queryOptions = {}) {
 
   const allowedSorts = ['placedAt', 'createdAt', 'totalAmount', 'status'];
   const sortField = allowedSorts.includes(sortBy) ? sortBy : 'placedAt';
-  const sortDir = sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc';
+  const sortDir = String(sortOrder).toLowerCase() === 'asc' ? 'asc' : 'desc';
 
   const [total, rawOrders] = await Promise.all([
     prisma.order.count({ where }),
@@ -95,6 +260,7 @@ export async function getMyOrders(customerId, queryOptions = {}) {
     orders: rawOrders.map(formatCustomerOrder),
     pagination: {
       page: Number(page),
+      limit: take,
       pageSize: take,
       total,
       totalPages,
@@ -103,17 +269,19 @@ export async function getMyOrders(customerId, queryOptions = {}) {
 }
 
 /**
- * Gets a single order for a customer — enforces IDOR protection.
+ * Gets a single order for a customer — strictly enforces IDOR protection.
  *
- * @param {string} orderId
- * @param {string} customerId
+ * @param {string} orderId UUID or orderNumber
+ * @param {string} customerId Authenticated Customer ID
  * @returns {Promise<object>}
  */
 export async function getMyOrderById(orderId, customerId) {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+
   const order = await prisma.order.findFirst({
     where: {
-      id: orderId,
       customerId, // Strict IDOR guard
+      ...(isUuid ? { id: orderId } : { orderNumber: orderId }),
     },
     include: {
       items: {
@@ -130,7 +298,21 @@ export async function getMyOrderById(orderId, customerId) {
       activities: {
         orderBy: { createdAt: 'asc' },
       },
-      delivery: true,
+      delivery: {
+        select: {
+          id: true,
+          deliveryNumber: true,
+          status: true,
+          estimatedDeliveryAt: true,
+          deliveredAt: true,
+          driver: {
+            select: {
+              fullName: true,
+              phone: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -142,18 +324,23 @@ export async function getMyOrderById(orderId, customerId) {
 }
 
 /**
- * Allows a customer to cancel their own order.
- * Enforces status-machine: only PENDING or CONFIRMED orders can be cancelled.
+ * Allows an authenticated customer to cancel their own order.
+ * Enforces status machine: only PENDING or CONFIRMED orders can be cancelled.
  *
  * @param {string} orderId
  * @param {string} customerId
  * @param {string} reason
  * @returns {Promise<object>}
  */
-export async function cancelMyOrder(orderId, customerId, reason) {
+export async function cancelMyOrder(orderId, customerId, reason = 'Cancelled by customer') {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+
   // IDOR check: order must belong to this customer
   const order = await prisma.order.findFirst({
-    where: { id: orderId, customerId },
+    where: {
+      customerId,
+      ...(isUuid ? { id: orderId } : { orderNumber: orderId }),
+    },
     select: { id: true, orderNumber: true, status: true, customerId: true },
   });
 
@@ -163,65 +350,106 @@ export async function cancelMyOrder(orderId, customerId, reason) {
 
   if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
     throw ApiError.badRequest(
-      `Order cannot be cancelled. Only orders in PENDING or CONFIRMED status can be cancelled by customers. ` +
-      `Current status: ${order.status}.`
+      `Order cannot be cancelled. Only orders in PENDING or CONFIRMED status can be cancelled by customers. Current status: ${order.status}.`
     );
   }
 
-  const cancelledOrder = await prisma.$transaction(async (tx) => {
-    const updated = await tx.order.update({
-      where: { id: orderId },
-      data: {
-        status: 'CANCELLED',
-        cancelledAt: new Date(),
-        cancelledReason: reason,
-      },
-      include: {
-        items: true,
-        deliveryAddressSnapshot: true,
-        activities: { orderBy: { createdAt: 'asc' } },
-        delivery: true,
-      },
-    });
+  const cancelledOrder = await prisma.$transaction(
+    async (tx) => {
+      const updated = await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelledReason: reason,
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                include: { images: { where: { isPrimary: true }, take: 1 } },
+              },
+            },
+          },
+          deliveryAddressSnapshot: true,
+          activities: { orderBy: { createdAt: 'asc' } },
+          delivery: true,
+        },
+      });
 
-    // Activity log
-    await tx.orderActivity.create({
-      data: {
-        orderId,
-        action: 'Order Cancelled by Customer',
-        fromStatus: order.status,
-        toStatus: 'CANCELLED',
-        description: `Order ${order.orderNumber} was cancelled by the customer. Reason: ${reason}`,
-        actor: 'Customer',
-      },
-    });
+      // Record OrderActivity event
+      await tx.orderActivity.create({
+        data: {
+          orderId: order.id,
+          action: 'Order Cancelled by Customer',
+          fromStatus: order.status,
+          toStatus: 'CANCELLED',
+          description: `Order ${order.orderNumber} was cancelled by the customer. Reason: ${reason}`,
+          actor: 'Customer',
+        },
+      });
 
-    // Customer activity log
-    await tx.customerActivity.create({
-      data: {
-        customerId,
-        action: 'ORDER_CANCELLED',
-        description: `Cancelled order ${order.orderNumber}. Reason: ${reason}`,
-        actor: 'Customer',
-        metadata: JSON.stringify({ orderId, orderNumber: order.orderNumber, reason }),
-      },
-    });
+      // Record CustomerActivity
+      await tx.customerActivity.create({
+        data: {
+          customerId,
+          action: 'ORDER_CANCELLED',
+          description: `Cancelled order ${order.orderNumber}. Reason: ${reason}`,
+          actor: 'Customer',
+          metadata: JSON.stringify({ orderId: order.id, orderNumber: order.orderNumber, reason }),
+        },
+      });
 
-    return updated;
-  }, {
-    maxWait: 10000,
-    timeout: 20000,
-  });
+      return updated;
+    },
+    {
+      maxWait: 10000,
+      timeout: 20000,
+    }
+  );
 
   return formatCustomerOrder(cancelledOrder);
 }
 
 /**
  * Customer-friendly order format (exposes only customer-relevant fields).
- * Hides internal notes, admin metadata.
+ * Hides internal admin notes, admin user IDs, and server credentials.
  */
 function formatCustomerOrder(o) {
   const addressSnap = o.deliveryAddressSnapshot;
+  const items = o.items || [];
+  const itemCount = items.reduce((acc, it) => acc + (it.quantity || 0), 0);
+  const previewImages = items
+    .map((it) => it.product?.images?.[0]?.url)
+    .filter(Boolean)
+    .slice(0, 4);
+
+  // Compute milestones
+  const milestones = buildOrderMilestones(o);
+
+  // Format customer-safe chronological activities
+  const timeline = (o.activities || []).map((a) => ({
+    id: a.id,
+    type: a.action,
+    status: a.toStatus || o.status,
+    customerMessage: getCustomerFriendlyStatusMessage(a.toStatus, a.description),
+    timestamp: a.createdAt.toISOString(),
+    actor: a.actor === 'Customer' ? 'You' : 'Ardab Market',
+    isCompleted: true,
+  }));
+
+  // Estimated delivery label
+  let estimatedDelivery = '1-2 business days';
+  if (o.delivery?.estimatedDeliveryAt) {
+    estimatedDelivery = new Date(o.delivery.estimatedDeliveryAt).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  } else if (o.status === 'DELIVERED') {
+    estimatedDelivery = o.deliveredAt
+      ? new Date(o.deliveredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : 'Delivered';
+  }
 
   return {
     id: o.id,
@@ -234,6 +462,7 @@ function formatCustomerOrder(o) {
     deliveryFee: o.deliveryFee ? o.deliveryFee.toString() : '0.00',
     deliveryFeeEtb: o.deliveryFee ? Number(o.deliveryFee) : 0,
     discountAmount: o.discountAmount ? o.discountAmount.toString() : '0.00',
+    discountEtb: o.discountAmount ? Number(o.discountAmount) : 0,
     totalAmount: o.totalAmount ? o.totalAmount.toString() : '0.00',
     totalEtb: o.totalAmount ? Number(o.totalAmount) : 0,
     totalWeight: o.totalWeight ? o.totalWeight.toString() : '0.00',
@@ -244,6 +473,8 @@ function formatCustomerOrder(o) {
     deliveryAddress: o.deliveryAddress || null,
     cancelledReason: o.cancelledReason || null,
     rejectedReason: o.rejectedReason || null,
+    itemCount,
+    previewImages,
     placedAt: o.placedAt ? o.placedAt.toISOString() : o.createdAt.toISOString(),
     confirmedAt: o.confirmedAt ? o.confirmedAt.toISOString() : null,
     processingAt: o.processingAt ? o.processingAt.toISOString() : null,
@@ -253,6 +484,7 @@ function formatCustomerOrder(o) {
     cancelledAt: o.cancelledAt ? o.cancelledAt.toISOString() : null,
     createdAt: o.createdAt.toISOString(),
     updatedAt: o.updatedAt.toISOString(),
+    estimatedDelivery,
     // Can customer cancel?
     canCancel: CUSTOMER_CANCELLABLE_STATUSES.includes(o.status),
     // Delivery info
@@ -264,9 +496,9 @@ function formatCustomerOrder(o) {
           estimatedDeliveryAt: o.delivery.estimatedDeliveryAt
             ? o.delivery.estimatedDeliveryAt.toISOString()
             : null,
-          deliveredAt: o.delivery.deliveredAt
-            ? o.delivery.deliveredAt.toISOString()
-            : null,
+          deliveredAt: o.delivery.deliveredAt ? o.delivery.deliveredAt.toISOString() : null,
+          agentName: o.delivery.driver?.fullName || 'Ardab Express Rider',
+          agentPhone: o.delivery.driver?.phone || '+251 91 100 0000',
         }
       : null,
     // Delivery address snapshot
@@ -282,11 +514,10 @@ function formatCustomerOrder(o) {
           longitude: addressSnap.longitude ? Number(addressSnap.longitude) : null,
         }
       : null,
-    // Recipient info from snapshot (convenience fields for orders list)
     recipientName: addressSnap?.recipientName || null,
     recipientPhone: addressSnap?.phone || null,
-    // Order items with image URLs
-    items: (o.items || []).map((it) => ({
+    // Order items with product images
+    items: items.map((it) => ({
       id: it.id,
       productId: it.productId,
       productName: it.productNameSnapshot,
@@ -299,15 +530,17 @@ function formatCustomerOrder(o) {
       subtotal: it.subtotal.toString(),
       totalPriceEtb: Number(it.subtotal),
       sellerName: it.sellerNameSnapshot || 'Ardab Direct Hub',
-      // Product image if still available
       productImage: it.product?.images?.[0]?.url || null,
     })),
-    // Chronological timeline for order tracking
-    timeline: (o.activities || []).map((a) => ({
-      status: a.toStatus || o.status,
-      timestamp: a.createdAt.toISOString(),
-      description: a.description,
-      actor: a.actor,
-    })),
+    // Tracking milestones & chronological timeline
+    milestones,
+    timeline,
+    // Customer Support Reference Context
+    support: {
+      telegramBotUrl: 'https://t.me/Ardab_market_bot',
+      supportPhone: '+251 91 100 0000',
+      supportEmail: 'support@ardab.com',
+      orderReference: o.orderNumber,
+    },
   };
 }

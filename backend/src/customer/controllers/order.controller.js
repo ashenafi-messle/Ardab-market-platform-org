@@ -82,3 +82,34 @@ export async function cancelMyOrderHandler(req, res) {
   const order = await cancelMyOrder(req.params.id, customerId, reason);
   return ApiResponse.success(res, order, 'Order cancelled successfully', 200);
 }
+
+/**
+ * GET /api/customer/orders/:id/tracking
+ * Returns the tracking milestones, chronological activities, and delivery info.
+ */
+export async function getMyOrderTimelineHandler(req, res) {
+  const customerId = req.customer?.id;
+
+  if (!customerId) {
+    throw ApiError.unauthorized('Customer authentication required', 'UNAUTHORIZED');
+  }
+
+  const order = await getMyOrderById(req.params.id, customerId);
+  return ApiResponse.success(
+    res,
+    {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      placedAt: order.placedAt,
+      estimatedDelivery: order.estimatedDelivery,
+      delivery: order.delivery,
+      deliveryAddress: order.deliveryAddressSnapshot,
+      milestones: order.milestones,
+      timeline: order.timeline,
+      support: order.support,
+    },
+    'Order tracking timeline retrieved successfully',
+    200
+  );
+}

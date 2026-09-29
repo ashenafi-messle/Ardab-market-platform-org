@@ -28,7 +28,8 @@ export default function VerifyOtpScreen() {
   const method = (params.method as 'email' | 'telegram') || 'email';
   const identifier = (params.identifier as string) || (method === 'email' ? 'customer@ardab.com' : '+251 91 123 4567');
   const city = (params.city as string) || 'Gondar';
-  const botUrl = (params.botUrl as string) || 'https://t.me/Ardab_market_bot';
+  const initialBotUrl = (params.botUrl as string) || 'https://t.me/Ardab_market_bot';
+  const [botUrl, setBotUrl] = useState<string>(initialBotUrl);
 
   // 6-digit OTP state — always starts completely empty! Never autofilled from backend or route params!
   const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
@@ -146,7 +147,10 @@ export default function VerifyOtpScreen() {
       if (method === 'email') {
         await requestEmailOtp(identifier, city);
       } else {
-        await requestTelegramOtp(identifier, city);
+        const res = await requestTelegramOtp(identifier, city);
+        if (res?.data?.botUrl) {
+          setBotUrl(res.data.botUrl);
+        }
       }
       setResending(false);
       setTimer(60);
@@ -194,7 +198,7 @@ export default function VerifyOtpScreen() {
         <Text style={styles.subtitle}>
           {method === 'email'
             ? t('auth.enterEmailOtp')
-            : t('auth.enterTelegramOtp')}
+            : 'Telegram opened. Start the Ardab Market bot and enter the verification code it sends you.'}
         </Text>
 
         {/* Target Identifier Pill with change option */}

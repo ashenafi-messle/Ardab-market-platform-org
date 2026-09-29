@@ -2,12 +2,12 @@ import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
-import { Order } from '@/types';
-import { formatPrice, t } from '@/localization';
+import { CustomerOrder } from '@/types';
+import { formatPrice } from '@/localization';
 import { OrderStatus } from './OrderStatus';
 
 export interface OrderCardProps {
-  order: Order;
+  order: CustomerOrder;
   onPress: () => void;
   onTrackPress?: () => void;
 }
@@ -17,7 +17,52 @@ export const OrderCard: React.FC<OrderCardProps> = ({
   onPress,
   onTrackPress,
 }) => {
-  const itemCount = order.items.reduce((acc, item) => acc + item.quantity, 0);
+  // Compute item count from either itemCount summary or items array
+  const itemCount =
+    order.itemCount !== undefined
+      ? order.itemCount
+      : order.items?.reduce((acc, item) => acc + (item.quantity || 1), 0) || 0;
+
+  // Extract thumbnail image URLs from previewImages or items
+  const thumbnailUrls: string[] = [];
+  if (Array.isArray(order.previewImages) && order.previewImages.length > 0) {
+    thumbnailUrls.push(...order.previewImages.filter(Boolean));
+  } else if (Array.isArray(order.items)) {
+    for (const item of order.items) {
+      const img = item.productImage || item.product?.images?.[0];
+      if (img && !thumbnailUrls.includes(img)) {
+        thumbnailUrls.push(img);
+      }
+      if (thumbnailUrls.length >= 3) break;
+    }
+  }
+
+  // Authoritative total price in ETB
+  const totalAmount =
+    order.totalEtb !== undefined
+      ? order.totalEtb
+      : Number(order.totalAmount || order.total || 0);
+
+  const isActive = [
+    'PENDING',
+    'CONFIRMED',
+    'PROCESSING',
+    'READY_FOR_DELIVERY',
+    'ASSIGNED_TO_TRIP',
+    'PICKED_UP',
+    'IN_TRANSIT',
+    'SHIPPING',
+  ].includes(order.status);
+
+  const isCompleted = order.status === 'DELIVERED';
+  const isCancelled = ['CANCELLED', 'REJECTED', 'FAILED', 'RETURNED'].includes(order.status);
+
+  const orderDate = new Date(order.placedAt || order.createdAt || Date.now());
+  const formattedDate = orderDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
   return (
     <TouchableOpacity
@@ -27,56 +72,62 @@ export const OrderCard: React.FC<OrderCardProps> = ({
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.orderNumber}>{order.orderNumber}</Text>
-          <Text style={styles.date}>
-            {new Date(order.createdAt).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </Text>
+          <Text style={styles.orderNumber}>#{order.orderNumber}</Text>
+          <Text style={styles.date}>{formattedDate}</Text>
         </View>
         <OrderStatus status={order.status} />
       </View>
 
-      {/* Thumbnails row */}
+      {/* Thumbnails & Totals row */}
       <View style={styles.thumbnailsRow}>
         <View style={styles.imagesContainer}>
-          {order.items.slice(0, 3).map((item, index) => (
+          {thumbnailUrls.slice(0, 3).map((uri, index) => (
             <View key={index} style={styles.thumbnailWrapper}>
               <Image
-                source={{ uri: item.product.images[0] }}
+                source={{ uri }}
                 style={styles.thumbnail}
                 resizeMode="cover"
               />
             </View>
           ))}
-          {order.items.length > 3 ? (
+          {itemCount > 3 ? (
             <View style={styles.moreThumbnail}>
-              <Text style={styles.moreText}>+{order.items.length - 3}</Text>
+              <Text style={styles.moreText}>+{itemCount - 3}</Text>
+            </View>
+          ) : thumbnailUrls.length === 0 ? (
+            <View style={[styles.thumbnailWrapper, styles.placeholderThumbnail]}>
+              <Ionicons name="cube-outline" size={24} color={Colors.textMuted} />
             </View>
           ) : null}
         </View>
 
         <View style={styles.summaryContainer}>
           <Text style={styles.itemCountText}>
-            {itemCount} {t('common.items')}
+            {itemCount} {itemCount === 1 ? 'item' : 'items'}
           </Text>
-          <Text style={styles.totalText}>{formatPrice(order.total)}</Text>
+          <Text style={styles.totalText}>{formatPrice(totalAmount)}</Text>
         </View>
       </View>
 
       {/* Footer / Actions */}
       <View style={styles.footer}>
         <View style={styles.deliveryInfo}>
-          <Ionicons name="time-outline" size={14} color={Colors.textSecondary} />
+          <Ionicons
+            name={isCompleted ? 'checkmark-circle-outline' : isActive ? 'navigate-outline' : 'alert-circle-outline'}
+            size={14}
+            color={isCompleted ? Colors.success : isActive ? Colors.primary : Colors.textMuted}
+          />
           <Text style={styles.deliveryText} numberOfLines={1}>
-            {order.estimatedDelivery}
+            {order.delivery?.status
+              ? `Delivery: ${order.delivery.status}`
+              : order.city
+              ? `Destination: ${order.city}`
+              : 'Standard Delivery'}
           </Text>
         </View>
 
         <View style={styles.actionButtons}>
-          {order.status === 'SHIPPING' || order.status === 'PROCESSING' ? (
+          {isActive ? (
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={(e) => {
@@ -85,8 +136,8 @@ export const OrderCard: React.FC<OrderCardProps> = ({
                 else onPress();
               }}
               style={styles.trackBtn}>
-              <Ionicons name="navigate-outline" size={14} color={Colors.primary} />
-              <Text style={styles.trackBtnText}>{t('orders.trackOrder')}</Text>
+              <Ionicons name="navigate-outline" size={13} color={Colors.primaryDark} />
+              <Text style={styles.trackBtnText}>Track Order</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -94,7 +145,9 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             activeOpacity={0.8}
             onPress={onPress}
             style={styles.detailsBtn}>
-            <Text style={styles.detailsBtnText}>{t('orders.viewDetails')}</Text>
+            <Text style={styles.detailsBtnText}>
+              {isCompleted ? 'View Order' : isCancelled ? 'View Details' : 'Details'}
+            </Text>
             <Ionicons name="chevron-forward" size={14} color={Colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -126,6 +179,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
+    letterSpacing: 0.2,
   },
   date: {
     fontSize: Typography.fontSize.tiny,
@@ -144,25 +198,31 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   thumbnailWrapper: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     borderRadius: Radius.md,
     overflow: 'hidden',
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
+  placeholderThumbnail: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   thumbnail: {
     width: '100%',
     height: '100%',
   },
   moreThumbnail: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     borderRadius: Radius.md,
     backgroundColor: Colors.surfaceSubtle,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
   moreText: {
     fontSize: Typography.fontSize.xs,
@@ -230,5 +290,6 @@ const styles = StyleSheet.create({
   detailsBtnText: {
     fontSize: Typography.fontSize.xs,
     color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
   },
 });

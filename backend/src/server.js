@@ -6,13 +6,21 @@ import { createApp } from './app.js';
 import { env } from './shared/config/env.js';
 import { disconnectPrisma } from './shared/config/database.js';
 import { logger } from './shared/utils/logger.js';
+import { TelegramService } from './shared/services/telegram/telegram.service.js';
 
 const app = createApp();
 
-const server = app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, async () => {
   logger.info(`Ardab Market Backend running on port ${env.PORT} in [${env.NODE_ENV}] mode`);
   logger.info(`Health check available at http://localhost:${env.PORT}/api/health`);
   logger.info(`Admin API mounted at http://localhost:${env.PORT}/api/admin`);
+
+  // Initialize Telegram Bot Integration (Webhook in production or Polling in dev)
+  try {
+    await TelegramService.initialize();
+  } catch (tgErr) {
+    logger.error('Failed to initialize Telegram Bot Service:', { error: tgErr.message });
+  }
 });
 
 // ------------------------------------------------------------------------------
@@ -26,6 +34,9 @@ async function handleGracefulShutdown(signal) {
   isShuttingDown = true;
 
   logger.info(`Received ${signal}. Initiating graceful shutdown...`);
+
+  // Stop Telegram polling if active
+  TelegramService.stopPolling();
 
   // Stop accepting new connections
   server.close(async () => {

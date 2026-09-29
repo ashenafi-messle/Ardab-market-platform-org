@@ -821,20 +821,24 @@ model CustomerMobileSession {
 // ------------------------------------------------------------------------------
 
 model CustomerMobileOtp {
-  id         String     @id @default(uuid())
-  target     String     // Email address or E.164 phone number
-  channel    String     // 'EMAIL' | 'TELEGRAM'
-  codeHash   String     // SHA-256 hashed 6-digit OTP
-  city       String     @default("Gondar")
-  purpose    OtpPurpose @default(EMAIL_VERIFICATION)
-  attempts   Int        @default(0)
-  isVerified Boolean    @default(false)
-  expiresAt  DateTime
-  consumedAt DateTime?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id             String     @id @default(uuid())
+  target         String     // Email address or E.164 phone number
+  channel        String     // 'EMAIL' | 'TELEGRAM'
+  codeHash       String     // SHA-256 hashed 6-digit OTP
+  city           String     @default("Gondar")
+  purpose        OtpPurpose @default(EMAIL_VERIFICATION)
+  attempts       Int        @default(0)
+  isVerified     Boolean    @default(false)
+  telegramToken  String?    @unique
+  telegramChatId String?
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   @@index([target, channel, purpose])
+  @@index([telegramToken])
+  @@index([telegramChatId])
   @@index([expiresAt])
   @@map("customer_mobile_otps")
 }
