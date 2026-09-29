@@ -16,6 +16,7 @@ import {
 import { getDescendantCategoryIds, getCategoryPath } from './category.service.js';
 import { resolveEffectiveCategoryAttributes } from './categoryAttribute.service.js';
 import { getPublicProductRatingSummaries } from '../../customer/services/review.service.js';
+import { createNewProductNotification } from '../../customer/services/notification.service.js';
 
 async function recordProductAuditLog({ adminUser, action, productId, ipAddress, changesSummary }) {
   try {
@@ -638,6 +639,16 @@ export async function createProduct(data, filesOrAdmin = [], adminOrIp = null, m
     changesSummary: `Created product "${product.name}" with item code [${product.itemCode}] under seller "${product.seller.companyName}" with ${imageRecordsToCreate.length} image(s) and ${preparedAttrRecords.length} attribute value(s)`,
   });
 
+  // 8. If published immediately (ACTIVE), dispatch customer notification
+  if (product.status === 'ACTIVE') {
+    createNewProductNotification(product).catch((notifErr) => {
+      logger.warn('[PRODUCT SERVICE] Non-blocking new product notification on create failed', {
+        productId: product.id,
+        error: notifErr.message,
+      });
+    });
+  }
+
   const ratingSummaries = await getPublicProductRatingSummaries([product.id]);
   return formatProduct(product, ratingSummaries.get(product.id));
 }
@@ -909,6 +920,16 @@ export async function updateProduct(id, data, adminUser = null, ipAddress = null
     changesSummary: `Updated product "${updated.name}" [${updated.itemCode}]`,
   });
 
+  // If product transitioned from draft/inactive to ACTIVE, broadcast new product notification
+  if (existing.status !== 'ACTIVE' && updated.status === 'ACTIVE') {
+    createNewProductNotification(updated).catch((notifErr) => {
+      logger.warn('[PRODUCT SERVICE] Non-blocking new product notification on update failed', {
+        productId: updated.id,
+        error: notifErr.message,
+      });
+    });
+  }
+
   return formatProduct(updated);
 }
 
@@ -962,6 +983,16 @@ export async function toggleProductStatus(id, newStatus = null, adminUser = null
     ipAddress,
     changesSummary: `Changed product status from ${existing.status} to ${targetStatus} for [${updated.itemCode}]`,
   });
+
+  // If product transitioned to ACTIVE, broadcast new product notification
+  if (existing.status !== 'ACTIVE' && updated.status === 'ACTIVE') {
+    createNewProductNotification(updated).catch((notifErr) => {
+      logger.warn('[PRODUCT SERVICE] Non-blocking new product notification on status toggle failed', {
+        productId: updated.id,
+        error: notifErr.message,
+      });
+    });
+  }
 
   return formatProduct(updated);
 }

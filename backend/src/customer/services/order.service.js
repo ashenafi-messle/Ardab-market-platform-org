@@ -408,6 +408,11 @@ export async function cancelMyOrder(orderId, customerId, reason = 'Cancelled by 
     }
   );
 
+  // Dispatch customer-specific cancellation notification
+  import('./notification.service.js')
+    .then((m) => m.createCustomerOrderNotification(cancelledOrder, 'CANCELLED', reason))
+    .catch(() => {});
+
   return formatCustomerOrder(cancelledOrder);
 }
 

@@ -14,6 +14,7 @@ import { Colors, Spacing, Typography, Radius } from '@/theme';
 import { Product, Category } from '@/types';
 import { productService } from '@/services/productService';
 import { categoryService } from '@/services/categoryService';
+import { fetchUnreadCount } from '@/services/notificationService';
 import { useApp } from '@/store';
 import { t } from '@/localization';
 import {
@@ -109,9 +110,24 @@ export default function HomeScreen() {
     loadData();
   }, []);
 
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  const checkUnread = async () => {
+    try {
+      const count = await fetchUnreadCount();
+      setUnreadCount(count);
+    } catch {
+      // Non-critical
+    }
+  };
+
+  useEffect(() => {
+    checkUnread();
+  }, []);
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData(true);
+    await Promise.all([loadData(true), checkUnread()]);
     setRefreshing(false);
   };
 
@@ -121,7 +137,7 @@ export default function HomeScreen() {
       <HomeHeader
         onSearchPress={() => router.push('/products/search' as any)}
         onLogoPress={() => setIsCategoryDrawerOpen(true)}
-        hasUnreadNotifications
+        hasUnreadNotifications={unreadCount > 0}
       />
 
       {/* Category Sidebar Drawer */}

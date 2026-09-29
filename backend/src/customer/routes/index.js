@@ -9,6 +9,7 @@ import customerWishlistRoutes from './wishlist.routes.js';
 import customerCatalogRoutes from './catalog.routes.js';
 import { customerTelemetryMiddleware } from '../../shared/middleware/customerTelemetry.middleware.js';
 
+import customerNotificationRoutes from './notification.routes.js';
 import customerSupportRoutes from './support.routes.js';
 import customerReviewRoutes, { productReviewSubRouter, productLevelReviewRouter } from './review.routes.js';
 
@@ -26,6 +27,9 @@ customerRouter.use('/support', customerSupportRoutes);
 // Mount Customer Order routes (/api/customer/orders/*)
 // Includes: checkout, list, detail, cancel
 customerRouter.use('/orders', customerOrderRoutes);
+
+// Mount Customer Notification routes (/api/customer/notifications/*)
+customerRouter.use('/notifications', customerNotificationRoutes);
 
 // Mount Customer Wishlist routes (/api/customer/wishlist/*)
 // All routes require authentication

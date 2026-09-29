@@ -122,7 +122,35 @@ enum NotificationType {
   NOTIFICATION
   OPERATIONAL_ALERT
   SYSTEM_ANNOUNCEMENT
+  NEW_PRODUCT
+  PRODUCT_DISCOUNT
+  ORDER_PLACED
+  ORDER_CONFIRMED
+  PAYMENT_CONFIRMED
+  ORDER_PROCESSING
+  ORDER_PACKED
+  ORDER_OUT_FOR_DELIVERY
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+  SYSTEM
+  PROMOTION
+  SUPPORT
+  SECURITY
 }
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  INVALID_TOKEN
+}
+
 
 enum NotificationCategory {
   ORDER
@@ -711,6 +739,7 @@ model Product {
   feedbacks             Feedback[]
   attributeValues       ProductAttributeValue[]
   wishlistItems         CustomerWishlistItem[]
+  notifications         Notification[]
 
   @@index([itemCode])
   @@index([sellerId])
@@ -777,9 +806,12 @@ model Customer {
   activities         CustomerActivity[]
   reviews            CustomerReview[]
   wishlistItems      CustomerWishlistItem[]
-  supportTickets     SupportTicket[]
-  feedbacks          Feedback[]
-  mobileSessions     CustomerMobileSession[]
+  supportTickets         SupportTicket[]
+  feedbacks              Feedback[]
+  mobileSessions         CustomerMobileSession[]
+  notificationRecipients NotificationRecipient[]
+  pushTokens             CustomerPushToken[]
+  notificationPreference CustomerNotificationPreference?
 
   @@index([customerCode])
   @@index([phone])
@@ -940,6 +972,7 @@ model Order {
   delivery                Delivery?
   supportTickets          SupportTicket[]
   feedbacks               Feedback[]
+  notifications           Notification[]
 
   @@index([customerId])
   @@index([customerId, status])
@@ -1291,14 +1324,23 @@ model Notification {
   entityType String?
   entityId   String?
   actionUrl  String?
+  imageUrl   String?
+  deepLink   String?
+  productId  String?
+  orderId    String?
   metadata   String?
   targetRole UserRole?
   adminId    String?
+  isActive   Boolean              @default(true)
   createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @default(now()) @updatedAt
   expiresAt  DateTime?
 
   admin      AdminUser?           @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  product    Product?             @relation(fields: [productId], references: [id], onDelete: SetNull)
+  order      Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
   recipients NotificationRecipient[]
+  deliveries NotificationDelivery[]
 
   @@index([type])
   @@index([category])
@@ -1306,8 +1348,11 @@ model Notification {
   @@index([priority])
   @@index([isAlert])
   @@index([entityType, entityId])
+  @@index([productId])
+  @@index([orderId])
   @@index([targetRole])
   @@index([adminId])
+  @@index([isActive])
   @@index([createdAt])
   @@map("notifications")
 }
@@ -1315,9 +1360,12 @@ model Notification {
 model NotificationRecipient {
   id                   String       @id @default(uuid())
   notificationId       String
-  adminId              String
+  adminId              String?
+  customerId           String?
   isRead               Boolean      @default(false)
   readAt               DateTime?
+  isHidden             Boolean      @default(false)
+  hiddenAt             DateTime?
   isAcknowledged       Boolean      @default(false)
   acknowledgedAt       DateTime?
   acknowledgedById     String?
@@ -1325,15 +1373,82 @@ model NotificationRecipient {
   createdAt            DateTime     @default(now())
 
   notification         Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
-  admin                AdminUser    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  admin                AdminUser?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  customer             Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([notificationId, adminId])
+  @@unique([notificationId, customerId])
   @@index([notificationId])
   @@index([adminId])
+  @@index([customerId])
+  @@index([customerId, isRead])
+  @@index([customerId, isHidden])
+  @@index([customerId, createdAt])
   @@index([isRead])
   @@index([isAcknowledged])
   @@index([createdAt])
   @@map("notification_recipients")
+}
+
+model CustomerPushToken {
+  id         String                 @id @default(uuid())
+  customerId String
+  token      String                 @unique
+  platform   DevicePlatform         @default(ANDROID)
+  deviceId   String?
+  appVersion String?
+  isActive   Boolean                @default(true)
+  lastUsedAt DateTime               @default(now())
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  customer   Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@index([customerId])
+  @@index([customerId, isActive])
+  @@index([token])
+  @@map("customer_push_tokens")
+}
+
+model NotificationDelivery {
+  id                  String                     @id @default(uuid())
+  notificationId      String
+  customerPushTokenId String?
+  status              NotificationDeliveryStatus @default(PENDING)
+  providerMessageId   String?
+  ticketId            String?
+  receiptStatus       String?
+  errorCode           String?
+  errorMessage        String?
+  sentAt              DateTime?
+  createdAt           DateTime                   @default(now())
+
+  notification        Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  pushToken           CustomerPushToken?         @relation(fields: [customerPushTokenId], references: [id], onDelete: SetNull)
+
+  @@index([notificationId])
+  @@index([customerPushTokenId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notification_deliveries")
+}
+
+model CustomerNotificationPreference {
+  id                  String   @id @default(uuid())
+  customerId          String   @unique
+  newProductsEnabled  Boolean  @default(true)
+  promotionsEnabled   Boolean  @default(true)
+  orderUpdatesEnabled Boolean  @default(true)
+  supportEnabled      Boolean  @default(true)
+  systemEnabled       Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_notification_preferences")
 }
 
 // ------------------------------------------------------------------------------

@@ -286,14 +286,44 @@ export interface UserProfile {
   joinedDate: string;
 }
 
+export type NotificationType =
+  | 'NEW_PRODUCT'
+  | 'PRODUCT_DISCOUNT'
+  | 'ORDER_PLACED'
+  | 'ORDER_CONFIRMED'
+  | 'PAYMENT_CONFIRMED'
+  | 'ORDER_PROCESSING'
+  | 'ORDER_PACKED'
+  | 'ORDER_OUT_FOR_DELIVERY'
+  | 'ORDER_DELIVERED'
+  | 'ORDER_CANCELLED'
+  | 'SYSTEM'
+  | 'PROMOTION'
+  | 'SUPPORT'
+  | 'SECURITY'
+  | 'NOTIFICATION'
+  | 'OPERATIONAL_ALERT'
+  | 'SYSTEM_ANNOUNCEMENT'
+  | 'order'
+  | 'promo'
+  | 'system'
+  | 'security';
+
 export interface NotificationItem {
   id: string;
+  recipientId?: string;
   title: string;
   body: string;
   createdAt: string;
   read: boolean;
-  type: 'order' | 'promo' | 'system' | 'security';
-  actionUrl?: string;
+  isRead?: boolean;
+  type: NotificationType;
+  imageUrl?: string | null;
+  deepLink?: string | null;
+  actionUrl?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  readAt?: string | null;
 }
 
 export interface SupportTicket {

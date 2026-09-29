@@ -11,6 +11,7 @@ import {
   getStatusTimestampUpdates,
 } from './order.status.service.js';
 import { createNotification } from './notification.service.js';
+import { createCustomerOrderNotification } from '../../customer/services/notification.service.js';
 
 const Decimal = Prisma.Decimal;
 
@@ -319,6 +320,11 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
     }, adminUser).catch(() => { });
   }
 
+  // Dispatch customer-specific order notification (non-blocking)
+  createCustomerOrderNotification(updatedOrder, newStatus, reason).catch((err) => {
+    // Non-critical background push failure
+  });
+
   return formatOrderResponse(updatedOrder);
 }
 
@@ -608,6 +614,9 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
     maxWait: 10000,
     timeout: 20000,
   });
+
+  // Emit Customer Order Placed Notification asynchronously
+  createCustomerOrderNotification(createdOrder, 'ORDER_PLACED').catch(() => {});
 
   return formatOrderResponse(createdOrder);
 }

@@ -2,6 +2,11 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { UserProfile } from '@/types';
 import { secureStorage } from '@/services/secureStorage';
 import { authApi } from '@/services/authApi';
+import {
+  registerForPushNotifications,
+  unregisterPushDevice,
+  setupNotificationListeners,
+} from '@/services/pushNotificationService';
 
 export interface AuthContextType {
   user: UserProfile | null;
@@ -146,6 +151,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     restoreSession();
   }, [restoreSession]);
 
+  // Setup global push listeners on app start
+  useEffect(() => {
+    const cleanup = setupNotificationListeners();
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  // Register push token whenever customer session becomes active
+  useEffect(() => {
+    if (user && token) {
+      registerForPushNotifications().catch((err) => {
+        console.warn('[AuthContext] Push notification registration error:', err);
+      });
+    }
+  }, [user?.id, token]);
+
   /**
    * Unified Login (Email OR Phone + Password)
    */
@@ -237,6 +259,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       setIsLoading(true);
+      // Deactivate push token association for this customer
+      await unregisterPushDevice().catch(() => {});
       const activeToken = token;
       if (activeToken) {
         try {
