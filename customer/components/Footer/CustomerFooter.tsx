@@ -115,6 +115,17 @@ export function CustomerFooter() {
                   {t('sign_up')}
                 </Link>
               </li>
+              <li>
+                <a
+                  href="https://res.cloudinary.com/dr9umkixr/image/upload/v1790759372/5881716382414606136_rahyhj.jpg"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-white-50 text-decoration-none hover-white d-flex align-items-center gap-1"
+                >
+                  <i className="bi bi-patch-check-fill text-success"></i>
+                  {language === 'am' ? 'ህጋዊ የንግድ ፈቃድ (License)' : 'Verified Business License'}
+                </a>
+              </li>
             </ul>
           </div>
 

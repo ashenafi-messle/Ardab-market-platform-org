@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,9 +18,13 @@ import { AppHeader, AppInput, AppButton } from '@/components/common';
 import { t } from '@/localization';
 import { securityApi, ActiveSession } from '@/services/securityApi';
 import { useAuth } from '@/context/AuthContext';
+import { ARDAB_LICENSE_URL } from '@/constants/branding';
 
 export default function SecurityScreen() {
   const { user } = useAuth();
+
+  // License Modal State
+  const [licenseModalVisible, setLicenseModalVisible] = useState(false);
 
   // Password State
   const [currentPassword, setCurrentPassword] = useState('');
@@ -167,6 +172,14 @@ export default function SecurityScreen() {
             <Text style={styles.verifiedDesc}>
               Your account, transactions, and addresses are encrypted and protected with industry-standard protocols.
             </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setLicenseModalVisible(true)}
+              style={styles.licenseLinkBtn}
+            >
+              <Ionicons name="document-text-outline" size={14} color={Colors.primary} />
+              <Text style={styles.licenseLinkText}>View Official Platform License</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -448,6 +461,42 @@ export default function SecurityScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Official Business License Modal */}
+      <Modal visible={licenseModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.licenseModalTitleRow}>
+                <Ionicons name="shield-checkmark" size={20} color={Colors.primary} />
+                <Text style={styles.modalTitle}>Official Business License</Text>
+              </View>
+              <TouchableOpacity onPress={() => setLicenseModalVisible(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.licenseImageWrapper}>
+                <Image
+                  source={{ uri: ARDAB_LICENSE_URL }}
+                  style={styles.licenseImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.licenseNoteText}>
+                Ardab Market operates with authorized Ethiopian Commercial Registration and government licensing. Verified for digital transactions.
+              </Text>
+            </ScrollView>
+            <AppButton
+              title="Close"
+              variant="primary"
+              size="md"
+              onPress={() => setLicenseModalVisible(false)}
+              style={{ marginTop: Spacing.sm }}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -723,5 +772,50 @@ const styles = StyleSheet.create({
   modalActionRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
+  },
+  licenseLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.background,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.xs,
+    borderWidth: 1,
+    borderColor: '#D1E7DD',
+  },
+  licenseLinkText: {
+    fontSize: 11,
+    color: Colors.primaryDark,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  licenseModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  licenseImageWrapper: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  licenseImage: {
+    width: '100%',
+    height: 320,
+    borderRadius: Radius.md,
+  },
+  licenseNoteText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    lineHeight: 16,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
   },
 });

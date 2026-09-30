@@ -335,6 +335,81 @@ export default function AboutPage() {
         </div>
       </section>
 
+      {/* 5.5 OFFICIAL PLATFORM LICENSE & BUSINESS REGISTRATION */}
+      <section className="py-5 bg-light border-top">
+        <div className="container">
+          <div className="row align-items-center g-4 g-lg-5">
+            <div className="col-lg-6">
+              <span className="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-1 fw-bold small mb-2">
+                <i className="bi bi-patch-check-fill me-1"></i>
+                {isAm ? 'ህጋዊ የንግድ ፈቃድና ምዝገባ' : 'Official Business License & Commercial Registration'}
+              </span>
+              <h2 className="h3 fw-bold mb-3">
+                {isAm ? 'ህጋዊ ፍቃድ ያለው የተረጋገጠ የገበያ መድረክ' : 'Officially Licensed & Certified Marketplace'}
+              </h2>
+              <p className="text-muted lh-base mb-4">
+                {isAm
+                  ? 'አርዳብ ገበያ በህጋዊ መንገድ የተመዘገበ እና አስፈላጊውን የመንግስት ንግድ ፈቃድ ያሟላ የገበያ መድረክ ነው። የደንበኞቻችንን እና የነጋዴዎቻችንን እምነት ለመጠበቅ ህጋዊ የንግድ ፈቃዳችንን በግልጽ እናቀርባለን።'
+                  : 'Ardab Market operates with full legal authorization and active government commercial licensing. To ensure absolute trust for our shoppers and merchant partners, our official business registration document is publicly verifiable.'}
+              </p>
+
+              <div className="d-flex flex-column gap-2 mb-4">
+                <div className="d-flex align-items-center gap-2 text-dark fw-medium small">
+                  <i className="bi bi-check-circle-fill text-success fs-5"></i>
+                  <span>{isAm ? 'የተረጋገጠ የኢትዮጵያ ንግድ ምዝገባና ፈቃድ' : 'Authorized Ethiopian Commercial Registration'}</span>
+                </div>
+                <div className="d-flex align-items-center gap-2 text-dark fw-medium small">
+                  <i className="bi bi-check-circle-fill text-success fs-5"></i>
+                  <span>{isAm ? 'ሙሉ ህጋዊ ጥበቃ ያለው የዲጂታል ግብይት' : 'Fully compliant digital marketplace transactions'}</span>
+                </div>
+                <div className="d-flex align-items-center gap-2 text-dark fw-medium small">
+                  <i className="bi bi-check-circle-fill text-success fs-5"></i>
+                  <span>{isAm ? 'ከታመኑ የክልሉ ህብረት ስራ ማህበራት ጋር የተጣመረ' : 'Partnered with verified agricultural unions and cooperatives'}</span>
+                </div>
+              </div>
+
+              <a
+                href="https://res.cloudinary.com/dr9umkixr/image/upload/v1790759372/5881716382414606136_rahyhj.jpg"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-fresh btn-lg px-4 py-2.5 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-2"
+              >
+                <i className="bi bi-file-earmark-text-fill"></i>
+                {isAm ? 'ህጋዊ ፈቃዱን ሙሉ ገጽ ይመልከቱ' : 'View Full License Document'}
+              </a>
+            </div>
+
+            <div className="col-lg-6 text-center">
+              <div className="card border-0 shadow-lg rounded-4 overflow-hidden position-relative p-2 bg-white d-inline-block text-start">
+                <a
+                  href="https://res.cloudinary.com/dr9umkixr/image/upload/v1790759372/5881716382414606136_rahyhj.jpg"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="d-block position-relative"
+                  title={isAm ? 'ፈቃዱን በትልቅ እይታ ለመመልከት ይጫኑ' : 'Click to view full license document'}
+                >
+                  <img
+                    src="https://res.cloudinary.com/dr9umkixr/image/upload/v1790759372/5881716382414606136_rahyhj.jpg"
+                    alt="Ardab Market Official Commercial License"
+                    className="rounded-3 img-fluid border object-fit-contain shadow-sm"
+                    style={{ maxHeight: '420px', width: 'auto' }}
+                  />
+                  <div className="position-absolute bottom-0 start-0 end-0 bg-dark bg-opacity-75 text-white p-2.5 rounded-bottom-3 d-flex align-items-center justify-content-between">
+                    <span className="small fw-semibold">
+                      <i className="bi bi-patch-check-fill text-success me-1"></i>
+                      {isAm ? 'የንግድ ፈቃድ (የተረጋገጠ)' : 'Official Business License (Verified)'}
+                    </span>
+                    <span className="badge bg-success rounded-pill px-2.5 py-1">
+                      <i className="bi bi-zoom-in me-1"></i> {isAm ? 'እይ' : 'Zoom'}
+                    </span>
+                  </div>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* 6. FREQUENTLY ASKED QUESTIONS */}
       <section className="py-5 bg-light border-top">
         <div className="container">

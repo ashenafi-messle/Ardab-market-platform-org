@@ -8,3 +8,7 @@ export const BRAND_SLOGAN_AM = '“ጥራትና ታማኝነት፣ እስከ ቤ
 
 export const BRAND_SUPPORTING_TEXT =
   'Find products you love from the verified Ardab marketplace.';
+
+export const ARDAB_LICENSE_URL =
+  'https://res.cloudinary.com/dr9umkixr/image/upload/v1790759372/5881716382414606136_rahyhj.jpg';
+

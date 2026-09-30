@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, Platform, ToastAndroid, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Alert, Platform, ToastAndroid, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius } from '@/theme';
 import { useApp } from '@/store';
 import { t } from '@/utils/i18n';
 import { ProfileHeader, ProfileMenuItem } from '@/components/profile';
 import { Modal, AppButton } from '@/components/common';
+import { ARDAB_LICENSE_URL } from '@/constants/branding';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -14,6 +16,7 @@ export default function ProfileScreen() {
     useApp();
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
+  const [licenseModalVisible, setLicenseModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -115,6 +118,12 @@ export default function ProfileScreen() {
           onPress={() => router.push('/support' as any)}
         />
         <ProfileMenuItem
+          icon="ribbon-outline"
+          title={language === 'am' ? 'ህጋዊ የንግድ ፈቃድ' : 'Official Business License'}
+          subtitle={language === 'am' ? 'የተረጋገጠ የንግድ ምዝገባ ሰነድ' : 'Verified Commercial Registration'}
+          onPress={() => setLicenseModalVisible(true)}
+        />
+        <ProfileMenuItem
           icon="information-circle-outline"
           title={t('profile.about')}
           subtitle={t('home.verifiedMarketplace')}
@@ -183,6 +192,49 @@ export default function ProfileScreen() {
           {t('profile.aboutDesc2')}
         </Text>
         <Text style={styles.aboutVersion}>{t('profile.version')}</Text>
+        <AppButton
+          title={language === 'am' ? 'ህጋዊ የንግድ ፈቃድ ይመልከቱ' : 'View Commercial License'}
+          variant="outline"
+          size="sm"
+          onPress={() => {
+            setAboutModalVisible(false);
+            setLicenseModalVisible(true);
+          }}
+          style={{ marginTop: Spacing.sm }}
+        />
+      </Modal>
+
+      {/* Official Business License Modal */}
+      <Modal
+        visible={licenseModalVisible}
+        onClose={() => setLicenseModalVisible(false)}
+        title={language === 'am' ? 'ህጋዊ የንግድ ፈቃድ' : 'Official Business License'}>
+        <View style={styles.licenseCard}>
+          <View style={styles.licenseHeaderBadge}>
+            <Ionicons name="shield-checkmark" size={16} color={Colors.primary} />
+            <Text style={styles.licenseBadgeText}>
+              {language === 'am' ? 'የተረጋገጠ የኢትዮጵያ ንግድ ፈቃድ' : 'Verified Commercial Registration'}
+            </Text>
+          </View>
+          <View style={styles.licenseImageWrapper}>
+            <Image
+              source={{ uri: ARDAB_LICENSE_URL }}
+              style={styles.licenseImage}
+              resizeMode="contain"
+            />
+          </View>
+          <Text style={styles.licenseNote}>
+            {language === 'am'
+              ? 'አርዳብ ገበያ በህግ የተመዘገበና የመንግስት ንግድ ፈቃድ ያሟላ የታመነ መድረክ ነው።'
+              : 'Ardab Market operates with active government commercial licensing and full regulatory compliance.'}
+          </Text>
+        </View>
+        <AppButton
+          title={t('common.close') || 'Close'}
+          variant="primary"
+          onPress={() => setLicenseModalVisible(false)}
+          style={{ marginTop: Spacing.md }}
+        />
       </Modal>
 
       {/* Sign Out Confirmation Modal */}
@@ -299,5 +351,48 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.tiny,
     color: Colors.textMuted,
     marginTop: Spacing.sm,
+  },
+  licenseCard: {
+    paddingVertical: Spacing.xs,
+  },
+  licenseHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#D1E7DD',
+  },
+  licenseBadgeText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primaryDark,
+    flex: 1,
+  },
+  licenseImageWrapper: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  licenseImage: {
+    width: '100%',
+    height: 320,
+    borderRadius: Radius.md,
+  },
+  licenseNote: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    lineHeight: 16,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
   },
 });
