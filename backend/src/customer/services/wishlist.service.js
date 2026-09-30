@@ -86,6 +86,50 @@ export async function getWishlist(customerId) {
 }
 
 /**
+ * POST /api/customer/wishlist
+ * Adds a product to the authenticated customer's wishlist (idempotent).
+ *
+ * @param {string} customerId
+ * @param {string} productId
+ * @returns {Promise<{added: boolean, item: any}>}
+ */
+export async function addToWishlist(customerId, productId) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: PRODUCT_INCLUDE,
+  });
+
+  if (!product) {
+    throw ApiError.notFound('Product not found.');
+  }
+
+  // Check if already in wishlist
+  const existing = await prisma.customerWishlistItem.findUnique({
+    where: { customerId_productId: { customerId, productId } },
+    include: { product: { include: PRODUCT_INCLUDE } },
+  });
+
+  if (existing) {
+    const ratingSummaries = await getPublicProductRatingSummaries([productId]);
+    return { added: true, item: formatWishlistItem(existing, ratingSummaries.get(productId)) };
+  }
+
+  // Create new wishlist entry
+  const created = await prisma.customerWishlistItem.create({
+    data: {
+      customerId,
+      productId,
+    },
+    include: {
+      product: { include: PRODUCT_INCLUDE },
+    },
+  });
+
+  const ratingSummaries = await getPublicProductRatingSummaries([productId]);
+  return { added: true, item: formatWishlistItem(created, ratingSummaries.get(productId)) };
+}
+
+/**
  * POST /api/customer/wishlist/toggle
  * Adds or removes a product from the wishlist (idempotent toggle).
  *

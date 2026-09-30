@@ -7,6 +7,7 @@ import { asyncHandler } from '../../shared/utils/asyncHandler.js';
 import { customerAuthMiddleware } from '../middleware/customerAuth.middleware.js';
 import {
   getWishlistHandler,
+  addToWishlistHandler,
   toggleWishlistHandler,
   removeWishlistItemHandler,
   clearWishlistHandler,
@@ -25,6 +26,14 @@ router.use(customerAuthMiddleware);
  * @access  Customer (Auth Required)
  */
 router.get('/', asyncHandler(getWishlistHandler));
+
+/**
+ * @route   POST /api/customer/wishlist
+ * @desc    Add product to wishlist
+ * @access  Customer (Auth Required)
+ * @body    { productId: string }
+ */
+router.post('/', asyncHandler(addToWishlistHandler));
 
 /**
  * @route   POST /api/customer/wishlist/toggle

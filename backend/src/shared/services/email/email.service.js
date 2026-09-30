@@ -12,8 +12,71 @@ import {
   getPasswordChangedNotificationTemplate,
 } from './email.templates.js';
 import { getSupportReplyTemplate } from './templates/support-reply.template.js';
+import {
+  getSupportStaffNotificationTemplate,
+  getCustomerSupportConfirmationTemplate,
+} from './templates/support-ticket.template.js';
 
 export class EmailService {
+  /**
+   * Dispatches Support Ticket Notification to Ardab Market Support Staff
+   */
+  static async sendSupportTicketToStaff({
+    toEmail,
+    ticketNumber,
+    customerName,
+    customerEmail,
+    customerPhone,
+    city,
+    subject,
+    messageBody,
+    orderNumber,
+    priority,
+  }) {
+    const { htmlContent, textContent } = getSupportStaffNotificationTemplate({
+      ticketNumber,
+      customerName,
+      customerEmail,
+      customerPhone,
+      city,
+      subject,
+      messageBody,
+      orderNumber,
+      priority,
+    });
+
+    return sendBrevoEmail({
+      toEmail,
+      toName: 'Ardab Market Support',
+      subject: `[Ardab Market Support] Ticket #${ticketNumber}: ${subject}`,
+      htmlContent,
+      textContent,
+    });
+  }
+
+  /**
+   * Dispatches Support Ticket Receipt Confirmation to Customer
+   */
+  static async sendSupportConfirmationToCustomer({
+    toEmail,
+    customerName,
+    ticketNumber,
+    subject,
+  }) {
+    const { htmlContent, textContent } = getCustomerSupportConfirmationTemplate({
+      ticketNumber,
+      customerName,
+      subject,
+    });
+
+    return sendBrevoEmail({
+      toEmail,
+      toName: customerName,
+      subject: `[Ardab Market] Support Request Received #${ticketNumber}`,
+      htmlContent,
+      textContent,
+    });
+  }
   /**
    * Dispatches Email Verification link (NO OTP)
    */

@@ -6,6 +6,9 @@ import { Router } from 'express';
 import customerAuthRoutes from './auth.routes.js';
 import customerOrderRoutes from './order.routes.js';
 import customerWishlistRoutes from './wishlist.routes.js';
+import customerAddressRoutes from './address.routes.js';
+import customerProfileRoutes from './profile.routes.js';
+import customerSecurityRoutes from './security.routes.js';
 import customerCatalogRoutes from './catalog.routes.js';
 import { customerTelemetryMiddleware } from '../../shared/middleware/customerTelemetry.middleware.js';
 
@@ -20,6 +23,15 @@ customerRouter.use(customerTelemetryMiddleware);
 
 // Mount Customer Authentication routes (/api/customer/auth/*)
 customerRouter.use('/auth', customerAuthRoutes);
+
+// Mount Customer Profile routes (/api/customer/profile/*)
+customerRouter.use('/profile', customerProfileRoutes);
+
+// Mount Customer Security routes (/api/customer/security/*)
+customerRouter.use('/security', customerSecurityRoutes);
+
+// Mount Customer Address routes (/api/customer/addresses/*)
+customerRouter.use('/addresses', customerAddressRoutes);
 
 // Mount Customer Support routes (/api/customer/support/*)
 customerRouter.use('/support', customerSupportRoutes);

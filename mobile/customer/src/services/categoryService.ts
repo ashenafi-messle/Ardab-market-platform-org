@@ -77,10 +77,16 @@ export const categoryService = {
               parentId: node.parentId || null,
               productCount: node.productCount || 0,
               featured: Boolean(node.featured),
-              children: Array.isArray(node.children) ? node.children.map(mapNode) : [],
+              children: Array.isArray(node.children)
+                ? node.children
+                    .filter((child: any) => !child.name?.toLowerCase().includes('review categor'))
+                    .map(mapNode)
+                : [],
             };
           };
-          const mapped = rawTree.map(mapNode);
+          const mapped = rawTree
+            .filter((node: any) => !node.name?.toLowerCase().includes('review categor'))
+            .map(mapNode);
           cachedTree = mapped;
           return mapped;
         }
@@ -106,23 +112,25 @@ export const categoryService = {
       if (res.ok && res.data) {
         const list = res.data.data || res.data;
         if (Array.isArray(list) && list.length > 0) {
-          return list.map((item: any) => {
-            const effectiveImg = (item.latestProductImage || item.imageUrl || item.image || '').trim();
-            return {
-              id: item.id,
-              name: item.name,
-              nameAmharic: item.nameAmharic || item.name,
-              slug: item.slug || item.id,
-              icon: item.icon || 'grid-outline',
-              image: effectiveImg,
-              imageUrl: effectiveImg || undefined,
-              latestProductImage: item.latestProductImage || undefined,
-              bannerImage: effectiveImg || undefined,
-              parentId: null,
-              productCount: item.productCount || 0,
-              children: [],
-            };
-          });
+          return list
+            .filter((item: any) => !item.name?.toLowerCase().includes('review categor'))
+            .map((item: any) => {
+              const effectiveImg = (item.latestProductImage || item.imageUrl || item.image || '').trim();
+              return {
+                id: item.id,
+                name: item.name,
+                nameAmharic: item.nameAmharic || item.name,
+                slug: item.slug || item.id,
+                icon: item.icon || 'grid-outline',
+                image: effectiveImg,
+                imageUrl: effectiveImg || undefined,
+                latestProductImage: item.latestProductImage || undefined,
+                bannerImage: effectiveImg || undefined,
+                parentId: null,
+                productCount: item.productCount || 0,
+                children: [],
+              };
+            });
         }
       }
     } catch {

@@ -118,12 +118,17 @@ export interface CartItem {
 export interface Address {
   id: string;
   fullName: string;
+  recipientName?: string;
   phone: string;
   city: string;
   subcity?: string;
+  deliveryZone?: string;
+  neighborhood?: string;
   woreda?: string;
   specificAddress: string;
+  addressLine?: string;
   isDefault?: boolean;
+  label?: string;
 }
 
 export type OrderStatusType =

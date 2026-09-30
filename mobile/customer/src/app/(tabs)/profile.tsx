@@ -88,7 +88,6 @@ export default function ProfileScreen() {
           icon="notifications-outline"
           title={t('profile.notifications')}
           subtitle={t('home.specialOffers')}
-          badge={2}
           onPress={() => router.push('/profile/notifications' as any)}
         />
 

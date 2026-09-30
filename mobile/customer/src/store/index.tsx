@@ -1,10 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Product, CartItem, Order, UserProfile, Address } from '@/types';
-import { MOCK_USER, MOCK_ADDRESSES, CITIES } from '@/constants/mockData';
+import { CITIES } from '@/constants/mockData';
 import { Language, getLanguage, setLanguage as setI18nLanguage, subscribeLanguage, initLanguage, t, formatPrice, TranslationKey } from '@/localization';
 import { useAuth, AuthProvider } from '@/context/AuthContext';
 import { secureStorage } from '@/services/secureStorage';
 import { productService } from '@/services/productService';
+import { wishlistApi } from '@/services/wishlistApi';
+import { addressApi } from '@/services/addressApi';
+import { profileApi } from '@/services/profileApi';
 
 export { useAuth, AuthProvider };
 
@@ -25,7 +28,7 @@ interface AppContextType {
   isAuthenticated: boolean;
   login: (emailOrPhone: string) => void;
   logout: () => Promise<void>;
-  updateUser: (data: Partial<UserProfile>) => void;
+  updateUser: (data: Partial<UserProfile>) => Promise<any>;
 
   // Cart
   cartItems: CartItem[];
@@ -42,8 +45,9 @@ interface AppContextType {
   // Wishlist
   wishlistProductIds: string[];
   wishlistProducts: Product[];
-  toggleWishlist: (product: Product) => void;
+  toggleWishlist: (product: Product) => Promise<void>;
   isInWishlist: (productId: string) => boolean;
+  refreshWishlist: () => Promise<void>;
 
   // Orders
   orders: Order[];
@@ -52,7 +56,11 @@ interface AppContextType {
 
   // Saved addresses
   addresses: Address[];
-  addAddress: (address: Omit<Address, 'id'>) => void;
+  addAddress: (address: Omit<Address, 'id'>) => Promise<void>;
+  updateAddress: (id: string, address: Partial<Address>) => Promise<void>;
+  deleteAddress: (id: string) => Promise<void>;
+  setDefaultAddress: (id: string) => Promise<void>;
+  refreshAddresses: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -67,13 +75,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentCity, setCurrentCity] = useState<string>('Gondar');
   const [wishlistProductIds, setWishlistProductIds] = useState<string[]>([]);
   const [wishlistMap, setWishlistMap] = useState<Record<string, Product>>({});
-  const [addresses, setAddresses] = useState<Address[]>(MOCK_ADDRESSES);
+  const [addresses, setAddresses] = useState<Address[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
 
   // Initial cart starts empty (populated only from user actions or secure storage)
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
   const auth = useAuth();
+
+  const loadAddresses = useCallback(async () => {
+    if (auth.isAuthenticated) {
+      try {
+        const realAddresses = await addressApi.getAddresses();
+        setAddresses(realAddresses);
+      } catch (err) {
+        console.warn('[store] loadAddresses failed:', err);
+      }
+    } else {
+      setAddresses([]);
+    }
+  }, [auth.isAuthenticated]);
+
+  const loadWishlist = useCallback(async () => {
+    if (auth.isAuthenticated) {
+      try {
+        const realWishlist = await wishlistApi.getWishlist();
+        if (Array.isArray(realWishlist)) {
+          setWishlistProductIds(realWishlist.map((p) => p.id));
+          const map: Record<string, Product> = {};
+          realWishlist.forEach((p) => {
+            map[p.id] = p;
+          });
+          setWishlistMap(map);
+        }
+      } catch (err) {
+        console.warn('[store] loadWishlist failed:', err);
+      }
+    }
+  }, [auth.isAuthenticated]);
+
+  // Load backend data whenever authentication state changes
+  useEffect(() => {
+    loadAddresses();
+    loadWishlist();
+  }, [loadAddresses, loadWishlist]);
 
   // Restore persisted state on mount
   useEffect(() => {
@@ -137,13 +182,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Clear customer-specific cached state from memory and storage
     setCartItems([]);
     setOrders([]);
+    setWishlistProductIds([]);
+    setWishlistMap({});
+    setAddresses([]);
     secureStorage.deleteItem(STORAGE_CART_KEY).catch(() => {});
     secureStorage.deleteItem(STORAGE_ORDERS_KEY).catch(() => {});
+    secureStorage.deleteItem(STORAGE_WISHLIST_KEY).catch(() => {});
+    secureStorage.deleteItem(STORAGE_WISHLIST_MAP_KEY).catch(() => {});
   };
 
-  const updateUser = (data: Partial<UserProfile>) => {
+  const updateUser = async (data: Partial<UserProfile>) => {
     if (auth.user) {
-      auth.createPasswordAndAccount({ city: data.city || auth.user.city, password: '' }).catch(() => {});
+      try {
+        const updated = await profileApi.updateProfile({
+          fullName: data.fullName,
+          city: data.city,
+          deliveryZone: (data as any).deliveryZone || (data as any).subcity,
+          profileImageUrl: data.avatarUrl,
+        });
+        if (updated) {
+          const newUser: UserProfile = {
+            ...auth.user,
+            fullName: updated.fullName,
+            city: updated.city,
+            avatarUrl: updated.profileImageUrl || updated.avatarUrl,
+          };
+          await auth.updateUser(newUser);
+          return updated;
+        }
+      } catch (err) {
+        console.warn('[store] updateUser failed:', err);
+        throw err;
+      }
     }
   };
 
@@ -229,25 +299,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [orders]);
 
-  // Wishlist operations (immediate optimistic update)
-  const toggleWishlist = (product: Product) => {
+  // Wishlist operations (optimistic update with server sync and rollback)
+  const toggleWishlist = async (product: Product) => {
     const isFav = wishlistProductIds.includes(product.id);
+    const prevIds = [...wishlistProductIds];
+    const prevMap = { ...wishlistMap };
+
     const newIds = isFav
       ? wishlistProductIds.filter((id) => id !== product.id)
       : [...wishlistProductIds, product.id];
 
+    // Optimistic UI update
     setWishlistProductIds(newIds);
-
-    setWishlistMap((prev) => {
-      const updated = { ...prev, [product.id]: product };
-      secureStorage.setItem(STORAGE_WISHLIST_MAP_KEY, JSON.stringify(updated)).catch(() => {});
-      return updated;
-    });
-
+    setWishlistMap((prev) => ({ ...prev, [product.id]: product }));
     secureStorage.setItem(STORAGE_WISHLIST_KEY, JSON.stringify(newIds)).catch(() => {});
+
+    try {
+      const res = await wishlistApi.toggleWishlist(product.id);
+      if (res.inWishlist && !newIds.includes(product.id)) {
+        setWishlistProductIds((curr) => [...curr, product.id]);
+      } else if (!res.inWishlist && newIds.includes(product.id)) {
+        setWishlistProductIds((curr) => curr.filter((id) => id !== product.id));
+      }
+    } catch (err) {
+      // Rollback on server failure
+      console.warn('[store] toggleWishlist server sync failed, rolling back:', err);
+      setWishlistProductIds(prevIds);
+      setWishlistMap(prevMap);
+      secureStorage.setItem(STORAGE_WISHLIST_KEY, JSON.stringify(prevIds)).catch(() => {});
+    }
   };
 
   const isInWishlist = (productId: string) => wishlistProductIds.includes(productId);
+
+  const refreshWishlist = async () => {
+    await loadWishlist();
+  };
 
   // Derives full product list for wishlist strictly from real products
   const wishlistProducts = wishlistProductIds
@@ -331,12 +418,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const addAddress = (addr: Omit<Address, 'id'>) => {
-    const newAddr: Address = {
-      ...addr,
-      id: `addr-${Date.now()}`,
-    };
-    setAddresses((prev) => [newAddr, ...prev]);
+  const addAddress = async (addr: Omit<Address, 'id'>) => {
+    await addressApi.createAddress({
+      label: addr.subcity ? `${addr.city} Address` : 'Home',
+      fullName: addr.fullName,
+      phone: addr.phone,
+      city: addr.city,
+      subcity: addr.subcity,
+      deliveryZone: addr.subcity,
+      specificAddress: addr.specificAddress,
+      addressLine: addr.specificAddress,
+      isDefault: addr.isDefault,
+    });
+    await loadAddresses();
+  };
+
+  const updateAddress = async (id: string, addrData: Partial<Address>) => {
+    await addressApi.updateAddress(id, {
+      fullName: addrData.fullName,
+      phone: addrData.phone,
+      city: addrData.city,
+      subcity: addrData.subcity,
+      deliveryZone: addrData.subcity,
+      specificAddress: addrData.specificAddress,
+      addressLine: addrData.specificAddress,
+      isDefault: addrData.isDefault,
+    });
+    await loadAddresses();
+  };
+
+  const deleteAddress = async (id: string) => {
+    await addressApi.deleteAddress(id);
+    await loadAddresses();
+  };
+
+  const setDefaultAddress = async (id: string) => {
+    await addressApi.setDefaultAddress(id);
+    await loadAddresses();
+  };
+
+  const refreshAddresses = async () => {
+    await loadAddresses();
   };
 
   return (
@@ -368,11 +490,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         wishlistProducts,
         toggleWishlist,
         isInWishlist,
+        refreshWishlist,
         orders,
         placeOrder,
         cancelLocalOrder,
         addresses,
         addAddress,
+        updateAddress,
+        deleteAddress,
+        setDefaultAddress,
+        refreshAddresses,
       }}>
       {children}
     </AppContext.Provider>

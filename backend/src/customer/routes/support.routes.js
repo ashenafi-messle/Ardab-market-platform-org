@@ -35,6 +35,11 @@ router.get('/orders', asyncHandler(listCustomerOrdersHandler));
 
 // List customer support requests (with pagination, filters, search)
 router.get(
+  '/',
+  validate({ query: customerSupportQuerySchema }),
+  asyncHandler(listRequestsHandler)
+);
+router.get(
   '/requests',
   validate({ query: customerSupportQuerySchema }),
   asyncHandler(listRequestsHandler)
@@ -47,6 +52,11 @@ router.get(
 );
 
 // Create new customer support request
+router.post(
+  '/',
+  validate({ body: createCustomerRequestSchema }),
+  asyncHandler(createRequestHandler)
+);
 router.post(
   '/requests',
   validate({ body: createCustomerRequestSchema }),
@@ -61,6 +71,11 @@ router.post(
 
 // Get single support conversation
 router.get(
+  '/:requestId',
+  validate({ params: requestIdParamSchema }),
+  asyncHandler(getRequestByIdHandler)
+);
+router.get(
   '/requests/:requestId',
   validate({ params: requestIdParamSchema }),
   asyncHandler(getRequestByIdHandler)
@@ -73,6 +88,16 @@ router.get(
 );
 
 // Customer reply to conversation
+router.post(
+  '/:requestId/reply',
+  validate({ params: requestIdParamSchema, body: replyCustomerMessageSchema }),
+  asyncHandler(replyRequestHandler)
+);
+router.post(
+  '/:requestId/messages',
+  validate({ params: requestIdParamSchema, body: replyCustomerMessageSchema }),
+  asyncHandler(replyRequestHandler)
+);
 router.post(
   '/requests/:requestId/messages',
   validate({ params: requestIdParamSchema, body: replyCustomerMessageSchema }),
@@ -95,6 +120,11 @@ router.post(
 );
 
 // Mark conversation as read
+router.patch(
+  '/:requestId/read',
+  validate({ params: requestIdParamSchema }),
+  asyncHandler(markReadHandler)
+);
 router.patch(
   '/requests/:requestId/read',
   validate({ params: requestIdParamSchema }),

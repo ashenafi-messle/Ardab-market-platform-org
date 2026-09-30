@@ -8,6 +8,8 @@
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 import { logger } from '../../shared/utils/logger.js';
+import { env } from '../../shared/config/env.js';
+import { EmailService } from '../../shared/services/email/email.service.js';
 import { generateNextTicketNumber } from '../../admin/services/supportCode.service.js';
 import { createNotification } from '../../admin/services/notification.service.js';
 
@@ -456,7 +458,7 @@ export async function createCustomerRequest(customerId, data) {
   try {
     await createNotification({
       type: 'NOTIFICATION',
-      category: 'SUPPORT',
+      category: 'CUSTOMER',
       title: `New Support Request #${result.ticket.ticketNumber}`,
       message: `${customer.fullName || 'Customer'} opened support ticket: ${sanitizedSubject}`,
       severity: 'INFO',
@@ -471,6 +473,83 @@ export async function createCustomerRequest(customerId, data) {
     logger.warn('[SUPPORT] Failed to dispatch admin notification for support ticket creation:', err);
   }
 
+  // 8. Dispatch Email to Ardab Market Support Staff & Confirmation to Customer (Asynchronous & Resilient)
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || env.BREVO_SENDER_EMAIL || 'support@ardabmarket.com';
+  
+  // Send staff notification
+  try {
+    const staffEmailRes = await EmailService.sendSupportTicketToStaff({
+      toEmail: supportEmail,
+      ticketNumber: result.ticket.ticketNumber,
+      customerName: customer.fullName,
+      customerEmail: customer.email,
+      customerPhone: customer.phone,
+      city: customer.city,
+      subject: sanitizedSubject,
+      messageBody: sanitizedMessage,
+      orderNumber: result.ticket.order?.orderNumber,
+      priority: data.priority || 'NORMAL',
+    });
+
+    await prisma.supportEmailLog.create({
+      data: {
+        ticketId: result.ticket.id,
+        messageId: result.initialMessage.id,
+        recipientEmail: supportEmail,
+        recipientName: 'Ardab Market Support',
+        subject: `[Ardab Market Support] Ticket #${result.ticket.ticketNumber}: ${sanitizedSubject}`,
+        provider: 'brevo',
+        providerMessageId: staffEmailRes?.messageId || null,
+        status: staffEmailRes?.success ? 'SENT' : 'FAILED',
+        sentAt: staffEmailRes?.success ? new Date() : null,
+        lastError: staffEmailRes?.error || null,
+      },
+    }).catch(() => {});
+  } catch (err) {
+    logger.warn('[SUPPORT] Failed to send support ticket email to staff:', err?.message);
+    await prisma.supportEmailLog.create({
+      data: {
+        ticketId: result.ticket.id,
+        messageId: result.initialMessage.id,
+        recipientEmail: supportEmail,
+        recipientName: 'Ardab Market Support',
+        subject: `[Ardab Market Support] Ticket #${result.ticket.ticketNumber}: ${sanitizedSubject}`,
+        provider: 'brevo',
+        status: 'FAILED',
+        lastError: err?.message || 'Email dispatch failed',
+      },
+    }).catch(() => {});
+  }
+
+  // Send customer confirmation if customer has registered email
+  if (customer.email && customer.email.includes('@')) {
+    try {
+      const custEmailRes = await EmailService.sendSupportConfirmationToCustomer({
+        toEmail: customer.email,
+        customerName: customer.fullName,
+        ticketNumber: result.ticket.ticketNumber,
+        subject: sanitizedSubject,
+      });
+
+      await prisma.supportEmailLog.create({
+        data: {
+          ticketId: result.ticket.id,
+          messageId: result.initialMessage.id,
+          recipientEmail: customer.email,
+          recipientName: customer.fullName,
+          subject: `[Ardab Market] Support Request Received #${result.ticket.ticketNumber}`,
+          provider: 'brevo',
+          providerMessageId: custEmailRes?.messageId || null,
+          status: custEmailRes?.success ? 'SENT' : 'FAILED',
+          sentAt: custEmailRes?.success ? new Date() : null,
+          lastError: custEmailRes?.error || null,
+        },
+      }).catch(() => {});
+    } catch (custErr) {
+      logger.warn('[SUPPORT] Failed to send confirmation email to customer:', custErr?.message);
+    }
+  }
+
   return {
     id: result.ticket.id,
     ticketNumber: result.ticket.ticketNumber,
@@ -480,6 +559,7 @@ export async function createCustomerRequest(customerId, data) {
     category: result.ticket.category?.name || 'General',
     orderNumber: result.ticket.order?.orderNumber || null,
     createdAt: result.ticket.createdAt.toISOString(),
+    message: `Your support request #${result.ticket.ticketNumber} has been received. We are processing it.`,
   };
 }
 
@@ -603,7 +683,7 @@ export async function replyCustomerRequest(requestId, customerId, data) {
   try {
     await createNotification({
       type: 'NOTIFICATION',
-      category: 'SUPPORT',
+      category: 'CUSTOMER',
       title: `Customer Reply on #${ticket.ticketNumber}`,
       message: `${ticket.customer.fullName || 'Customer'} replied: ${sanitizedMessage.slice(0, 100)}...`,
       severity: 'INFO',

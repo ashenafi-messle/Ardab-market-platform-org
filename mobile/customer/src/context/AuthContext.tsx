@@ -18,6 +18,7 @@ export interface AuthContextType {
   // Session
   restoreSession: () => Promise<boolean>;
   logout: () => Promise<void>;
+  updateUser: (updated: Partial<UserProfile>) => Promise<void>;
   clearSavedIdentity: () => Promise<void>;
 
   // Login
@@ -280,6 +281,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
+   * Update local user profile state and cache
+   */
+  const updateUser = async (updated: Partial<UserProfile>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const nextUser = { ...prev, ...updated };
+      secureStorage.saveUserData(nextUser).catch(() => {});
+      return nextUser;
+    });
+  };
+
+  /**
    * Forget saved identity on device
    */
   const clearSavedIdentity = async () => {
@@ -297,6 +310,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         savedIdentity,
         restoreSession,
         logout,
+        updateUser,
         clearSavedIdentity,
         login,
         requestEmailOtp,

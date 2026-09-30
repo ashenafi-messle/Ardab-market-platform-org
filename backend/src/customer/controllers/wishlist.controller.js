@@ -5,6 +5,7 @@
 import { ApiResponse } from '../../shared/utils/apiResponse.js';
 import {
   getWishlist,
+  addToWishlist,
   toggleWishlistItem,
   removeFromWishlist,
   clearWishlist,
@@ -20,6 +21,23 @@ export async function getWishlistHandler(req, res) {
   const customerId = req.customer.id;
   const result = await getWishlist(customerId);
   return ApiResponse.success(res, result, 'Wishlist retrieved');
+}
+
+/**
+ * POST /api/customer/wishlist
+ * Adds a product to the authenticated customer's wishlist.
+ * Body: { productId }
+ */
+export async function addToWishlistHandler(req, res) {
+  const customerId = req.customer.id;
+  const { productId } = req.body;
+
+  if (!productId || typeof productId !== 'string') {
+    return ApiResponse.error(res, 'VALIDATION_ERROR', 'productId is required', 400);
+  }
+
+  const result = await addToWishlist(customerId, productId);
+  return ApiResponse.success(res, result, 'Product added to wishlist', 201);
 }
 
 /**
