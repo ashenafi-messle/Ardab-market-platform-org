@@ -140,6 +140,15 @@ export default function HomeScreen() {
         hasUnreadNotifications={unreadCount > 0}
       />
 
+      {/* Official Slogan Trust Bar */}
+      <View style={styles.sloganBar}>
+        <Ionicons name="sparkles" size={13} color={Colors.accent} />
+        <Text style={styles.sloganText} numberOfLines={1}>
+          {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
+        </Text>
+        <Ionicons name="shield-checkmark" size={13} color={Colors.primary} />
+      </View>
+
       {/* Category Sidebar Drawer */}
       <CategoryDrawer
         visible={isCategoryDrawerOpen}
@@ -224,6 +233,23 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  sloganBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryLight,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing.md,
+    gap: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#D1E7DD',
+  },
+  sloganText: {
+    fontSize: 11,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primaryDark,
+    letterSpacing: 0.2,
   },
   scrollContent: {
     paddingBottom: Spacing.huge,

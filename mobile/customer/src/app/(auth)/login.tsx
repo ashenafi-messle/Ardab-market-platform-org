@@ -105,6 +105,9 @@ export default function LoginScreen() {
               resizeMode="cover"
             />
           </View>
+          <Text style={styles.sloganText}>
+            {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
+          </Text>
           <Text style={styles.title}>{t('auth.welcomeBack')}</Text>
           <Text style={styles.subtitle}>{t('auth.loginDesc')}</Text>
         </View>
@@ -312,6 +315,18 @@ const styles = StyleSheet.create({
   logo: {
     width: '100%',
     height: '100%',
+  },
+  sloganText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primaryDark,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    overflow: 'hidden',
   },
   title: {
     fontSize: Typography.fontSize.xxl,

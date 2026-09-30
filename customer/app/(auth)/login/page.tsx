@@ -176,9 +176,12 @@ export default function LoginPage() {
                 className="rounded-3 shadow mb-3 border border-2 border-white object-fit-cover"
                 style={{ width: '56px', height: '56px' }}
               />
-              <h3 className="fw-bold mb-0">
+              <h3 className="fw-bold mb-1">
                 {language === 'am' ? 'ወደ አርዳብ ገበያ ይግቡ' : 'Sign In to Ardab Market'}
               </h3>
+              <div className="fw-medium small text-white text-opacity-90 mb-1 fst-italic">
+                {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
+              </div>
               <p className="small text-white-70 mb-0">
                 {language === 'am' ? 'በኢሜይል ወይም በስልክ ቁጥርዎ በቀላሉ ይግቡ' : 'Enter your credentials to access your account'}
               </p>

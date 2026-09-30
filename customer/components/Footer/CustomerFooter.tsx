@@ -20,7 +20,7 @@ export function CustomerFooter() {
         <div className="row g-4">
           {/* Column 1: Brand & Mission */}
           <div className="col-12 col-md-6 col-lg-4">
-            <div className="d-flex align-items-center mb-3">
+            <div className="d-flex align-items-center mb-1">
               <img
                 src="https://res.cloudinary.com/dr9umkixr/image/upload/v1789292515/5841569209974984677_ktnepe.jpg"
                 alt="Ardab Market Logo"
@@ -31,6 +31,9 @@ export function CustomerFooter() {
                 }}
               />
               <span className="fw-bold fs-4 text-white letter-spacing-1">ARDAB MARKET</span>
+            </div>
+            <div className="text-success fw-bold small mb-3 fst-italic">
+              {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
             </div>
             <p className="text-white-50 small mb-3 lh-base">
               {language === 'am'
@@ -143,7 +146,10 @@ export function CustomerFooter() {
             <div className="mb-1">
               © {new Date().getFullYear()} Ardab Market Platform. {language === 'am' ? 'መብቱ በህግ የተጠበቀ ነው።' : 'All rights reserved.'}
             </div>
-            <div className="text-white-50 small opacity-75" style={{ fontSize: '0.8rem' }}>
+            <div className="text-success small fw-medium">
+              {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
+            </div>
+            <div className="text-white-50 small opacity-75 mt-1" style={{ fontSize: '0.8rem' }}>
               {language === 'am'
                 ? 'በአርዳብ ቴክ ሶሉሽንስ አ.ማ. የበለፀገ — Powered by Ardab Tech Solutions S.C.'
                 : 'Powered by Ardab Tech Solutions S.C.'}

@@ -108,9 +108,12 @@ export default function SignUpPage() {
                 className="rounded-3 shadow mb-3 border border-2 border-white object-fit-cover"
                 style={{ width: '56px', height: '56px' }}
               />
-              <h3 className="fw-bold mb-0">
+              <h3 className="fw-bold mb-1">
                 {language === 'am' ? 'በአርዳብ ገበያ ይመዝገቡ' : 'Sign Up for Ardab Market'}
               </h3>
+              <div className="fw-medium small text-white text-opacity-90 mb-1 fst-italic">
+                {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
+              </div>
               <p className="small text-white-70 mb-0">
                 {language === 'am'
                   ? 'ትኩስ ምርቶችን በቀጥታ ከሻጮች በደጃፍዎ ማድረሻ ይዘዙ'

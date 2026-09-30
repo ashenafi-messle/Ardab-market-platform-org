@@ -21,14 +21,14 @@ export function CustomerHeader() {
       <div className="bg-light py-1 border-bottom d-none d-md-block" style={{ fontSize: '0.825rem' }}>
         <div className="container d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center gap-3 text-muted">
-            <span>
-              <i className="bi bi-truck text-success me-1"></i>
-              {t('marketplace.features.fleetDesc', 'Ardab Dedicated 5000kg Delivery Fleet')}
+            <span className="fw-semibold text-dark">
+              <i className="bi bi-patch-check-fill text-success me-1"></i>
+              {lang === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
             </span>
             <span>|</span>
             <span>
-              <i className="bi bi-shield-check text-success me-1"></i>
-              {t('marketplace.features.qualityTitle', '100% Quality Guaranteed')}
+              <i className="bi bi-truck text-success me-1"></i>
+              {t('marketplace.features.fleetDesc', 'Ardab Dedicated Delivery Fleet')}
             </span>
           </div>
 
@@ -101,8 +101,8 @@ export function CustomerHeader() {
                 <span className="fw-bolder fs-4 text-dark letter-spacing-tight d-block line-height-1">
                   ARDAB<span className="text-success">.</span>
                 </span>
-                <span className="text-muted text-uppercase" style={{ fontSize: '0.65rem', letterSpacing: '1px' }}>
-                  {t('common.brand.name', 'Market')}
+                <span className="text-success fw-semibold text-uppercase d-none d-sm-block" style={{ fontSize: '0.62rem', letterSpacing: '0.4px' }}>
+                  {lang === 'am' ? 'ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!' : 'Quality & Trust, Delivered to Your Door!'}
                 </span>
               </div>
             </Link>

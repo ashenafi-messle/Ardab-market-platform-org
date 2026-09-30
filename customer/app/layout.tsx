@@ -12,8 +12,8 @@ import CustomerFooter from '@/components/Footer/CustomerFooter';
 import MobileBottomNav from '@/components/Navigation/MobileBottomNav';
 
 export const metadata: Metadata = {
-  title: 'አርዳብ ገበያ | Ardab Market - የኢትዮጵያ ቀዳሚ የገበያ ቦታ',
-  description: 'በአርዳብ ገበያ ትኩስ አትክልት፣ ፍራፍሬ፣ እህሎችና ሌሎች ጥራት ያላቸው የሀገር ውስጥ ምርቶችን በቀጥታ ከአምራቾችና ነጋዴዎች ያግኙ። Buy fresh groceries, grains, and produce across Ethiopia.',
+  title: 'አርዳብ ገበያ | Ardab Market — “Quality and Trust, Delivered to Your Door!” | “ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”',
+  description: 'Ardab Market: Quality and Trust, Delivered to Your Door! ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ! ትኩስ አትክልት፣ ፍራፍሬ፣ እህሎችና ሌሎች ጥራት ያላቸው የሀገር ውስጥ ምርቶችን በቀጥታ ከአምራቾችና ነጋዴዎች ያግኙ።',
   icons: {
     icon: 'https://res.cloudinary.com/dr9umkixr/image/upload/v1789292515/5841569209974984677_ktnepe.jpg',
     apple: 'https://res.cloudinary.com/dr9umkixr/image/upload/v1789292515/5841569209974984677_ktnepe.jpg',

@@ -1,6 +1,8 @@
 export const en = {
   // Common
   'common.appName': 'Ardab Market',
+  'common.slogan': '“Quality and Trust, Delivered to Your Door!”',
+  'common.tagline': 'Quality and Trust, Delivered to Your Door!',
   'common.currency': 'ETB',
   'common.retry': 'Try Again',
   'common.loading': 'Loading...',
@@ -53,7 +55,9 @@ export const en = {
   'home.quickMenu': 'Quick Menu',
   'home.searchPlaceholder': 'Search products, brands, groceries...',
   'home.deliveryTo': 'Deliver to',
-  'home.heroTitle': 'Discover More. Shop Smarter.',
+  'home.heroTitle': 'Quality and Trust, Delivered to Your Door!',
+  'home.slogan': '“Quality and Trust, Delivered to Your Door!”',
+  'home.tagline': 'Quality and Trust, Delivered to Your Door!',
   'home.heroSubtitle': 'Find products you love on Ardab Market — authentic Ethiopian groceries, fashion, and everyday essentials delivered directly to you.',
   'home.shopNow': 'Shop Now',
   'home.exploreCategories': 'Explore Categories',

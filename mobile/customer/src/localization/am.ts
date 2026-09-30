@@ -3,6 +3,8 @@ import { TranslationKey } from './en';
 export const am: Record<TranslationKey, string> = {
   // Common
   'common.appName': 'አርዳብ ገበያ',
+  'common.slogan': '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”',
+  'common.tagline': 'ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!',
   'common.currency': 'ብር',
   'common.retry': 'እንደገና ሞክር',
   'common.loading': 'እየጫነ ነው...',
@@ -55,7 +57,9 @@ export const am: Record<TranslationKey, string> = {
   'home.quickMenu': 'ፈጣን ማውጫ',
   'home.searchPlaceholder': 'ምርቶችን ይፈልጉ...',
   'home.deliveryTo': 'የማድረሻ ቦታ',
-  'home.heroTitle': 'ተጨማሪ ያግኙ። በብልሃት ይግዙ።',
+  'home.heroTitle': 'ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!',
+  'home.slogan': '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”',
+  'home.tagline': 'ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!',
   'home.heroSubtitle': 'በአርዳብ ገበያ የሚወዷቸውን ምርቶች ያግኙ — ትኩስ የሸቀጣሸቀጥ፣ የባህል አልባሳት እና የዕለት ተዕለት ፍጆታዎች በቀጥታ ወደ እርስዎ ይደርሳሉ።',
   'home.shopNow': 'አሁን ይግዙ',
   'home.exploreCategories': 'ምድቦችን ያስሱ',

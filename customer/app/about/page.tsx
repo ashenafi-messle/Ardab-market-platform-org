@@ -31,11 +31,11 @@ export default function AboutPage() {
               <h1 className="display-4 fw-extrabold text-dark mb-3 lh-sm animate-fade-in-up delay-100">
                 {isAm ? (
                   <>
-                    የከተማዎ ገበያ። <span className="text-success">በአርዳብ ይደርሳል።</span>
+                    ጥራትና ታማኝነት፣ <span className="text-success">እስከ ቤትዎ ድረስ!</span>
                   </>
                 ) : (
                   <>
-                    Your City. Your Marketplace. <span className="text-success">Delivered by Ardab.</span>
+                    Quality and Trust, <span className="text-success">Delivered to Your Door!</span>
                   </>
                 )}
               </h1>

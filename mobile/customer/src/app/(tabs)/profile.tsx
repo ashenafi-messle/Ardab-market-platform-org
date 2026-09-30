@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Alert, Platform, ToastAndroid, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing } from '@/theme';
+import { Colors, Typography, Spacing, Radius } from '@/theme';
 import { useApp } from '@/store';
 import { t } from '@/utils/i18n';
 import { ProfileHeader, ProfileMenuItem } from '@/components/profile';
@@ -170,7 +170,12 @@ export default function ProfileScreen() {
         visible={aboutModalVisible}
         onClose={() => setAboutModalVisible(false)}
         title={t('profile.about')}>
-        <Text style={styles.aboutTitle}>{t('home.verifiedMarketplace')}</Text>
+        <Text style={styles.aboutTitle}>{t('common.appName')}</Text>
+        <View style={styles.aboutSloganBadge}>
+          <Text style={styles.aboutSloganText}>
+            {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
+          </Text>
+        </View>
         <Text style={styles.aboutText}>
           {t('profile.aboutDesc1')}
         </Text>
@@ -266,7 +271,23 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.lg,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.primaryDark,
-    marginBottom: Spacing.sm,
+    marginBottom: 4,
+  },
+  aboutSloganBadge: {
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#D1E7DD',
+  },
+  aboutSloganText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primaryDark,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   aboutText: {
     fontSize: Typography.fontSize.sm,

@@ -67,19 +67,19 @@ export default function HomePage() {
         <div className="container">
           <div className="row align-items-center g-4 g-lg-5">
             <div className="col-lg-6 text-center text-lg-start">
-              <span className="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-2 fw-semibold mb-3 fs-6 animate-fade-in-up">
-                <i className="bi bi-shield-check me-1"></i>
-                {language === 'am' ? 'የተረጋገጠ የኢትዮጵያ የገበያ መድረክ' : 'Verified Ethiopian Marketplace'}
+              <span className="badge bg-success bg-opacity-15 text-success border border-success border-opacity-25 rounded-pill px-3 py-2 fw-semibold mb-3 fs-6 animate-fade-in-up">
+                <i className="bi bi-patch-check-fill me-1"></i>
+                {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
               </span>
 
               <h1 className="display-4 fw-extrabold text-dark mb-3 lh-sm animate-fade-in-up delay-100">
                 {language === 'am' ? (
                   <>
-                    ተጨማሪ ያግኙ። በብልሃት ይሸምቱ። <span className="text-success">በአርዳብ ይደርሳል።</span>
+                    ጥራትና ታማኝነት፣ <span className="text-success">እስከ ቤትዎ ድረስ!</span>
                   </>
                 ) : (
                   <>
-                    Discover More. Shop Smarter. <span className="text-success">Delivered by Ardab.</span>
+                    Quality and Trust, <span className="text-success">Delivered to Your Door!</span>
                   </>
                 )}
               </h1>

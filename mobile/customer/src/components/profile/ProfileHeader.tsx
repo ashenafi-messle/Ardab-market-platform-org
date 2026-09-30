@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { UserProfile } from '@/types';
+import { t } from '@/localization';
 
 export interface ProfileHeaderProps {
   user: UserProfile | null;
@@ -23,6 +24,7 @@ export const ProfileHeader: React.FC<ProfileHeaderProps> = ({
         </View>
         <View style={styles.guestInfo}>
           <Text style={styles.guestTitle}>Welcome to Ardab Market</Text>
+          <Text style={styles.guestSlogan}>{t('common.slogan') || '“Quality and Trust, Delivered to Your Door!”'}</Text>
           <Text style={styles.guestSubtitle}>Sign in to view orders, wishlist & addresses</Text>
           <TouchableOpacity
             activeOpacity={0.8}
@@ -193,6 +195,14 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
+  },
+  guestSlogan: {
+    fontSize: Typography.fontSize.tiny,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primaryDark,
+    fontStyle: 'italic',
+    marginTop: 2,
+    marginBottom: 4,
   },
   guestSubtitle: {
     fontSize: Typography.fontSize.xs,
