@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Modal,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,10 +23,19 @@ import { CustomerOrder } from '@/types';
 import { orderService } from '@/services/orderService';
 import { useApp } from '@/store';
 
+const CANCELLATION_REASONS = [
+  'Changed my mind',
+  'Ordered items by mistake',
+  'Need to change delivery address or phone',
+  'Found a better price or alternative',
+  'Order is taking too long to confirm',
+  'Other reason',
+];
+
 export default function OrderDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { orders: storeOrders } = useApp();
+  const { orders: storeOrders, cancelLocalOrder } = useApp();
 
   const [order, setOrder] = useState<CustomerOrder | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -32,6 +43,10 @@ export default function OrderDetailsScreen() {
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [isOffline, setIsOffline] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Cancellation modal state
+  const [showCancelModal, setShowCancelModal] = useState<boolean>(false);
+  const [selectedReason, setSelectedReason] = useState<string>(CANCELLATION_REASONS[0]);
 
   const loadOrderDetails = useCallback(async (isRefresh = false) => {
     if (!id) return;
@@ -62,33 +77,59 @@ export default function OrderDetailsScreen() {
     loadOrderDetails();
   }, [loadOrderDetails]);
 
-  // Handle Order Cancellation by Customer
+  // Execute Order Cancellation by Customer
+  const handleConfirmCancellation = async () => {
+    if (!order || isCancelling) return;
+    setIsCancelling(true);
+    const reasonToSubmit = selectedReason || 'Cancelled by customer from mobile app';
+
+    try {
+      const res = await orderService.cancelOrder(order.id, reasonToSubmit);
+
+      // Instantly update local component state
+      setOrder((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: 'CANCELLED',
+              canCancel: false,
+              cancelledReason: reasonToSubmit,
+              cancelledAt: new Date().toISOString(),
+            }
+          : null
+      );
+
+      // Sync global store order list if local copy exists
+      cancelLocalOrder?.(order.id, reasonToSubmit);
+      setShowCancelModal(false);
+
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') {
+          window.alert(res.message || 'Your order has been cancelled.');
+        }
+      } else {
+        Alert.alert('Order Cancelled', res.message || 'Your order has been cancelled.');
+      }
+
+      // Re-sync with backend in background
+      loadOrderDetails(true);
+    } catch (err: any) {
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') {
+          window.alert(err.message || 'Unable to cancel this order.');
+        }
+      } else {
+        Alert.alert('Cancellation Error', err.message || 'Unable to cancel this order.');
+      }
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  // Open cancellation modal
   const handleCancelOrder = () => {
     if (!order) return;
-
-    Alert.alert(
-      'Cancel Order',
-      `Are you sure you want to cancel order #${order.orderNumber}? This action cannot be reversed.`,
-      [
-        { text: 'Keep Order', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            setIsCancelling(true);
-            try {
-              const res = await orderService.cancelOrder(order.id, 'Cancelled by customer from mobile app');
-              Alert.alert('Order Cancelled', res.message || 'Your order has been cancelled.');
-              loadOrderDetails(true);
-            } catch (err: any) {
-              Alert.alert('Cancellation Error', err.message || 'Unable to cancel this order.');
-            } finally {
-              setIsCancelling(false);
-            }
-          },
-        },
-      ]
-    );
+    setShowCancelModal(true);
   };
 
   // Contact Ardab Market Support with Order Reference
@@ -145,7 +186,18 @@ export default function OrderDetailsScreen() {
     'SHIPPING',
   ].includes(order.status);
 
-  const canCancel = order.canCancel ?? ['PENDING', 'CONFIRMED'].includes(order.status);
+  const cancellableStatuses = ['PENDING', 'CONFIRMED', 'PROCESSING'];
+  const canCancel =
+    order.status !== 'CANCELLED' &&
+    order.status !== 'DELIVERED' &&
+    order.status !== 'READY_FOR_DELIVERY' &&
+    order.status !== 'ASSIGNED_TO_TRIP' &&
+    order.status !== 'PICKED_UP' &&
+    order.status !== 'IN_TRANSIT' &&
+    order.status !== 'FAILED' &&
+    order.status !== 'RETURNED' &&
+    order.status !== 'REJECTED' &&
+    (order.canCancel ?? cancellableStatuses.includes(order.status));
 
   // Address resolution
   const recipientName =
@@ -221,6 +273,30 @@ export default function OrderDetailsScreen() {
           </View>
           <OrderStatus status={order.status} />
         </View>
+
+        {/* Cancelled Alert Banner */}
+        {order.status === 'CANCELLED' ? (
+          <View style={styles.cancelledBanner}>
+            <View style={styles.cancelledHeaderRow}>
+              <Ionicons name="close-circle" size={20} color={Colors.error} />
+              <Text style={styles.cancelledTitle}>Order Cancelled</Text>
+            </View>
+            <Text style={styles.cancelledSub}>
+              {order.cancelledReason || 'This order was cancelled by customer request.'}
+            </Text>
+            {order.cancelledAt ? (
+              <Text style={styles.cancelledTimestamp}>
+                Cancelled on {new Date(order.cancelledAt).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Tracking Preview Card */}
         <View style={styles.sectionCard}>
@@ -404,6 +480,80 @@ export default function OrderDetailsScreen() {
           </TouchableOpacity>
         ) : null}
       </ScrollView>
+
+      {/* Interactive Cross-Platform Cancellation Modal */}
+      <Modal
+        visible={showCancelModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isCancelling) setShowCancelModal(false);
+        }}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIconWrap}>
+                <Ionicons name="alert-circle" size={24} color={Colors.error} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Cancel Order #{order.orderNumber}?</Text>
+                <Text style={styles.modalSub}>
+                  This action will cancel your order immediately and cannot be undone.
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.reasonLabel}>Please select a cancellation reason:</Text>
+            <View style={styles.reasonsList}>
+              {CANCELLATION_REASONS.map((reason) => {
+                const isSelected = selectedReason === reason;
+                return (
+                  <TouchableOpacity
+                    key={reason}
+                    activeOpacity={0.7}
+                    disabled={isCancelling}
+                    onPress={() => setSelectedReason(reason)}
+                    style={[styles.reasonOption, isSelected && styles.reasonOptionSelected]}>
+                    <Ionicons
+                      name={isSelected ? 'radio-button-on' : 'radio-button-off'}
+                      size={18}
+                      color={isSelected ? Colors.error : Colors.textMuted}
+                    />
+                    <Text style={[styles.reasonText, isSelected && styles.reasonTextSelected]}>
+                      {reason}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={isCancelling}
+                onPress={() => setShowCancelModal(false)}
+                style={styles.keepOrderBtn}>
+                <Text style={styles.keepOrderBtnText}>Keep Order</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={isCancelling}
+                onPress={handleConfirmCancellation}
+                style={styles.confirmCancelBtn}>
+                {isCancelling ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="trash-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.confirmCancelBtnText}>Yes, Cancel</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -679,5 +829,143 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.bold,
+  },
+  cancelledBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FCA5A5',
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  cancelledHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: 4,
+  },
+  cancelledTitle: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.error,
+  },
+  cancelledSub: {
+    fontSize: Typography.fontSize.xs,
+    color: '#991B1B',
+    lineHeight: 18,
+  },
+  cancelledTimestamp: {
+    fontSize: Typography.fontSize.tiny,
+    color: '#B91C1C',
+    marginTop: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    width: '100%',
+    maxWidth: 420,
+    ...Shadows.lg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  modalIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+  },
+  modalSub: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  reasonLabel: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+  },
+  reasonsList: {
+    gap: 8,
+    marginBottom: Spacing.lg,
+  },
+  reasonOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: 8,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  reasonOptionSelected: {
+    borderColor: Colors.error,
+    backgroundColor: '#FEF2F2',
+  },
+  reasonText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  reasonTextSelected: {
+    color: Colors.error,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'center',
+  },
+  keepOrderBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  keepOrderBtnText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  confirmCancelBtnText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: '#FFFFFF',
   },
 });

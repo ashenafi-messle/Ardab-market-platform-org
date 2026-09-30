@@ -9,7 +9,7 @@ import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 
 // Statuses from which a customer is allowed to cancel their own order
-const CUSTOMER_CANCELLABLE_STATUSES = ['PENDING', 'CONFIRMED'];
+const CUSTOMER_CANCELLABLE_STATUSES = ['PENDING', 'CONFIRMED', 'PROCESSING'];
 
 // Active statuses for filtering
 const ACTIVE_STATUSES = [
@@ -350,7 +350,7 @@ export async function cancelMyOrder(orderId, customerId, reason = 'Cancelled by 
 
   if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
     throw ApiError.badRequest(
-      `Order cannot be cancelled. Only orders in PENDING or CONFIRMED status can be cancelled by customers. Current status: ${order.status}.`
+      `Order cannot be cancelled. Only orders in PENDING, CONFIRMED, or PROCESSING status can be cancelled by customers. Current status: ${order.status}.`
     );
   }
 
@@ -374,6 +374,19 @@ export async function cancelMyOrder(orderId, customerId, reason = 'Cancelled by 
           deliveryAddressSnapshot: true,
           activities: { orderBy: { createdAt: 'asc' } },
           delivery: true,
+        },
+      });
+
+      // If there is an existing pending delivery record, mark it cancelled as well
+      await tx.delivery.updateMany({
+        where: {
+          orderId: order.id,
+          status: { in: ['PENDING', 'READY_FOR_ASSIGNMENT'] },
+        },
+        data: {
+          status: 'CANCELLED',
+          cancellationReason: reason,
+          cancelledAt: new Date(),
         },
       });
 

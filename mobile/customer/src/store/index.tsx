@@ -48,6 +48,7 @@ interface AppContextType {
   // Orders
   orders: Order[];
   placeOrder: (paymentMethod: string, address: Address) => Order;
+  cancelLocalOrder: (orderId: string, reason?: string) => void;
 
   // Saved addresses
   addresses: Address[];
@@ -303,10 +304,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ],
     };
 
-    setOrders((prev) => [newOrder, ...prev]);
+    const updatedOrders = [newOrder, ...orders];
+    setOrders(updatedOrders);
+    secureStorage.setItem(STORAGE_ORDERS_KEY, JSON.stringify(updatedOrders)).catch(() => {});
     // Remove checked-out items from cart
     setCartItems((prev) => prev.filter((item) => !item.selected));
     return newOrder;
+  };
+
+  const cancelLocalOrder = (orderId: string, reason?: string) => {
+    setOrders((prev) => {
+      const updated = prev.map((o) => {
+        if (o.id === orderId || o.orderNumber === orderId) {
+          return {
+            ...o,
+            status: 'CANCELLED' as const,
+            canCancel: false,
+            cancelledReason: reason || 'Cancelled by customer',
+            cancelledAt: new Date().toISOString(),
+          };
+        }
+        return o;
+      });
+      secureStorage.setItem(STORAGE_ORDERS_KEY, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
   };
 
   const addAddress = (addr: Omit<Address, 'id'>) => {
@@ -348,6 +370,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isInWishlist,
         orders,
         placeOrder,
+        cancelLocalOrder,
         addresses,
         addAddress,
       }}>

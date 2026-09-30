@@ -370,29 +370,124 @@ export const orderService = {
   },
 
   /**
-   * Cancel an order in PENDING or CONFIRMED state
+   * Cancel an order in PENDING, CONFIRMED, or PROCESSING state
    */
   async cancelOrder(orderId: string, reason?: string): Promise<{ success: boolean; message: string }> {
-    const res = await apiFetch<{
-      success: boolean;
-      message: string;
-      data?: any;
-    }>(`/customer/orders/${encodeURIComponent(orderId)}/cancel`, {
-      method: 'POST',
-      body: JSON.stringify({ reason: reason || 'Customer requested cancellation from mobile app' }),
-    });
+    const cancelReason = reason || 'Customer requested cancellation from mobile app';
 
-    if (res.ok && res.data?.success) {
-      // Invalidate relevant order caches
-      secureStorage.deleteItem(`${STORAGE_KEYS.ORDER_DETAIL_PREFIX}${orderId}`).catch(() => {});
-      secureStorage.deleteItem(`${STORAGE_KEYS.TRACKING_PREFIX}${orderId}`).catch(() => {});
+    // 1. Handle local/offline mock orders (id starting with ord-)
+    if (orderId.startsWith('ord-')) {
+      const savedOrdersRaw = await secureStorage.getItem('ardab_saved_orders');
+      if (savedOrdersRaw) {
+        try {
+          const list = JSON.parse(savedOrdersRaw);
+          if (Array.isArray(list)) {
+            const idx = list.findIndex((o: any) => o.id === orderId || o.orderNumber === orderId);
+            if (idx !== -1) {
+              list[idx].status = 'CANCELLED';
+              list[idx].canCancel = false;
+              list[idx].cancelledReason = cancelReason;
+              list[idx].cancelledAt = new Date().toISOString();
+              await secureStorage.setItem('ardab_saved_orders', JSON.stringify(list));
+              return {
+                success: true,
+                message: 'Order cancelled successfully',
+              };
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
       return {
         success: true,
-        message: res.data.message || 'Order cancelled successfully',
+        message: 'Order cancelled successfully',
       };
     }
 
-    throw new Error(res.data?.message || 'Unable to cancel order at this stage');
+    // 2. Call authoritative backend cancellation endpoint
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        message: string;
+        data?: any;
+      }>(`/customer/orders/${encodeURIComponent(orderId)}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: cancelReason }),
+      });
+
+      if (res.ok && (res.data?.success || res.status === 200)) {
+        // Sync local cache: update order detail cache to CANCELLED
+        const detailCacheKey = `${STORAGE_KEYS.ORDER_DETAIL_PREFIX}${orderId}`;
+        try {
+          const cached = await secureStorage.getItem(detailCacheKey);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            parsed.status = 'CANCELLED';
+            parsed.canCancel = false;
+            parsed.cancelledReason = cancelReason;
+            parsed.cancelledAt = new Date().toISOString();
+            await secureStorage.setItem(detailCacheKey, JSON.stringify(parsed));
+          }
+        } catch {
+          secureStorage.deleteItem(detailCacheKey).catch(() => {});
+        }
+
+        // Invalidate tracking cache
+        secureStorage.deleteItem(`${STORAGE_KEYS.TRACKING_PREFIX}${orderId}`).catch(() => {});
+
+        // Sync ardab_saved_orders if stored
+        try {
+          const savedRaw = await secureStorage.getItem('ardab_saved_orders');
+          if (savedRaw) {
+            const list = JSON.parse(savedRaw);
+            if (Array.isArray(list)) {
+              const item = list.find((o: any) => o.id === orderId || o.orderNumber === orderId);
+              if (item) {
+                item.status = 'CANCELLED';
+                item.canCancel = false;
+                await secureStorage.setItem('ardab_saved_orders', JSON.stringify(list));
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        return {
+          success: true,
+          message: res.data?.message || 'Order cancelled successfully',
+        };
+      }
+
+      throw new Error(res.data?.message || 'Unable to cancel order at this stage');
+    } catch (err: any) {
+      // If network fails but order is in local saved orders, cancel offline copy gracefully
+      const savedOrdersRaw = await secureStorage.getItem('ardab_saved_orders');
+      if (savedOrdersRaw) {
+        try {
+          const list = JSON.parse(savedOrdersRaw);
+          if (Array.isArray(list)) {
+            const idx = list.findIndex((o: any) => o.id === orderId || o.orderNumber === orderId);
+            if (idx !== -1) {
+              list[idx].status = 'CANCELLED';
+              list[idx].canCancel = false;
+              list[idx].cancelledReason = cancelReason;
+              list[idx].cancelledAt = new Date().toISOString();
+              await secureStorage.setItem('ardab_saved_orders', JSON.stringify(list));
+              return {
+                success: true,
+                message: 'Order cancelled locally while offline',
+              };
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      throw err;
+    }
   },
 
   /**
