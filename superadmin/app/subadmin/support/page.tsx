@@ -14,8 +14,9 @@ import {
 } from '@/types/support';
 import { hasPermission } from '@/lib/permissions';
 
-const STATUS_TABS: { label: string; value: TicketStatus | 'ALL' }[] = [
+const STATUS_TABS: { label: string; value: TicketStatus | 'ALL' | 'ACCOUNT_DELETION' }[] = [
   { label: 'All Tickets', value: 'ALL' },
+  { label: 'Account Deletion', value: 'ACCOUNT_DELETION' },
   { label: 'Open', value: 'OPEN' },
   { label: 'In Progress', value: 'IN_PROGRESS' },
   { label: 'Waiting on Customer', value: 'WAITING_FOR_CUSTOMER' },
@@ -33,7 +34,7 @@ export default function CustomerSupportPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Filters & Pagination
-  const [activeTab, setActiveTab] = useState<TicketStatus | 'ALL'>('ALL');
+  const [activeTab, setActiveTab] = useState<TicketStatus | 'ALL' | 'ACCOUNT_DELETION'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedPriority, setSelectedPriority] = useState<string>('ALL');
@@ -98,7 +99,8 @@ export default function CustomerSupportPage() {
         page,
         pageSize: 15,
         search: searchTerm.trim() || undefined,
-        status: activeTab !== 'ALL' ? activeTab : undefined,
+        status: (activeTab !== 'ALL' && activeTab !== 'ACCOUNT_DELETION') ? (activeTab as TicketStatus) : undefined,
+        type: activeTab === 'ACCOUNT_DELETION' ? 'ACCOUNT_DELETION' : undefined,
         priority: selectedPriority !== 'ALL' ? selectedPriority : undefined,
         category: selectedCategory !== 'ALL' ? selectedCategory : undefined,
         city: selectedCity !== 'All Cities' ? selectedCity : undefined,
@@ -532,8 +534,13 @@ export default function CustomerSupportPage() {
                         <span className="badge badge-neutral-soft">{ticket.city}</span>
                       </td>
                       <td>
-                        <div className="fw-medium text-dark text-truncate" style={{ maxWidth: 240 }}>
-                          {ticket.subject}
+                        <div className="fw-medium text-dark text-truncate d-flex align-items-center gap-1" style={{ maxWidth: 280 }}>
+                          <span>{ticket.subject}</span>
+                          {(ticket.subject?.toLowerCase().includes('account deletion') || ticket.category === 'ACCOUNT_DELETION') && (
+                            <span className="badge bg-danger text-white px-1 py-0" style={{ fontSize: '0.65rem' }}>
+                              Deletion Request
+                            </span>
+                          )}
                         </div>
                         <div className="text-muted small" style={{ fontSize: '0.72rem' }}>
                           {ticket.category?.replace(/_/g, ' ')} {ticket.orderId && `• Order ${ticket.orderId}`}
@@ -593,7 +600,14 @@ export default function CustomerSupportPage() {
                   {getPriorityBadge(ticket.priority)}
                 </div>
 
-                <div className="fw-medium text-dark small mb-2">{ticket.subject}</div>
+                <div className="fw-medium text-dark small mb-2 d-flex align-items-center gap-1">
+                  <span>{ticket.subject}</span>
+                  {(ticket.subject?.toLowerCase().includes('account deletion') || ticket.category === 'ACCOUNT_DELETION') && (
+                    <span className="badge bg-danger text-white px-1 py-0" style={{ fontSize: '0.65rem' }}>
+                      Deletion
+                    </span>
+                  )}
+                </div>
 
                 <div className="d-flex justify-content-between text-muted small mb-1" style={{ fontSize: '0.75rem' }}>
                   <span><i className="bi bi-person me-1"></i>{ticket.assignedSubadmin?.name || (ticket.assignedTo && ticket.assignedTo !== 'Unassigned' ? ticket.assignedTo : null) || user?.name || 'Unassigned'}</span>
@@ -681,6 +695,19 @@ export default function CustomerSupportPage() {
                     </div>
                   ) : (
                     <>
+                      {/* Account Deletion Alert Banner */}
+                      {(selectedTicket.subject?.toLowerCase().includes('account deletion') || selectedTicket.category === 'ACCOUNT_DELETION') && (
+                        <div className="alert alert-danger d-flex align-items-center gap-2 mb-3 rounded-3 border-danger-subtle p-3">
+                          <i className="bi bi-shield-exclamation fs-3 text-danger"></i>
+                          <div>
+                            <strong className="d-block text-danger">Account Deletion Request</strong>
+                            <span className="small text-danger-emphasis">
+                              Customer has requested account closure. Please verify outstanding orders, payments, and account status before resolving or taking action.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Customer & Ticket Metadata Bar */}
                       <div className="p-3 bg-light rounded-3 border mb-4">
                         <div className="row g-2">

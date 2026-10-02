@@ -662,8 +662,8 @@ export class MobileAuthService {
       data: { lastActivityAt: new Date() },
     }).catch(() => {});
 
-    // Create session
-    return MobileSessionService.createSession(customer.id, deviceInfo);
+    // Create session (genuine login)
+    return MobileSessionService.createSession(customer.id, deviceInfo, { isLogin: true });
   }
 
   // ----------------------------------------------------------------------------

@@ -135,15 +135,27 @@ export default function NotificationsScreen() {
       markNotificationAsRead(item.id).catch(() => {});
     }
 
-    // 2. Navigate based on deep link or entity
-    const targetLink =
-      item.deepLink ||
-      (item.entityType === 'PRODUCT' && item.entityId
-        ? `/products/${item.entityId}`
-        : null) ||
-      (item.entityType === 'ORDER' && item.entityId
-        ? `/orders/${item.entityId}`
-        : null);
+    // 2. Navigate based on deep link, type, or entity
+    let targetLink = item.deepLink;
+    if (!targetLink) {
+      if (
+        item.type === 'SECURITY' ||
+        item.type === 'SECURITY_NEW_LOGIN' ||
+        item.type === 'security' ||
+        item.type === 'ACCOUNT_DELETION_REQUEST' ||
+        item.type === 'ACCOUNT_DELETION_STATUS_UPDATE' ||
+        item.type === 'ACCOUNT_DELETION_REPLY' ||
+        item.entityType === 'SESSION'
+      ) {
+        targetLink = '/profile/security';
+      } else if (item.entityType === 'PRODUCT' && item.entityId) {
+        targetLink = `/products/${item.entityId}`;
+      } else if (item.entityType === 'ORDER' && item.entityId) {
+        targetLink = `/orders/${item.entityId}`;
+      } else if (item.type === 'SUPPORT' || item.entityType === 'SUPPORT_TICKET') {
+        targetLink = '/profile/support';
+      }
+    }
 
     if (targetLink) {
       try {
@@ -156,6 +168,30 @@ export default function NotificationsScreen() {
 
   const getNotificationBadge = (type: NotificationType) => {
     switch (type) {
+      case 'SECURITY_NEW_LOGIN':
+      case 'SECURITY':
+      case 'security':
+        return {
+          icon: 'shield-checkmark' as const,
+          color: '#DC2626',
+          bg: '#FEE2E2',
+          label: 'Security Alert',
+        };
+      case 'ACCOUNT_DELETION_REQUEST':
+      case 'ACCOUNT_DELETION_STATUS_UPDATE':
+        return {
+          icon: 'shield-outline' as const,
+          color: '#D97706',
+          bg: '#FEF3C7',
+          label: 'Account Status',
+        };
+      case 'ACCOUNT_DELETION_REPLY':
+        return {
+          icon: 'chatbubbles' as const,
+          color: '#0D9488',
+          bg: '#CCFBF1',
+          label: 'Support Reply',
+        };
       case 'NEW_PRODUCT':
         return {
           icon: 'sparkles' as const,
@@ -192,14 +228,6 @@ export default function NotificationsScreen() {
           color: '#0D9488',
           bg: '#CCFBF1',
           label: 'Support',
-        };
-      case 'SECURITY':
-      case 'security':
-        return {
-          icon: 'shield-checkmark' as const,
-          color: Colors.success,
-          bg: '#DCFCE7',
-          label: 'Security',
         };
       default:
         return {

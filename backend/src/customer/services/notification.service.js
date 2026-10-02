@@ -133,20 +133,30 @@ export async function getCustomerNotifications(customerId, query = {}) {
     }),
   ]);
 
-  const notifications = recipients.map((r) => ({
-    id: r.notification.id,
-    recipientId: r.id,
-    type: r.notification.type,
-    title: r.notification.title,
-    body: r.notification.message,
-    imageUrl: r.notification.imageUrl || null,
-    deepLink: r.notification.deepLink || null,
-    entityType: r.notification.entityType || null,
-    entityId: r.notification.entityId || null,
-    isRead: r.isRead,
-    readAt: r.readAt,
-    createdAt: r.createdAt,
-  }));
+  const notifications = recipients.map((r) => {
+    let customType = r.notification.type;
+    if (r.notification.metadata) {
+      try {
+        const meta = JSON.parse(r.notification.metadata);
+        if (meta.subType) customType = meta.subType;
+      } catch {}
+    }
+
+    return {
+      id: r.notification.id,
+      recipientId: r.id,
+      type: customType,
+      title: r.notification.title,
+      body: r.notification.message,
+      imageUrl: r.notification.imageUrl || null,
+      deepLink: r.notification.deepLink || null,
+      entityType: r.notification.entityType || null,
+      entityId: r.notification.entityId || null,
+      isRead: r.isRead,
+      readAt: r.readAt,
+      createdAt: r.createdAt,
+    };
+  });
 
   return {
     notifications,
@@ -542,6 +552,195 @@ export async function createCustomerOrderNotification(order, eventStatus, custom
 
     sendPushNotifications(pushItems).catch((err) => {
       logger.warn('[NOTIFICATION SERVICE] Failed to dispatch order push', { error: err.message });
+    });
+  }
+
+  return notification;
+}
+
+/**
+ * Creates and dispatches a SECURITY_NEW_LOGIN notification to the customer.
+ * Idempotent: Keyed on entityType = 'SESSION' and entityId = sessionId.
+ */
+export async function createCustomerSecurityNotification({
+  customerId,
+  sessionId,
+  deviceInfo = null,
+}) {
+  if (!customerId || !sessionId) return null;
+
+  // 1. Idempotency Check: Prevent duplicate security notifications for this session
+  const existingNotification = await prisma.notification.findFirst({
+    where: {
+      type: 'SECURITY',
+      entityType: 'SESSION',
+      entityId: sessionId,
+    },
+  });
+
+  if (existingNotification) {
+    return existingNotification;
+  }
+
+  // 2. Parse safe platform/device descriptor
+  let platformDesc = 'another device';
+  if (deviceInfo) {
+    const infoLower = String(deviceInfo).toLowerCase();
+    if (infoLower.includes('android')) {
+      platformDesc = 'an Android device';
+    } else if (infoLower.includes('iphone') || infoLower.includes('ios')) {
+      platformDesc = 'an iPhone';
+    } else if (infoLower.includes('ipad')) {
+      platformDesc = 'an iPad';
+    } else if (infoLower.includes('mac') || infoLower.includes('darwin')) {
+      platformDesc = 'a Mac';
+    } else if (infoLower.includes('windows')) {
+      platformDesc = 'a Windows PC';
+    } else if (infoLower.includes('linux')) {
+      platformDesc = 'a Linux device';
+    }
+  }
+
+  const title = 'New login detected';
+  const message = `Your Ardab Market account was signed in from ${platformDesc}. If this was you, no action is required. If you do not recognize this login, review your account security.`;
+  const deepLink = '/profile/security';
+
+  // 3. Create Notification
+  const notification = await prisma.notification.create({
+    data: {
+      type: 'SECURITY',
+      category: 'SECURITY',
+      metadata: JSON.stringify({ subType: 'SECURITY_NEW_LOGIN' }),
+      title,
+      message,
+      deepLink,
+      entityType: 'SESSION',
+      entityId: sessionId,
+      severity: 'WARNING',
+      priority: 'HIGH',
+      isActive: true,
+    },
+  });
+
+  // 4. Create NotificationRecipient
+  await prisma.notificationRecipient.create({
+    data: {
+      notificationId: notification.id,
+      customerId,
+      isRead: false,
+    },
+  });
+
+  // 5. Dispatch Push Notification if customer has active push tokens
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: {
+      pushTokens: {
+        where: { isActive: true },
+        select: { id: true, token: true },
+      },
+    },
+  });
+
+  if (customer && customer.pushTokens.length > 0) {
+    const pushItems = customer.pushTokens.map((pt) => ({
+      notificationId: notification.id,
+      customerPushTokenId: pt.id,
+      token: pt.token,
+      title: notification.title,
+      body: notification.message,
+      data: {
+        notificationId: notification.id,
+        type: 'SECURITY_NEW_LOGIN',
+        deepLink,
+      },
+      channelId: 'security',
+    }));
+
+    sendPushNotifications(pushItems).catch((err) => {
+      logger.warn('[NOTIFICATION SERVICE] Failed to dispatch security push', { error: err.message });
+    });
+  }
+
+  logger.info('[NOTIFICATION SERVICE] Dispatched SECURITY_NEW_LOGIN notification', {
+    customerId,
+    sessionId,
+    platformDesc,
+  });
+
+  return notification;
+}
+
+/**
+ * Creates and dispatches a customer support / account deletion update notification.
+ */
+export async function createCustomerSupportNotification({
+  customerId,
+  ticketId = null,
+  type = 'SUPPORT',
+  title,
+  message,
+  deepLink = '/profile/security',
+}) {
+  if (!customerId || !title || !message) return null;
+
+  const isSecurity = type.startsWith('SECURITY') || type.startsWith('ACCOUNT_DELETION');
+  const dbType = isSecurity ? 'SECURITY' : 'SUPPORT';
+  const dbCategory = isSecurity ? 'SECURITY' : 'CUSTOMER';
+
+  const notification = await prisma.notification.create({
+    data: {
+      type: dbType,
+      category: dbCategory,
+      metadata: JSON.stringify({ subType: type }),
+      title,
+      message,
+      deepLink,
+      entityType: 'SUPPORT_TICKET',
+      entityId: ticketId || null,
+      severity: type.includes('DELETION') ? 'WARNING' : 'INFO',
+      priority: 'HIGH',
+      isActive: true,
+    },
+  });
+
+  await prisma.notificationRecipient.create({
+    data: {
+      notificationId: notification.id,
+      customerId,
+      isRead: false,
+    },
+  });
+
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: {
+      pushTokens: {
+        where: { isActive: true },
+        select: { id: true, token: true },
+      },
+    },
+  });
+
+  if (customer && customer.pushTokens.length > 0) {
+    const pushItems = customer.pushTokens.map((pt) => ({
+      notificationId: notification.id,
+      customerPushTokenId: pt.id,
+      token: pt.token,
+      title: notification.title,
+      body: notification.message,
+      data: {
+        notificationId: notification.id,
+        type,
+        entityType: 'SUPPORT_TICKET',
+        entityId: ticketId,
+        deepLink,
+      },
+      channelId: 'support',
+    }));
+
+    sendPushNotifications(pushItems).catch((err) => {
+      logger.warn('[NOTIFICATION SERVICE] Failed to dispatch support push', { error: err.message });
     });
   }
 

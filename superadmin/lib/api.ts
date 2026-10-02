@@ -2133,6 +2133,7 @@ export interface SupportListParams {
   pageSize?: number;
   search?: string;
   status?: string;
+  type?: string;
   priority?: string;
   category?: string;
   assignedTo?: string;
@@ -2165,6 +2166,7 @@ export const supportApi = {
       if (params.pageSize) sp.append('pageSize', String(params.pageSize));
       if (params.search) sp.append('search', params.search);
       if (params.status && params.status !== 'ALL') sp.append('status', params.status);
+      if (params.type) sp.append('type', params.type);
       if (params.priority && params.priority !== 'ALL') sp.append('priority', params.priority);
       if (params.category && params.category !== 'ALL') sp.append('category', params.category);
       if (params.assignedTo) sp.append('assignedTo', params.assignedTo);
@@ -2187,6 +2189,7 @@ export const supportApi = {
     if (params.pageSize) sp.append('pageSize', String(params.pageSize));
     if (params.search) sp.append('search', params.search);
     if (params.status && params.status !== 'ALL') sp.append('status', params.status);
+    if (params.type) sp.append('type', params.type);
     if (params.priority && params.priority !== 'ALL') sp.append('priority', params.priority);
     if (params.category && params.category !== 'ALL') sp.append('category', params.category);
     if (params.assignedTo) sp.append('assignedTo', params.assignedTo);

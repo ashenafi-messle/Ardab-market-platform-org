@@ -4,12 +4,13 @@
 
 import { apiFetch } from '@/constants/api';
 
-export interface ActiveSession {
-  id: string;
-  deviceInfo: string;
-  createdAt: string;
-  lastActive: string;
-  isCurrent: boolean;
+export interface AccountDeletionStatus {
+  hasPendingRequest: boolean;
+  status: string | null;
+  statusLabel: string | null;
+  ticketNumber: string | null;
+  requestedAt: string | null;
+  message: string | null;
 }
 
 export const securityApi = {
@@ -41,86 +42,73 @@ export const securityApi = {
   },
 
   /**
-   * Fetches active sessions
+   * Fetches the current customer's account deletion request status
    */
-  async getSessions(): Promise<ActiveSession[]> {
+  async getAccountDeletionStatus(): Promise<AccountDeletionStatus> {
     try {
-      let res = await apiFetch<any>('/customer/security/sessions');
+      let res = await apiFetch<any>('/customer/security/delete-account');
       if (!res.ok) {
-        res = await apiFetch<any>('/customer-mobile/security/sessions');
+        res = await apiFetch<any>('/customer-mobile/security/delete-account');
       }
 
       if (res.ok && res.data) {
-        return res.data.data || res.data || [];
+        const payload = res.data.data || res.data;
+        return {
+          hasPendingRequest: Boolean(payload.hasPendingRequest),
+          status: payload.status || null,
+          statusLabel: payload.statusLabel || null,
+          ticketNumber: payload.ticketNumber || null,
+          requestedAt: payload.requestedAt || null,
+          message: payload.message || null,
+        };
       }
-      return [];
+
+      return {
+        hasPendingRequest: false,
+        status: null,
+        statusLabel: null,
+        ticketNumber: null,
+        requestedAt: null,
+        message: null,
+      };
     } catch {
-      return [];
+      return {
+        hasPendingRequest: false,
+        status: null,
+        statusLabel: null,
+        ticketNumber: null,
+        requestedAt: null,
+        message: null,
+      };
     }
   },
 
   /**
-   * Revokes a specific session
+   * Requests account deletion from Sub Admin Customer Support
    */
-  async revokeSession(sessionId: string): Promise<boolean> {
-    try {
-      let res = await apiFetch<any>(`/customer/security/sessions/${sessionId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        res = await apiFetch<any>(`/customer-mobile/security/sessions/${sessionId}`, {
-          method: 'DELETE',
-        });
-      }
-      return res.ok;
-    } catch {
-      return false;
-    }
-  },
-
-  /**
-   * Revokes all other sessions
-   */
-  async revokeOtherSessions(): Promise<boolean> {
-    try {
-      let res = await apiFetch<any>('/customer/security/sessions/revoke-others', {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        res = await apiFetch<any>('/customer-mobile/security/sessions/revoke-others', {
-          method: 'POST',
-        });
-      }
-      return res.ok;
-    } catch {
-      return false;
-    }
-  },
-
-  /**
-   * Requests account deletion
-   */
-  async requestAccountDeletion(reason: string): Promise<{ success: boolean; message: string }> {
-    let res = await apiFetch<any>('/customer/security/delete-account', {
+  async requestAccountDeletion(reason?: string): Promise<{ success: boolean; message: string; ticketNumber?: string }> {
+    let res = await apiFetch<any>('/customer/security/account/deletion-request', {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: reason || 'Customer requested from mobile app' }),
     });
 
     if (!res.ok) {
       res = await apiFetch<any>('/customer-mobile/security/delete-account', {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason: reason || 'Customer requested from mobile app' }),
       });
     }
 
     if (!res.ok) {
-      const errorMsg = res.data?.message || 'Failed to submit deletion request';
+      const errorMsg = res.data?.message || res.data?.error?.message || 'Failed to submit deletion request';
       throw new Error(errorMsg);
     }
 
+    const payload = res.data?.data || res.data;
     return {
       success: true,
-      message: res.data?.message || 'Your account deletion request has been submitted.',
+      message: payload?.message || 'Your account deletion request has been submitted.',
+      ticketNumber: payload?.ticketNumber,
     };
   },
 };

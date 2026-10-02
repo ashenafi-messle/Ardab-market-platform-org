@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { AppHeader, AppInput, AppButton } from '@/components/common';
 import { t } from '@/localization';
-import { securityApi, ActiveSession } from '@/services/securityApi';
+import { securityApi, AccountDeletionStatus } from '@/services/securityApi';
 import { useAuth } from '@/context/AuthContext';
 import { ARDAB_LICENSE_URL } from '@/constants/branding';
 
@@ -34,11 +34,6 @@ export default function SecurityScreen() {
   const [passwordToast, setPasswordToast] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
-  // Sessions State
-  const [sessions, setSessions] = useState<ActiveSession[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(false);
-  const [revokingOthers, setRevokingOthers] = useState(false);
-
   // Privacy Info Modal State
   const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
 
@@ -47,21 +42,23 @@ export default function SecurityScreen() {
   const [deleteReason, setDeleteReason] = useState('');
   const [isSubmittingDeletion, setIsSubmittingDeletion] = useState(false);
   const [deletionSuccessMsg, setDeletionSuccessMsg] = useState<string | null>(null);
+  const [deletionStatus, setDeletionStatus] = useState<AccountDeletionStatus | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(true);
 
-  const fetchSessions = async () => {
+  const fetchDeletionStatus = async () => {
     try {
-      setLoadingSessions(true);
-      const list = await securityApi.getSessions();
-      setSessions(list);
+      setIsLoadingStatus(true);
+      const status = await securityApi.getAccountDeletionStatus();
+      setDeletionStatus(status);
     } catch (err) {
-      console.warn('[Security] Failed to fetch sessions:', err);
+      console.warn('[Security] Failed to fetch deletion status:', err);
     } finally {
-      setLoadingSessions(false);
+      setIsLoadingStatus(false);
     }
   };
 
   useEffect(() => {
-    fetchSessions();
+    fetchDeletionStatus();
   }, []);
 
   const handleUpdatePassword = async () => {
@@ -87,8 +84,6 @@ export default function SecurityScreen() {
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => setPasswordToast(null), 4000);
-      // Refresh sessions in case old ones were revoked
-      fetchSessions();
     } catch (err: any) {
       setPasswordError(err.message || 'Failed to update password. Please check your current password.');
     } finally {
@@ -96,66 +91,31 @@ export default function SecurityScreen() {
     }
   };
 
-  const handleRevokeOtherSessions = () => {
-    Alert.alert(
-      'Sign Out Other Devices',
-      'Are you sure you want to sign out all other devices and sessions?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out All',
-          style: 'destructive',
-          onPress: async () => {
-            setRevokingOthers(true);
-            try {
-              await securityApi.revokeOtherSessions();
-              fetchSessions();
-              Alert.alert('Success', 'All other active sessions have been revoked.');
-            } catch {
-              Alert.alert('Error', 'Failed to sign out other devices.');
-            } finally {
-              setRevokingOthers(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleRevokeSingleSession = (session: ActiveSession) => {
-    Alert.alert(
-      'Sign Out Device',
-      `Revoke session for ${session.deviceInfo}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await securityApi.revokeSession(session.id);
-              fetchSessions();
-            } catch {
-              Alert.alert('Error', 'Failed to revoke session.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const handleSubmitAccountDeletion = async () => {
     setIsSubmittingDeletion(true);
     try {
-      const res = await securityApi.requestAccountDeletion(deleteReason || 'Customer requested from mobile app');
+      const res = await securityApi.requestAccountDeletion(deleteReason.trim() || 'Customer requested from mobile app');
       setDeleteModalVisible(false);
       setDeleteReason('');
       setDeletionSuccessMsg(res.message);
+      // Refresh status from server
+      await fetchDeletionStatus();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to submit account deletion request.');
+      Alert.alert('Notice', err.message || 'Failed to submit account deletion request.');
     } finally {
       setIsSubmittingDeletion(false);
     }
+  };
+
+  const handleOpenDeleteModal = () => {
+    if (deletionStatus?.hasPendingRequest) {
+      Alert.alert(
+        'Request Already Under Review',
+        'Your account deletion request has already been submitted to Ardab Market Customer Support.'
+      );
+      return;
+    }
+    setDeleteModalVisible(true);
   };
 
   return (
@@ -256,81 +216,6 @@ export default function SecurityScreen() {
           />
         </View>
 
-        {/* Active Sessions */}
-        <View style={styles.sectionCard}>
-          <View style={styles.cardHeaderRow}>
-            <Ionicons name="hardware-chip-outline" size={20} color={Colors.primary} />
-            <Text style={styles.sectionTitle}>Active Devices & Sessions</Text>
-          </View>
-          <Text style={styles.sectionSubtitle}>
-            Devices currently logged into your Ardab Market account.
-          </Text>
-
-          {loadingSessions ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color={Colors.primary} />
-              <Text style={styles.loadingText}>Checking active devices...</Text>
-            </View>
-          ) : sessions.length > 0 ? (
-            <View style={styles.sessionList}>
-              {sessions.map((sess) => (
-                <View key={sess.id} style={styles.sessionItem}>
-                  <View style={styles.sessionLeft}>
-                    <Ionicons
-                      name={sess.deviceInfo.toLowerCase().includes('phone') || sess.deviceInfo.toLowerCase().includes('android') || sess.deviceInfo.toLowerCase().includes('ios') ? 'phone-portrait-outline' : 'laptop-outline'}
-                      size={20}
-                      color={sess.isCurrent ? Colors.primary : Colors.textMuted}
-                    />
-                    <View style={styles.sessionDetails}>
-                      <View style={styles.sessionTitleRow}>
-                        <Text style={styles.sessionDevice}>{sess.deviceInfo || 'Authorized Device'}</Text>
-                        {sess.isCurrent && (
-                          <View style={styles.currentBadge}>
-                            <Text style={styles.currentBadgeText}>This Device</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.sessionTime}>
-                        Active: {sess.lastActive ? new Date(sess.lastActive).toLocaleDateString() : 'Recently'}
-                      </Text>
-                    </View>
-                  </View>
-                  {!sess.isCurrent && (
-                    <TouchableOpacity
-                      onPress={() => handleRevokeSingleSession(sess)}
-                      style={styles.revokeButton}
-                    >
-                      <Text style={styles.revokeButtonText}>Sign Out</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-
-              {sessions.filter((s) => !s.isCurrent).length > 0 && (
-                <AppButton
-                  title={revokingOthers ? 'Signing out...' : 'Sign Out Other Devices'}
-                  variant="outline"
-                  size="sm"
-                  onPress={handleRevokeOtherSessions}
-                  disabled={revokingOthers}
-                  style={{ marginTop: Spacing.md }}
-                />
-              )}
-            </View>
-          ) : (
-            <View style={styles.currentSessionOnly}>
-              <Ionicons name="phone-portrait-outline" size={20} color={Colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sessionDevice}>Current Mobile Device</Text>
-                <Text style={styles.sessionTime}>Secure authenticated session active</Text>
-              </View>
-              <View style={styles.currentBadge}>
-                <Text style={styles.currentBadgeText}>Active</Text>
-              </View>
-            </View>
-          )}
-        </View>
-
         {/* Privacy Information */}
         <View style={styles.sectionCard}>
           <View style={styles.cardHeaderRow}>
@@ -360,17 +245,44 @@ export default function SecurityScreen() {
             <Text style={[styles.sectionTitle, { color: Colors.error }]}>Delete Account</Text>
           </View>
           <Text style={styles.sectionSubtitle}>
-            Request account deletion. Personal identifying information will be anonymized while preserving required order receipts.
+            Request account deletion. Your request will be sent to Ardab Market Customer Support for review.
           </Text>
 
-          <AppButton
-            title="Request Account Deletion"
-            variant="outline"
-            size="sm"
-            onPress={() => setDeleteModalVisible(true)}
-            style={{ borderColor: Colors.error, marginTop: Spacing.sm }}
-            textStyle={{ color: Colors.error }}
-          />
+          {isLoadingStatus ? (
+            <View style={styles.loadingStatusRow}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.loadingStatusText}>Checking account status...</Text>
+            </View>
+          ) : deletionStatus?.hasPendingRequest ? (
+            <View style={styles.deletionStatusCard}>
+              <View style={styles.deletionStatusHeader}>
+                <Ionicons name="time-outline" size={20} color="#D97706" />
+                <Text style={styles.deletionStatusTitle}>Account Deletion Request</Text>
+                <View style={styles.deletionStatusBadge}>
+                  <Text style={styles.deletionStatusBadgeText}>
+                    {deletionStatus.statusLabel || 'Pending Review'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.deletionStatusDesc}>
+                {deletionStatus.message || 'Your account deletion request has been sent to Ardab Market Customer Support.'}
+              </Text>
+              {deletionStatus.ticketNumber && (
+                <Text style={styles.deletionStatusMeta}>
+                  Ticket Ref: {deletionStatus.ticketNumber}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <AppButton
+              title="Request Account Deletion"
+              variant="outline"
+              size="sm"
+              onPress={handleOpenDeleteModal}
+              style={{ borderColor: Colors.error, marginTop: Spacing.sm }}
+              textStyle={{ color: Colors.error }}
+            />
+          )}
         </View>
       </ScrollView>
 
@@ -417,29 +329,40 @@ export default function SecurityScreen() {
         </View>
       </Modal>
 
-      {/* Account Deletion Request Modal */}
+      {/* Account Deletion Confirmation Modal */}
       <Modal visible={deleteModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: Colors.error }]}>Request Account Deletion</Text>
+              <Text style={[styles.modalTitle, { color: Colors.error }]}>Delete Account</Text>
               <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.deletionWarning}>
-              Are you sure you want to request deletion of your account? This action cannot be reversed once finalized. Active orders will be completed before closure.
-            </Text>
-            <Text style={styles.inputLabel}>Reason for leaving (optional):</Text>
+
+            <View style={styles.deletionPromptContainer}>
+              <Text style={styles.deletionNoticeHeadline}>
+                Your account deletion request will be sent to Ardab Market Customer Support for review.
+              </Text>
+              <Text style={styles.deletionNoticeBody}>
+                Your account will not be deleted immediately.
+              </Text>
+              <Text style={styles.deletionNoticeConfirm}>
+                Are you sure you want to request account deletion?
+              </Text>
+            </View>
+
+            <Text style={styles.inputLabel}>Reason (optional):</Text>
             <TextInput
               style={styles.reasonInput}
               value={deleteReason}
               onChangeText={setDeleteReason}
-              placeholder="Tell us how we can improve..."
+              placeholder="Tell us why you would like to delete your account..."
               placeholderTextColor={Colors.textMuted}
               multiline
               numberOfLines={3}
             />
+
             <View style={styles.modalActionRow}>
               <AppButton
                 title="Cancel"
@@ -449,13 +372,13 @@ export default function SecurityScreen() {
                 style={{ flex: 1 }}
               />
               <AppButton
-                title={isSubmittingDeletion ? 'Submitting...' : 'Submit Request'}
+                title={isSubmittingDeletion ? 'Submitting...' : 'Request Account Deletion'}
                 variant="primary"
                 size="md"
                 onPress={handleSubmitAccountDeletion}
                 disabled={isSubmittingDeletion}
                 loading={isSubmittingDeletion}
-                style={{ flex: 1, backgroundColor: Colors.error, borderColor: Colors.error }}
+                style={{ flex: 1.4, backgroundColor: Colors.error, borderColor: Colors.error }}
               />
             </View>
           </View>
@@ -613,80 +536,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.bold,
   },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: Spacing.md,
-  },
-  loadingText: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.textMuted,
-  },
-  sessionList: {
-    marginTop: Spacing.xs,
-  },
-  sessionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  sessionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flex: 1,
-  },
-  sessionDetails: {
-    flex: 1,
-  },
-  sessionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sessionDevice: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: Typography.fontWeight.medium,
-    color: Colors.text,
-  },
-  sessionTime: {
-    fontSize: Typography.fontSize.tiny,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  currentBadge: {
-    backgroundColor: Colors.primaryLight,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: Radius.xs,
-  },
-  currentBadgeText: {
-    fontSize: 9,
-    color: Colors.primaryDark,
-    fontWeight: Typography.fontWeight.bold,
-  },
-  revokeButton: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: Radius.xs,
-    backgroundColor: '#FDE8E8',
-  },
-  revokeButtonText: {
-    fontSize: Typography.fontSize.tiny,
-    color: Colors.error,
-    fontWeight: Typography.fontWeight.medium,
-  },
-  currentSessionOnly: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
   privacyLinkRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -703,6 +552,86 @@ const styles = StyleSheet.create({
   privacyLinkText: {
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.medium,
+    color: Colors.text,
+  },
+  loadingStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: Spacing.sm,
+  },
+  loadingStatusText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textMuted,
+  },
+  deletionStatusCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  deletionStatusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  deletionStatusTitle: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: '#92400E',
+    flex: 1,
+  },
+  deletionStatusBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  deletionStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: Typography.fontWeight.bold,
+    color: '#B45309',
+  },
+  deletionStatusDesc: {
+    fontSize: Typography.fontSize.xs,
+    color: '#78350F',
+    lineHeight: 18,
+  },
+  deletionStatusMeta: {
+    fontSize: Typography.fontSize.tiny,
+    color: '#92400E',
+    fontWeight: Typography.fontWeight.semibold,
+    marginTop: 6,
+  },
+  deletionPromptContainer: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.md,
+  },
+  deletionNoticeHeadline: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: '#991B1B',
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  deletionNoticeBody: {
+    fontSize: Typography.fontSize.xs,
+    color: '#B91C1C',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  deletionNoticeConfirm: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
     color: Colors.text,
   },
   modalOverlay: {
@@ -746,12 +675,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: Spacing.sm,
   },
-  deletionWarning: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: Spacing.md,
-  },
   inputLabel: {
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.medium,
@@ -765,7 +688,7 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     color: Colors.text,
     fontSize: Typography.fontSize.sm,
-    height: 80,
+    height: 70,
     textAlignVertical: 'top',
     marginBottom: Spacing.md,
   },

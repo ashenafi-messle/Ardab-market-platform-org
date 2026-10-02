@@ -27,11 +27,12 @@ export const supportQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().optional(),
+  type: z.string().optional(),
   status: z
     .string()
     .optional()
-    .refine((val) => !val || val === 'ALL' || STATUS_VALUES.includes(val), {
-      message: `Status must be one of: ALL, ${STATUS_VALUES.join(', ')}`,
+    .refine((val) => !val || val === 'ALL' || val === 'ACCOUNT_DELETION' || STATUS_VALUES.includes(val), {
+      message: `Status must be one of: ALL, ACCOUNT_DELETION, ${STATUS_VALUES.join(', ')}`,
     }),
   priority: z
     .string()

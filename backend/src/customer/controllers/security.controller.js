@@ -9,6 +9,7 @@ import {
   revokeCustomerSession,
   revokeOtherCustomerSessions,
   requestCustomerAccountDeletion,
+  getCustomerAccountDeletionStatus,
 } from '../services/security.service.js';
 
 /**
@@ -70,4 +71,14 @@ export async function requestDeletionHandler(req, res) {
   const { reason } = req.body || {};
   const result = await requestCustomerAccountDeletion(customerId, reason);
   return ApiResponse.success(res, result, result.message);
+}
+
+/**
+ * GET /api/customer/security/delete-account
+ * Retrieves status of customer's deletion request.
+ */
+export async function getDeletionStatusHandler(req, res) {
+  const customerId = req.customer.id;
+  const result = await getCustomerAccountDeletionStatus(customerId);
+  return ApiResponse.success(res, result, 'Account deletion status retrieved');
 }

@@ -14,6 +14,7 @@ import {
   SUPPORT_SENDER_TYPE,
   SUPPORT_EMAIL_STATUS,
 } from '../constants/supportConstants.js';
+import { createCustomerSupportNotification } from '../../customer/services/notification.service.js';
 
 /**
  * Extracts sanitized admin ID from authenticated admin object or string ID
@@ -208,7 +209,16 @@ export async function listTickets(arg1 = {}, arg2 = null) {
 
   // Status filter
   if (status && status !== 'ALL') {
-    where.status = status;
+    if (status === 'ACCOUNT_DELETION') {
+      where.subject = { contains: 'Account Deletion', mode: 'insensitive' };
+    } else {
+      where.status = status;
+    }
+  }
+
+  // Type filter
+  if (query.type === 'ACCOUNT_DELETION') {
+    where.subject = { contains: 'Account Deletion', mode: 'insensitive' };
   }
 
   // Priority filter
@@ -556,6 +566,22 @@ export async function replyToTicket(arg1, arg2 = null, arg3 = null, arg4 = null)
     }),
   ]);
 
+  // Dispatch in-app customer notification for support reply (Requirement 21)
+  const isDeletionRequest =
+    ticket.subject?.toLowerCase().includes('account deletion') ||
+    ticket.category?.name === 'ACCOUNT_DELETION';
+
+  createCustomerSupportNotification({
+    customerId: ticket.customerId,
+    ticketId: ticket.id,
+    type: isDeletionRequest ? 'ACCOUNT_DELETION_REPLY' : 'SUPPORT_REPLY',
+    title: isDeletionRequest ? 'Account Deletion Update' : 'New support reply',
+    message: `A support representative replied to your request: "${trimmedBody.slice(0, 100)}${trimmedBody.length > 100 ? '...' : ''}"`,
+    deepLink: isDeletionRequest ? '/profile/security' : '/profile/support',
+  }).catch((err) => {
+    logger.warn('[SUPPORT] Failed to dispatch reply notification to customer:', err.message);
+  });
+
   // 2. Email dispatch handling
   if (!registeredEmail) {
     logger.warn(`[SUPPORT EMAIL] Customer ${customer.id} has no registered email. Skipping email dispatch.`);
@@ -811,6 +837,47 @@ export async function updateTicketStatus(arg1, arg2 = null, arg3 = null) {
       },
     }),
   ]);
+
+  // Dispatch in-app customer notification for status change (Requirement 20)
+  const isDeletionRequestOnUpdate =
+    ticket.subject?.toLowerCase().includes('account deletion') ||
+    ticket.category?.name === 'ACCOUNT_DELETION';
+
+  if (isDeletionRequestOnUpdate) {
+    let notifTitle = 'Account deletion request updated';
+    let notifMsg = `Your account deletion request status has been updated to ${status}.`;
+
+    if (status === SUPPORT_TICKET_STATUS.IN_PROGRESS) {
+      notifTitle = 'Account deletion request under review';
+      notifMsg = 'Your account deletion request is now under review.';
+    } else if (status === SUPPORT_TICKET_STATUS.RESOLVED) {
+      notifTitle = 'Account deletion request approved';
+      notifMsg = 'Your account deletion request has been approved.';
+    } else if (status === SUPPORT_TICKET_STATUS.CLOSED) {
+      notifTitle = 'Account deletion request closed';
+      notifMsg = notes ? `Your account deletion request has been reviewed: ${notes}` : 'Your account deletion request has been reviewed and closed.';
+    }
+
+    createCustomerSupportNotification({
+      customerId: ticket.customerId,
+      ticketId: ticket.id,
+      type: 'ACCOUNT_DELETION_STATUS_UPDATE',
+      title: notifTitle,
+      message: notifMsg,
+      deepLink: '/profile/security',
+    }).catch((err) => {
+      logger.warn('[SUPPORT] Failed to dispatch deletion status notification:', err.message);
+    });
+  } else {
+    createCustomerSupportNotification({
+      customerId: ticket.customerId,
+      ticketId: ticket.id,
+      type: 'SUPPORT_STATUS_UPDATE',
+      title: `Support Ticket #${ticket.ticketNumber} Update`,
+      message: `Your support request status was changed to ${status}.`,
+      deepLink: '/profile/support',
+    }).catch(() => {});
+  }
 
   // Security and Governance Audit Log
   try {

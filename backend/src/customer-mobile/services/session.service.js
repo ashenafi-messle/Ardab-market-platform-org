@@ -10,6 +10,7 @@ import { env } from '../../shared/config/env.js';
 import { hashToken, generateRandomToken } from '../../shared/utils/crypto.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 import { AuthResponseCode } from '../utils/responseCodes.js';
+import { createCustomerSecurityNotification } from '../../customer/services/notification.service.js';
 
 // Access token lifetime: 1 hour for mobile apps
 const ACCESS_TOKEN_EXPIRY = '1h';
@@ -60,7 +61,7 @@ export class MobileSessionService {
    * Generates access token + cryptographically random refresh token.
    * Persists SHA-256 hash of refresh token into customer_mobile_sessions table.
    */
-  static async createSession(customerId, deviceInfo = null) {
+  static async createSession(customerId, deviceInfo = null, { isLogin = false } = {}) {
     const customer = await prisma.customer.findUnique({
       where: { id: customerId },
       select: {
@@ -88,6 +89,19 @@ export class MobileSessionService {
       throw ApiError.forbidden('Your account is inactive', AuthResponseCode.ACCOUNT_INACTIVE);
     }
 
+    // Check whether valid, active session(s) already exist prior to this login
+    let hasExistingValidSession = false;
+    if (isLogin) {
+      const activeSessionsCount = await prisma.customerMobileSession.count({
+        where: {
+          customerId: customer.id,
+          status: 'ACTIVE',
+          expiresAt: { gt: new Date() },
+        },
+      });
+      hasExistingValidSession = activeSessionsCount > 0;
+    }
+
     // 1. Generate short-lived access token
     const accessToken = this.generateAccessToken(customer);
 
@@ -97,7 +111,7 @@ export class MobileSessionService {
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
     // 3. Save session in database
-    await prisma.customerMobileSession.create({
+    const newSession = await prisma.customerMobileSession.create({
       data: {
         customerId: customer.id,
         refreshTokenHash,
@@ -107,7 +121,21 @@ export class MobileSessionService {
       },
     });
 
+    // 4. If this is a genuine new login and other valid session(s) exist, trigger security alert immediately
+    if (isLogin && hasExistingValidSession) {
+      try {
+        await createCustomerSecurityNotification({
+          customerId: customer.id,
+          sessionId: newSession.id,
+          deviceInfo,
+        });
+      } catch (err) {
+        console.warn('[SECURITY] Failed to dispatch security login notification:', err.message);
+      }
+    }
+
     return {
+      sessionId: newSession.id,
       accessToken,
       refreshToken: rawRefreshToken,
       expiresInSeconds: 3600,
@@ -210,21 +238,36 @@ export class MobileSessionService {
   /**
    * Revokes a session (Sign Out)
    */
-  static async revokeSession(rawRefreshToken) {
-    if (!rawRefreshToken || typeof rawRefreshToken !== 'string') {
+  static async revokeSession(rawRefreshTokenOrId) {
+    if (!rawRefreshTokenOrId || typeof rawRefreshTokenOrId !== 'string') {
       return true;
     }
 
-    const tokenHash = hashToken(rawRefreshToken.trim());
-    await prisma.customerMobileSession.updateMany({
-      where: {
-        refreshTokenHash: tokenHash,
-        status: 'ACTIVE',
-      },
-      data: {
-        status: 'REVOKED',
-      },
-    }).catch(() => {});
+    const trimmed = rawRefreshTokenOrId.trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+
+    if (isUuid) {
+      await prisma.customerMobileSession.updateMany({
+        where: {
+          id: trimmed,
+          status: 'ACTIVE',
+        },
+        data: {
+          status: 'REVOKED',
+        },
+      }).catch(() => {});
+    } else {
+      const tokenHash = hashToken(trimmed);
+      await prisma.customerMobileSession.updateMany({
+        where: {
+          refreshTokenHash: tokenHash,
+          status: 'ACTIVE',
+        },
+        data: {
+          status: 'REVOKED',
+        },
+      }).catch(() => {});
+    }
 
     return true;
   }

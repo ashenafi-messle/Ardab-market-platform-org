@@ -11,6 +11,7 @@ import {
   revokeSessionHandler,
   revokeOtherSessionsHandler,
   requestDeletionHandler,
+  getDeletionStatusHandler,
 } from '../controllers/security.controller.js';
 
 const router = Router();
@@ -43,9 +44,17 @@ router.delete('/sessions/:sessionId', asyncHandler(revokeSessionHandler));
 router.post('/sessions/revoke-others', asyncHandler(revokeOtherSessionsHandler));
 
 /**
+ * @route   GET /api/customer/security/delete-account
+ * @desc    Get account deletion request status
+ */
+router.get('/delete-account', asyncHandler(getDeletionStatusHandler));
+router.get('/account/deletion-request', asyncHandler(getDeletionStatusHandler));
+
+/**
  * @route   POST /api/customer/security/delete-account
  * @desc    Submit account deletion request
  */
 router.post('/delete-account', asyncHandler(requestDeletionHandler));
+router.post('/account/deletion-request', asyncHandler(requestDeletionHandler));
 
 export default router;

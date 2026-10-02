@@ -306,13 +306,18 @@ export type NotificationType =
   | 'PROMOTION'
   | 'SUPPORT'
   | 'SECURITY'
+  | 'SECURITY_NEW_LOGIN'
+  | 'ACCOUNT_DELETION_REQUEST'
+  | 'ACCOUNT_DELETION_STATUS_UPDATE'
+  | 'ACCOUNT_DELETION_REPLY'
   | 'NOTIFICATION'
   | 'OPERATIONAL_ALERT'
   | 'SYSTEM_ANNOUNCEMENT'
   | 'order'
   | 'promo'
   | 'system'
-  | 'security';
+  | 'security'
+  | string;
 
 export interface NotificationItem {
   id: string;
