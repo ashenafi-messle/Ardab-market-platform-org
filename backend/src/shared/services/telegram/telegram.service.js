@@ -98,7 +98,11 @@ export class TelegramService {
    * Handles Telegram /start command (deep link or generic)
    * Connects pending mobile signup session with Telegram user/chat ID
    */
-  static async handleStartCommand({ chatId, userId, token }) {
+  /**
+   * Handles Telegram /start command (deep link or generic)
+   * Connects pending mobile signup session with Telegram user/chat ID
+   */
+  static async handleStartCommand({ chatId, userId, token, username = null }) {
     const cleanToken = token ? String(token).trim() : null;
 
     // Case 1: Customer opened the bot without a start token
@@ -121,12 +125,22 @@ export class TelegramService {
       chatId: String(chatId),
     });
 
-    // Case 2: Customer arrived with a start token
-    const otpRecord = await prisma.customerMobileOtp.findUnique({
-      where: { telegramToken: cleanToken },
+    const tokenHash = hashToken(cleanToken);
+
+    // Primary: Locate session in telegramSignupSession by tokenHash
+    let session = await prisma.telegramSignupSession.findUnique({
+      where: { tokenHash },
     });
 
-    if (!otpRecord) {
+    // Fallback: Check legacy customerMobileOtp
+    let legacyOtpRecord = null;
+    if (!session) {
+      legacyOtpRecord = await prisma.customerMobileOtp.findFirst({
+        where: { OR: [{ telegramToken: cleanToken }, { codeHash: tokenHash }] },
+      });
+    }
+
+    if (!session && !legacyOtpRecord) {
       logger.warn('[Telegram Signup] startTokenValid=false (not found)', {
         chatId: String(chatId),
       });
@@ -141,68 +155,145 @@ export class TelegramService {
       return { success: false, reason: 'TOKEN_NOT_FOUND' };
     }
 
-    // Check if session has already been completed or consumed
-    if (otpRecord.isVerified || otpRecord.consumedAt) {
-      logger.warn('[Telegram Signup] startTokenValid=false (already consumed)', {
-        chatId: String(chatId),
-        recordId: otpRecord.id,
+    const now = Date.now();
+
+    // --------------------------------------------------------------------------
+    // Branch A: Modern TelegramSignupSession
+    // --------------------------------------------------------------------------
+    if (session) {
+      if (session.status === 'VERIFIED') {
+        logger.warn('[Telegram Signup] startTokenValid=false (already verified)', {
+          chatId: String(chatId),
+          sessionId: session.id,
+        });
+
+        const message = [
+          'This verification session has already been completed.',
+          '',
+          'Please return to the Ardab Market app to continue.',
+        ].join('\n');
+
+        await this.sendMessage(chatId, message);
+        return { success: false, reason: 'ALREADY_CONSUMED' };
+      }
+
+      if (new Date(session.expiresAt).getTime() < now || session.status === 'EXPIRED') {
+        logger.warn('[Telegram Signup] startTokenValid=false (session expired)', {
+          chatId: String(chatId),
+          sessionId: session.id,
+        });
+
+        await prisma.telegramSignupSession.update({
+          where: { id: session.id },
+          data: { status: 'EXPIRED' },
+        }).catch(() => {});
+
+        const message = [
+          'This verification session has expired.',
+          '',
+          "Please return to the Ardab Market app and tap 'Continue with Telegram' to request a new code.",
+        ].join('\n');
+
+        await this.sendMessage(chatId, message);
+        return { success: false, reason: 'EXPIRED' };
+      }
+
+      // Rate limiting / Cooldown protection (60s)
+      if (session.telegramChatId === String(chatId) && session.lastResentAt) {
+        const secondsSinceLastOtp = (now - new Date(session.lastResentAt).getTime()) / 1000;
+        if (secondsSinceLastOtp < COOLDOWN_SECONDS) {
+          const remainingSeconds = Math.ceil(COOLDOWN_SECONDS - secondsSinceLastOtp);
+          logger.info('[Telegram Signup] rateLimitCooldown=true', {
+            chatId: String(chatId),
+            remainingSeconds,
+          });
+
+          const message = [
+            'Please wait before requesting another verification code.',
+            `You can request a new code in ${remainingSeconds} seconds.`,
+          ].join('\n');
+
+          await this.sendMessage(chatId, message);
+          return { success: false, reason: 'COOLDOWN' };
+        }
+      }
+
+      // Generate cryptographically secure 6-digit numeric OTP
+      const rawOtp = generateNumericOtp();
+      const otpHash = hashToken(rawOtp);
+      const otpExpiresAt = new Date(now + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+      // Save OTP hash, expiration, and Telegram identity in database
+      await prisma.telegramSignupSession.update({
+        where: { id: session.id },
+        data: {
+          telegramChatId: String(chatId),
+          telegramUserId: String(userId),
+          telegramUsername: username || null,
+          otpHash,
+          otpExpiresAt,
+          otpAttempts: 0,
+          status: 'OTP_SENT',
+          lastResentAt: new Date(),
+        },
       });
 
+      logger.info('[Telegram Signup] startTokenValid=true, telegramUserLinked=true, otpGenerated=true, otpSaved=true', {
+        chatId: String(chatId),
+        sessionId: session.id,
+      });
+
+      // Deliver OTP to Telegram chat
+      const sendResult = await this.sendOtpMessage(chatId, rawOtp, OTP_EXPIRY_MINUTES);
+
+      if (!sendResult.success) {
+        logger.error('[Telegram Signup] telegramMessageSent=false', {
+          chatId: String(chatId),
+          error: sendResult.error,
+        });
+        await prisma.telegramSignupSession.update({
+          where: { id: session.id },
+          data: { status: 'FAILED' },
+        }).catch(() => {});
+        return { success: false, error: sendResult.error };
+      }
+
+      logger.info('[Telegram Signup] telegramMessageSent=true', {
+        chatId: String(chatId),
+        messageId: sendResult.messageId,
+      });
+
+      return { success: true };
+    }
+
+    // --------------------------------------------------------------------------
+    // Branch B: Legacy CustomerMobileOtp compatibility
+    // --------------------------------------------------------------------------
+    const otpRecord = legacyOtpRecord;
+    if (otpRecord.isVerified || otpRecord.consumedAt) {
       const message = [
         'This verification session has already been used or expired.',
         '',
         'Please start a new registration from the Ardab Market app.',
       ].join('\n');
-
       await this.sendMessage(chatId, message);
       return { success: false, reason: 'ALREADY_CONSUMED' };
     }
 
-    // Check overall session expiry (e.g. 15 minutes to complete start flow)
-    const now = Date.now();
     if (new Date(otpRecord.expiresAt).getTime() < now) {
-      logger.warn('[Telegram Signup] startTokenValid=false (session expired)', {
-        chatId: String(chatId),
-        recordId: otpRecord.id,
-      });
-
       const message = [
         'This verification session has expired.',
         '',
         "Please return to the Ardab Market app and tap 'Continue with Telegram' to request a new code.",
       ].join('\n');
-
       await this.sendMessage(chatId, message);
       return { success: false, reason: 'EXPIRED' };
     }
 
-    // Rate limiting / Cooldown protection:
-    // If an OTP was already sent to this chat in the last 60 seconds, enforce cooldown
-    if (otpRecord.telegramChatId === String(chatId) && otpRecord.updatedAt) {
-      const secondsSinceLastOtp = (now - new Date(otpRecord.updatedAt).getTime()) / 1000;
-      if (secondsSinceLastOtp < COOLDOWN_SECONDS) {
-        const remainingSeconds = Math.ceil(COOLDOWN_SECONDS - secondsSinceLastOtp);
-        logger.info('[Telegram Signup] rateLimitCooldown=true', {
-          chatId: String(chatId),
-          remainingSeconds,
-        });
-
-        const message = [
-          'Please wait before requesting another verification code.',
-          `You can request a new code in ${remainingSeconds} seconds.`,
-        ].join('\n');
-
-        await this.sendMessage(chatId, message);
-        return { success: false, reason: 'COOLDOWN' };
-      }
-    }
-
-    // Generate cryptographically secure 6-digit numeric OTP
     const rawOtp = generateNumericOtp();
     const codeHash = hashToken(rawOtp);
     const otpExpiresAt = new Date(now + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    // Save OTP hash, expiration, and associate Telegram chat ID in database
     await prisma.customerMobileOtp.update({
       where: { id: otpRecord.id },
       data: {
@@ -214,26 +305,10 @@ export class TelegramService {
       },
     });
 
-    logger.info('[Telegram Signup] startTokenValid=true, telegramUserLinked=true, otpGenerated=true, otpSaved=true', {
-      chatId: String(chatId),
-      recordId: otpRecord.id,
-    });
-
-    // Deliver OTP to Telegram chat
     const sendResult = await this.sendOtpMessage(chatId, rawOtp, OTP_EXPIRY_MINUTES);
-
     if (!sendResult.success) {
-      logger.error('[Telegram Signup] telegramMessageSent=false', {
-        chatId: String(chatId),
-        error: sendResult.error,
-      });
       return { success: false, error: sendResult.error };
     }
-
-    logger.info('[Telegram Signup] telegramMessageSent=true', {
-      chatId: String(chatId),
-      messageId: sendResult.messageId,
-    });
 
     return { success: true };
   }
@@ -253,6 +328,7 @@ export class TelegramService {
 
     const chatId = message.chat?.id;
     const userId = message.from?.id;
+    const username = message.from?.username || null;
     const text = message.text.trim();
 
     if (!chatId) {
@@ -264,7 +340,7 @@ export class TelegramService {
 
     if (startMatch) {
       const token = startMatch[1] ? startMatch[1].trim() : null;
-      return this.handleStartCommand({ chatId, userId, token });
+      return this.handleStartCommand({ chatId, userId, token, username });
     }
 
     // Generic response for unexpected text messages

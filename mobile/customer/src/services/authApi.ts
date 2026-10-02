@@ -86,7 +86,8 @@ export const authApi = {
 
       if (!res.ok) {
         if (res.status === 429) {
-          throw new Error('Too many requests. Please wait a moment before requesting another code.');
+          const customMsg = res.data?.message || 'Too many requests. Please wait a moment before requesting another code.';
+          throw new Error(customMsg);
         }
         const errorMsg = res.data?.message || (res.data as any)?.error?.message || 'Failed to dispatch Telegram OTP';
         throw new Error(errorMsg);
@@ -95,8 +96,10 @@ export const authApi = {
         ...res.data,
         data: {
           ...(res.data?.data || {}),
-          botUrl: res.data?.data?.botUrl || 'https://t.me/Ardab_market_bot',
+          sessionId: res.data?.data?.sessionId,
+          botUrl: res.data?.data?.telegramUrl || res.data?.data?.botUrl || 'https://t.me/Ardab_market_bot',
           botUsername: res.data?.data?.botUsername || 'Ardab_market_bot',
+          status: res.data?.data?.status || 'PENDING_BOT_START',
         },
       };
     } catch (err: any) {
@@ -106,41 +109,123 @@ export const authApi = {
       console.warn('[authApi] Live Telegram request fallback:', err.message);
       return {
         success: true,
-        message: 'Your verification code has been generated. Open Ardab Telegram Bot to receive your code.',
+        message: 'Open the Ardab Telegram Bot and tap "Start" to receive your verification code.',
         data: {
           method: 'telegram',
           phone,
           botUsername: 'Ardab_market_bot',
           botUrl: 'https://t.me/Ardab_market_bot',
+          status: 'PENDING_BOT_START',
         },
       };
     }
   },
 
   /**
-   * Verify 6-digit Telegram OTP
+   * Safe status check for pending Telegram signup session (polling)
    */
-  async verifyTelegramOtp(phone: string, otp: string): Promise<AuthApiResponse> {
+  async getTelegramSignupStatus(sessionId: string): Promise<{
+    success: boolean;
+    data: {
+      sessionId: string;
+      status: 'PENDING_BOT_START' | 'BOT_STARTED' | 'OTP_SENT' | 'VERIFIED' | 'EXPIRED' | 'FAILED';
+      phone?: string;
+      city?: string;
+    };
+  }> {
+    try {
+      const res = await apiFetch<any>(`/customer-mobile/auth/register/telegram/status/${sessionId}`);
+      if (!res.ok) {
+        throw new Error(res.data?.message || 'Failed to check status');
+      }
+      return res.data;
+    } catch (err: any) {
+      return {
+        success: false,
+        data: {
+          sessionId,
+          status: 'PENDING_BOT_START',
+        },
+      };
+    }
+  },
+
+  /**
+   * Resend Telegram verification code via bot
+   */
+  async resendTelegramOtp(params: { sessionId?: string; phone?: string }): Promise<AuthApiResponse> {
+    const res = await apiFetch<AuthApiResponse>('/customer-mobile/auth/register/telegram/resend', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+
+    if (!res.ok) {
+      const errorMsg = res.data?.message || (res.data as any)?.error?.message || 'Failed to resend code';
+      throw new Error(errorMsg);
+    }
+    return res.data;
+  },
+
+  /**
+   * Verify 6-digit Telegram OTP (supports both (phone, otp) and object payload with sessionId)
+   */
+  async verifyTelegramOtp(
+    phoneOrPayload: string | { sessionId?: string; phone?: string; otp: string; fullName?: string; password?: string },
+    maybeOtp?: string
+  ): Promise<AuthApiResponse & { user?: UserProfile; token?: string }> {
+    const payload = typeof phoneOrPayload === 'string'
+      ? { phone: phoneOrPayload, otp: maybeOtp || '' }
+      : phoneOrPayload;
+
     try {
       const res = await apiFetch<AuthApiResponse>('/customer-mobile/auth/register/telegram/verify', {
         method: 'POST',
-        body: JSON.stringify({ phone, otp }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const errorMsg = res.data?.message || (res.data as any)?.error?.message || 'Invalid verification code';
         throw new Error(errorMsg);
       }
-      return res.data;
+
+      const rawCustomer = (res.data?.data as any)?.customer || (res.data as any)?.customer;
+      const accessToken = (res.data?.data as any)?.accessToken || (res.data?.data as any)?.token || (res.data as any)?.token;
+      const refreshToken = (res.data?.data as any)?.refreshToken;
+
+      if (refreshToken) {
+        await secureStorage.saveRefreshToken(refreshToken);
+      }
+      if (accessToken) {
+        await secureStorage.saveAuthToken(accessToken);
+      }
+
+      const user: UserProfile | undefined = rawCustomer
+        ? {
+            id: rawCustomer.id,
+            fullName: rawCustomer.fullName || 'Ardab Customer',
+            email: rawCustomer.email || '',
+            phone: rawCustomer.phone || payload.phone || '',
+            city: rawCustomer.city || 'Gondar',
+            avatarUrl: rawCustomer.profileImageUrl,
+            verified: true,
+            joinedDate: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          }
+        : undefined;
+
+      return {
+        ...res.data,
+        user,
+        token: accessToken,
+      };
     } catch (err: any) {
       if (err.message && !err.message.includes('fetch') && !err.message.includes('Network') && !err.message.includes('timeout') && !err.message.includes('starting up')) {
         throw err;
       }
-      if (otp.length === 6) {
+      if (payload.otp && payload.otp.length === 6) {
         return {
           success: true,
           message: 'Telegram verified successfully',
-          data: { verified: true, phone, verificationToken: `vtok_demo_${Date.now()}` },
+          data: { verified: true, phone: payload.phone, verificationToken: `vtok_demo_${Date.now()}` },
         };
       }
       throw err;

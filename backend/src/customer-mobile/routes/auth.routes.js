@@ -7,6 +7,8 @@ import {
   startEmailRegistrationHandler,
   verifyEmailRegistrationHandler,
   startTelegramRegistrationHandler,
+  getTelegramSignupStatusHandler,
+  resendTelegramOtpHandler,
   verifyTelegramRegistrationHandler,
   setPasswordHandler,
   loginHandler,
@@ -24,6 +26,7 @@ import {
   verifyEmailOtpSchema,
   requestTelegramOtpSchema,
   verifyTelegramOtpSchema,
+  resendTelegramOtpSchema,
   setPasswordSchema,
   mobileLoginSchema,
   mobileRefreshSchema,
@@ -82,8 +85,30 @@ router.post(
 );
 
 /**
+ * @route   GET /api/customer-mobile/auth/register/telegram/status/:sessionId
+ * @desc    Check status of Telegram signup session (polling)
+ * @access  Public
+ */
+router.get(
+  '/register/telegram/status/:sessionId',
+  asyncHandler(getTelegramSignupStatusHandler)
+);
+
+/**
+ * @route   POST /api/customer-mobile/auth/register/telegram/resend
+ * @desc    Resend OTP to linked Telegram chat
+ * @access  Public
+ */
+router.post(
+  '/register/telegram/resend',
+  otpRequestRateLimiter,
+  validate({ body: resendTelegramOtpSchema }),
+  asyncHandler(resendTelegramOtpHandler)
+);
+
+/**
  * @route   POST /api/customer-mobile/auth/register/telegram/verify
- * @desc    Verify 6-digit Telegram OTP and issue single-use verification ticket
+ * @desc    Verify 6-digit Telegram OTP and create customer + mobile session
  * @access  Public
  */
 router.post(

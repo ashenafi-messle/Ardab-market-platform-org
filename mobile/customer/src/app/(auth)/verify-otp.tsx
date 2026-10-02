@@ -22,7 +22,14 @@ import { t } from '@/localization';
 export default function VerifyOtpScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { verifyEmailOtp, verifyTelegramOtp, requestEmailOtp, requestTelegramOtp } = useAuth();
+  const {
+    verifyEmailOtp,
+    verifyTelegramOtp,
+    requestEmailOtp,
+    requestTelegramOtp,
+    getTelegramSignupStatus,
+    resendTelegramOtp,
+  } = useAuth();
   const { language } = useApp();
 
   const method = (params.method as 'email' | 'telegram') || 'email';
@@ -30,6 +37,8 @@ export default function VerifyOtpScreen() {
   const city = (params.city as string) || 'Gondar';
   const initialBotUrl = (params.botUrl as string) || 'https://t.me/Ardab_market_bot';
   const [botUrl, setBotUrl] = useState<string>(initialBotUrl);
+  const [sessionId, setSessionId] = useState<string>((params.sessionId as string) || '');
+  const [botStatus, setBotStatus] = useState<string>('PENDING_BOT_START');
 
   // 6-digit OTP state — always starts completely empty! Never autofilled from backend or route params!
   const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
@@ -54,6 +63,60 @@ export default function VerifyOtpScreen() {
       if (interval) clearInterval(interval);
     };
   }, [timer]);
+
+  // Polling Telegram signup session status every 2.5 seconds (up to 120s max)
+  useEffect(() => {
+    if (method !== 'telegram' || !sessionId || botStatus === 'OTP_SENT' || botStatus === 'VERIFIED') {
+      return;
+    }
+
+    let pollInterval: any = null;
+    let elapsedSeconds = 0;
+    const maxSeconds = 120;
+
+    const checkStatus = async () => {
+      try {
+        elapsedSeconds += 2.5;
+        const res = await getTelegramSignupStatus(sessionId);
+        const currentStatus = res?.data?.status;
+
+        if (currentStatus) {
+          setBotStatus(currentStatus);
+
+          if (currentStatus === 'OTP_SENT') {
+            setResendNotice(t('auth.telegramOtpSent'));
+            inputRefs.current[0]?.focus();
+            if (pollInterval) clearInterval(pollInterval);
+            return;
+          }
+
+          if (currentStatus === 'EXPIRED') {
+            setError(t('auth.otpExpired'));
+            if (pollInterval) clearInterval(pollInterval);
+            return;
+          }
+
+          if (currentStatus === 'FAILED') {
+            setError('Verification failed. Please restart signup.');
+            if (pollInterval) clearInterval(pollInterval);
+            return;
+          }
+        }
+
+        if (elapsedSeconds >= maxSeconds) {
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      } catch {
+        // Ignore background polling glitches
+      }
+    };
+
+    pollInterval = setInterval(checkStatus, 2500);
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [method, sessionId, botStatus]);
 
   const handleOtpChange = (text: string, index: number) => {
     setError('');
@@ -107,23 +170,45 @@ export default function VerifyOtpScreen() {
       let result: any = null;
       if (method === 'email') {
         result = await verifyEmailOtp(identifier, fullCode);
+        setLoading(false);
+
+        // Email flow navigates to Step 3: Password Creation
+        router.push({
+          pathname: '/(auth)/create-password' as any,
+          params: {
+            method,
+            email: identifier,
+            phone: '',
+            city,
+            verificationToken: result?.data?.verificationToken || result?.verificationToken || '',
+          },
+        });
       } else {
-        result = await verifyTelegramOtp(identifier, fullCode);
+        result = await verifyTelegramOtp({
+          sessionId,
+          phone: identifier,
+          otp: fullCode,
+        });
+        setLoading(false);
+
+        // Step 17-19: Customer automatically authenticated -> Directly enter Home screen!
+        if (result?.token || result?.accessToken) {
+          router.replace('/(tabs)' as any);
+          return;
+        }
+
+        // Fallback to password creation if token was not returned
+        router.push({
+          pathname: '/(auth)/create-password' as any,
+          params: {
+            method,
+            email: '',
+            phone: identifier,
+            city,
+            verificationToken: result?.data?.verificationToken || result?.verificationToken || '',
+          },
+        });
       }
-
-      setLoading(false);
-
-      // Navigate to Step 3: Password Creation
-      router.push({
-        pathname: '/(auth)/create-password' as any,
-        params: {
-          method,
-          email: method === 'email' ? identifier : '',
-          phone: method === 'telegram' ? identifier : '',
-          city,
-          verificationToken: result?.data?.verificationToken || result?.verificationToken || '',
-        },
-      });
     } catch (err: any) {
       setLoading(false);
       const msg = err.message || '';
@@ -147,7 +232,8 @@ export default function VerifyOtpScreen() {
       if (method === 'email') {
         await requestEmailOtp(identifier, city);
       } else {
-        const res = await requestTelegramOtp(identifier, city);
+        const res = await resendTelegramOtp({ sessionId, phone: identifier });
+        setBotStatus('OTP_SENT');
         if (res?.data?.botUrl) {
           setBotUrl(res.data.botUrl);
         }
@@ -198,7 +284,9 @@ export default function VerifyOtpScreen() {
         <Text style={styles.subtitle}>
           {method === 'email'
             ? t('auth.enterEmailOtp')
-            : 'Telegram opened. Start the Ardab Market bot and enter the verification code it sends you.'}
+            : botStatus === 'OTP_SENT'
+              ? t('auth.telegramOtpSent')
+              : t('auth.telegramDesc')}
         </Text>
 
         {/* Target Identifier Pill with change option */}

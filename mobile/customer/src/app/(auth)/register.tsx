@@ -36,6 +36,7 @@ export default function RegisterScreen() {
   const [error, setError] = useState('');
 
   const handleContinue = async () => {
+    if (loading) return;
     setError('');
 
     if (method === 'email') {
@@ -89,7 +90,9 @@ export default function RegisterScreen() {
       try {
         const res = await requestTelegramOtp(cleanPhone, city);
         setLoading(false);
-        const targetBotUrl = res?.data?.botUrl || res?.botUrl || 'https://t.me/Ardab_market_bot';
+        const targetBotUrl = res?.data?.botUrl || res?.data?.telegramUrl || res?.botUrl || 'https://t.me/Ardab_market_bot';
+        const sessionId = res?.data?.sessionId || res?.sessionId || '';
+
         router.push({
           pathname: '/(auth)/verify-otp' as any,
           params: {
@@ -97,6 +100,7 @@ export default function RegisterScreen() {
             identifier: cleanPhone,
             city,
             botUrl: targetBotUrl,
+            sessionId,
           },
         });
         Linking.openURL(targetBotUrl).catch(() => {});

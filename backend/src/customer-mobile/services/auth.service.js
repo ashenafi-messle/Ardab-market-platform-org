@@ -11,6 +11,14 @@ import { ApiError } from '../../shared/utils/apiResponse.js';
 import { AuthResponseCode } from '../utils/responseCodes.js';
 import { MobileOtpService } from './otp.service.js';
 import { MobileSessionService } from './session.service.js';
+import {
+  hashToken,
+  generateRandomToken,
+  generateNumericOtp,
+  timingSafeEqual,
+} from '../../shared/utils/crypto.js';
+import { TelegramService } from '../../shared/services/telegram/telegram.service.js';
+import { logger } from '../../shared/utils/logger.js';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -116,25 +124,402 @@ export class MobileAuthService {
       }
     }
 
-    // 3. Dispatch OTP via Telegram Bot
-    return MobileOtpService.requestOtp({
-      target: normalized.e164,
-      channel: 'TELEGRAM',
-      city: city || 'Gondar',
-      purpose: 'SECURITY_VERIFICATION',
+    // 3. Cooldown check: prevent duplicate rapid button double-tapping
+    const recentSession = await prisma.telegramSignupSession.findFirst({
+      where: {
+        phone: normalized.e164,
+        status: { in: ['PENDING_BOT_START', 'BOT_STARTED', 'OTP_SENT'] },
+        createdAt: { gt: new Date(Date.now() - 60 * 1000) },
+      },
+      orderBy: { createdAt: 'desc' },
     });
+
+    if (recentSession) {
+      const lastCreated = new Date(recentSession.createdAt).getTime();
+      const secondsLeft = Math.ceil(60 - (Date.now() - lastCreated) / 1000);
+      throw ApiError.tooManyRequests(
+        `Please wait ${secondsLeft > 0 ? secondsLeft : 1}s before requesting another session.`,
+        AuthResponseCode.OTP_RATE_LIMITED
+      );
+    }
+
+    // 4. Invalidate older pending sessions for this target phone
+    await prisma.telegramSignupSession.updateMany({
+      where: {
+        phone: normalized.e164,
+        status: { in: ['PENDING_BOT_START', 'BOT_STARTED', 'OTP_SENT'] },
+      },
+      data: { status: 'EXPIRED' },
+    }).catch(() => {});
+
+    // 5. Generate cryptographically secure random token (64 hex characters)
+    const rawToken = generateRandomToken();
+    const tokenHash = hashToken(rawToken);
+    const sessionExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes to start bot
+
+    const session = await prisma.telegramSignupSession.create({
+      data: {
+        phone: normalized.e164,
+        city: city || 'Gondar',
+        tokenHash,
+        status: 'PENDING_BOT_START',
+        expiresAt: sessionExpiresAt,
+        otpAttempts: 0,
+      },
+    });
+
+    const botInfo = TelegramService.getBotInfo();
+    const deepLinkUrl = `${botInfo.url}?start=${rawToken}`;
+
+    logger.info('[Telegram Signup] pendingSessionCreated=true', {
+      sessionId: session.id,
+      phone: normalized.e164,
+      city,
+    });
+
+    return {
+      success: true,
+      sessionId: session.id,
+      telegramUrl: deepLinkUrl,
+      botUrl: deepLinkUrl,
+      botUsername: botInfo.username,
+      expiresInSeconds: 15 * 60,
+      status: 'PENDING_BOT_START',
+      message: "Open the Ardab Telegram Bot and tap 'Start' to receive your verification code.",
+    };
   }
 
-  static async verifyTelegramRegistration({ phone, otp }) {
-    const normalized = normalizeEthiopianPhone(phone);
-    const target = normalized.isValid ? normalized.e164 : phone.trim();
+  static async getTelegramSignupStatus(sessionId) {
+    if (!sessionId) {
+      throw ApiError.badRequest('Session ID is required', AuthResponseCode.MISSING_REQUIRED_FIELD);
+    }
 
-    return MobileOtpService.verifyOtp({
-      target,
-      channel: 'TELEGRAM',
-      otp,
-      purpose: 'SECURITY_VERIFICATION',
+    const session = await prisma.telegramSignupSession.findUnique({
+      where: { id: sessionId },
     });
+
+    if (!session) {
+      throw ApiError.notFound('Telegram signup session not found', AuthResponseCode.NOT_FOUND);
+    }
+
+    const now = new Date();
+    let currentStatus = session.status;
+    if (now > new Date(session.expiresAt) && currentStatus !== 'VERIFIED') {
+      currentStatus = 'EXPIRED';
+      if (session.status !== 'EXPIRED') {
+        await prisma.telegramSignupSession.update({
+          where: { id: session.id },
+          data: { status: 'EXPIRED' },
+        }).catch(() => {});
+      }
+    }
+
+    return {
+      sessionId: session.id,
+      status: currentStatus,
+      phone: session.phone,
+      city: session.city,
+      expiresAt: session.expiresAt,
+    };
+  }
+
+  static async resendTelegramOtp({ sessionId, phone }) {
+    let session = null;
+    if (sessionId) {
+      session = await prisma.telegramSignupSession.findUnique({
+        where: { id: sessionId },
+      });
+    }
+
+    if (!session && phone) {
+      const normalized = normalizeEthiopianPhone(phone);
+      const searchTarget = normalized.isValid ? normalized.e164 : phone.trim();
+      session = await prisma.telegramSignupSession.findFirst({
+        where: {
+          phone: searchTarget,
+          status: { in: ['OTP_SENT', 'BOT_STARTED'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    if (!session || session.status === 'VERIFIED') {
+      throw ApiError.badRequest(
+        'No active Telegram verification session found. Please start registration again.',
+        AuthResponseCode.INVALID_OTP
+      );
+    }
+
+    if (new Date() > new Date(session.expiresAt)) {
+      throw ApiError.badRequest(
+        'Verification session has expired. Please restart registration.',
+        AuthResponseCode.OTP_EXPIRED
+      );
+    }
+
+    if (!session.telegramChatId) {
+      throw ApiError.badRequest(
+        "Please open the Telegram bot and tap 'Start' first to receive your verification code.",
+        AuthResponseCode.BOT_NOT_STARTED
+      );
+    }
+
+    const now = Date.now();
+    const lastAction = session.lastResentAt
+      ? new Date(session.lastResentAt).getTime()
+      : new Date(session.updatedAt).getTime();
+    const secondsSince = (now - lastAction) / 1000;
+
+    if (secondsSince < 60) {
+      const waitSec = Math.ceil(60 - secondsSince);
+      throw ApiError.tooManyRequests(
+        `Please wait ${waitSec}s before requesting a new code.`,
+        AuthResponseCode.OTP_RATE_LIMITED
+      );
+    }
+
+    const rawOtp = generateNumericOtp();
+    const otpHash = hashToken(rawOtp);
+    const otpExpiresAt = new Date(now + 10 * 60 * 1000);
+
+    await prisma.telegramSignupSession.update({
+      where: { id: session.id },
+      data: {
+        otpHash,
+        otpExpiresAt,
+        otpAttempts: 0,
+        status: 'OTP_SENT',
+        lastResentAt: new Date(),
+      },
+    });
+
+    const sendRes = await TelegramService.sendOtpMessage(session.telegramChatId, rawOtp, 10);
+    if (!sendRes.success) {
+      logger.error('[Telegram Signup] resendOtpFailed', {
+        chatId: session.telegramChatId,
+        error: sendRes.error,
+      });
+      throw ApiError.internal('Unable to send code to Telegram. Please check Telegram bot.');
+    }
+
+    logger.info('[Telegram Signup] resendOtpSent=true', {
+      chatId: session.telegramChatId,
+      sessionId: session.id,
+    });
+
+    return {
+      success: true,
+      message: 'Verification code resent to your Telegram account.',
+      status: 'OTP_SENT',
+    };
+  }
+
+  static async verifyTelegramRegistration({ sessionId, phone, otp, fullName, password, deviceInfo }) {
+    const cleanOtp = String(otp || '').trim();
+    if (!cleanOtp) {
+      throw ApiError.badRequest('Verification code is required.', AuthResponseCode.MISSING_REQUIRED_FIELD);
+    }
+
+    let session = null;
+    if (sessionId) {
+      session = await prisma.telegramSignupSession.findUnique({
+        where: { id: sessionId },
+      });
+    }
+
+    if (!session && phone) {
+      const normalized = normalizeEthiopianPhone(phone);
+      const searchTarget = normalized.isValid ? normalized.e164 : phone.trim();
+      session = await prisma.telegramSignupSession.findFirst({
+        where: {
+          phone: searchTarget,
+          status: { in: ['OTP_SENT', 'BOT_STARTED', 'PENDING_BOT_START'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    // Fallback: If not found in telegramSignupSession, check legacy customerMobileOtp
+    if (!session) {
+      const normalized = normalizeEthiopianPhone(phone || '');
+      const target = normalized.isValid ? normalized.e164 : (phone ? phone.trim() : '');
+      if (target) {
+        return MobileOtpService.verifyOtp({
+          target,
+          channel: 'TELEGRAM',
+          otp: cleanOtp,
+          purpose: 'SECURITY_VERIFICATION',
+        });
+      }
+      throw ApiError.badRequest(
+        'No active verification code found. Please request a new code.',
+        AuthResponseCode.INVALID_OTP
+      );
+    }
+
+    if (session.status === 'VERIFIED') {
+      const customer = await prisma.customer.findFirst({
+        where: { phone: session.phone },
+      });
+      if (customer) {
+        const sessionData = await MobileSessionService.createSession(customer.id, deviceInfo);
+        return {
+          verified: true,
+          customer: sessionData.customer,
+          user: sessionData.customer,
+          accessToken: sessionData.accessToken,
+          refreshToken: sessionData.refreshToken,
+          token: sessionData.accessToken,
+          verificationToken: `vtok_${generateRandomToken()}`,
+          message: 'Telegram verified successfully.',
+        };
+      }
+    }
+
+    const now = new Date();
+    if (now > new Date(session.expiresAt) || (session.otpExpiresAt && now > new Date(session.otpExpiresAt))) {
+      await prisma.telegramSignupSession.update({
+        where: { id: session.id },
+        data: { status: 'EXPIRED' },
+      }).catch(() => {});
+      throw ApiError.badRequest('Verification code has expired. Please request a new code.', AuthResponseCode.OTP_EXPIRED);
+    }
+
+    if (session.otpAttempts >= 5) {
+      await prisma.telegramSignupSession.update({
+        where: { id: session.id },
+        data: { status: 'FAILED' },
+      }).catch(() => {});
+      throw ApiError.badRequest(
+        'Too many incorrect attempts. Please request a new code.',
+        AuthResponseCode.OTP_TOO_MANY_ATTEMPTS
+      );
+    }
+
+    if (!session.otpHash) {
+      throw ApiError.badRequest(
+        "Please open the Telegram bot and tap 'Start' first.",
+        AuthResponseCode.BOT_NOT_STARTED
+      );
+    }
+
+    const submittedHash = hashToken(cleanOtp);
+    const isMatch = timingSafeEqual(submittedHash, session.otpHash);
+
+    if (!isMatch) {
+      const nextAttempts = session.otpAttempts + 1;
+      const isExhausted = nextAttempts >= 5;
+
+      await prisma.telegramSignupSession.update({
+        where: { id: session.id },
+        data: {
+          otpAttempts: nextAttempts,
+          ...(isExhausted ? { status: 'FAILED' } : {}),
+        },
+      });
+
+      if (isExhausted) {
+        throw ApiError.badRequest(
+          'Too many incorrect attempts. Please request a new code.',
+          AuthResponseCode.OTP_TOO_MANY_ATTEMPTS
+        );
+      }
+
+      throw ApiError.badRequest(
+        `Invalid verification code. ${5 - nextAttempts} attempts remaining.`,
+        AuthResponseCode.INVALID_OTP
+      );
+    }
+
+    // Step 16-18: Verification Succeeded -> Atomically create customer + auth session
+    const passwordHash = password ? await bcrypt.hash(password, BCRYPT_SALT_ROUNDS) : null;
+    const customerName = fullName?.trim() || session.telegramUsername || `Customer ${session.phone.slice(-4)}`;
+
+    const customer = await prisma.$transaction(async (tx) => {
+      const norm = normalizeEthiopianPhone(session.phone);
+      const searchPhones = norm.isValid ? norm.variants : [session.phone];
+
+      let existingCustomer = await tx.customer.findFirst({
+        where: { phone: { in: searchPhones } },
+      });
+
+      if (!existingCustomer && session.telegramUserId) {
+        existingCustomer = await tx.customer.findUnique({
+          where: { telegramUserId: session.telegramUserId },
+        });
+      }
+
+      if (existingCustomer) {
+        if (session.telegramUserId && !existingCustomer.telegramUserId) {
+          existingCustomer = await tx.customer.update({
+            where: { id: existingCustomer.id },
+            data: {
+              telegramUserId: session.telegramUserId,
+              verificationStatus: 'VERIFIED',
+              lastActivityAt: new Date(),
+            },
+          });
+        }
+      } else {
+        const customerCode = await generateNextCustomerCode(tx);
+
+        existingCustomer = await tx.customer.create({
+          data: {
+            customerCode,
+            fullName: customerName,
+            phone: session.phone,
+            city: session.city || 'Gondar',
+            telegramUserId: session.telegramUserId || null,
+            passwordHash,
+            verificationStatus: 'VERIFIED',
+            status: 'ACTIVE',
+            lastActivityAt: new Date(),
+          },
+        });
+      }
+
+      await tx.telegramSignupSession.update({
+        where: { id: session.id },
+        data: {
+          status: 'VERIFIED',
+          verifiedAt: new Date(),
+        },
+      });
+
+      return existingCustomer;
+    }, {
+      maxWait: 10000, // 10 seconds max wait to acquire connection from pool
+      timeout: 25000, // 25 seconds timeout to allow for network latency with remote Neon DB
+    });
+
+    const sessionData = await MobileSessionService.createSession(customer.id, deviceInfo);
+    const verificationToken = `vtok_${generateRandomToken()}`;
+    const verificationTokenHash = hashToken(verificationToken);
+
+    await prisma.customerMobileOtp.create({
+      data: {
+        target: session.phone,
+        channel: 'TELEGRAM',
+        codeHash: verificationTokenHash,
+        city: session.city || 'Gondar',
+        purpose: 'SECURITY_VERIFICATION',
+        attempts: 0,
+        isVerified: true,
+        telegramChatId: session.telegramChatId || null,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      },
+    }).catch(() => {});
+
+    return {
+      verified: true,
+      customer: sessionData.customer,
+      user: sessionData.customer,
+      accessToken: sessionData.accessToken,
+      refreshToken: sessionData.refreshToken,
+      token: sessionData.accessToken,
+      verificationToken,
+      message: 'Telegram identity verified successfully.',
+    };
   }
 
   // ----------------------------------------------------------------------------
@@ -182,6 +567,17 @@ export class MobileAuthService {
           where: { phone: { in: norm.variants } },
         });
         if (dupPhone) {
+          if (!dupPhone.passwordHash) {
+            return tx.customer.update({
+              where: { id: dupPhone.id },
+              data: {
+                passwordHash,
+                fullName: fullName?.trim() || dupPhone.fullName,
+                deliveryZone: deliveryZone?.trim() || dupPhone.deliveryZone,
+                lastActivityAt: new Date(),
+              },
+            });
+          }
           throw ApiError.conflict('An account with this phone already exists.', AuthResponseCode.PHONE_ALREADY_EXISTS);
         }
       }
@@ -203,6 +599,9 @@ export class MobileAuthService {
           lastActivityAt: new Date(),
         },
       });
+    }, {
+      maxWait: 10000,
+      timeout: 25000,
     });
 
     // 5. Create mobile session with access and refresh tokens

@@ -45,6 +45,15 @@ enum OtpPurpose {
   SECURITY_VERIFICATION
 }
 
+enum TelegramSignupStatus {
+  PENDING_BOT_START
+  BOT_STARTED
+  OTP_SENT
+  VERIFIED
+  EXPIRED
+  FAILED
+}
+
 enum SupplierStatus {
   ACTIVE
   SUSPENDED
@@ -873,6 +882,36 @@ model CustomerMobileOtp {
   @@index([telegramChatId])
   @@index([expiresAt])
   @@map("customer_mobile_otps")
+}
+
+// ------------------------------------------------------------------------------
+// Telegram Customer Signup Sessions (Deep-Link Verification & Automated OTP)
+// ------------------------------------------------------------------------------
+
+model TelegramSignupSession {
+  id               String               @id @default(uuid())
+  phone            String
+  city             String               @default("Gondar")
+  tokenHash        String               @unique
+  telegramChatId   String?
+  telegramUserId   String?
+  telegramUsername String?
+  otpHash          String?
+  otpExpiresAt     DateTime?
+  otpAttempts      Int                  @default(0)
+  status           TelegramSignupStatus @default(PENDING_BOT_START)
+  expiresAt        DateTime
+  verifiedAt       DateTime?
+  lastResentAt     DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([tokenHash])
+  @@index([phone])
+  @@index([telegramChatId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("telegram_signup_sessions")
 }
 
 // ------------------------------------------------------------------------------

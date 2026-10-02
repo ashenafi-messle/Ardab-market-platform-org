@@ -41,7 +41,7 @@ export async function verifyEmailRegistrationHandler(req, res) {
 
 /**
  * POST /api/customer-mobile/auth/register/telegram/start
- * Step 1: Validate phone & city, check uniqueness, send Telegram OTP via bot
+ * Step 1: Validate phone & city, check uniqueness, create pending session with secure token
  */
 export async function startTelegramRegistrationHandler(req, res) {
   const result = await MobileAuthService.startTelegramRegistration({
@@ -54,7 +54,41 @@ export async function startTelegramRegistrationHandler(req, res) {
   return ApiResponse.success(
     res,
     result,
-    'Verification code sent via Telegram bot.',
+    result.message || 'Telegram signup session started.',
+    200,
+    { code: AuthResponseCode.OTP_SENT }
+  );
+}
+
+/**
+ * GET /api/customer-mobile/auth/register/telegram/status/:sessionId
+ * Safe polling status endpoint for mobile app
+ */
+export async function getTelegramSignupStatusHandler(req, res) {
+  const result = await MobileAuthService.getTelegramSignupStatus(req.params.sessionId);
+
+  return ApiResponse.success(
+    res,
+    result,
+    'Telegram signup session status retrieved.',
+    200
+  );
+}
+
+/**
+ * POST /api/customer-mobile/auth/register/telegram/resend
+ * Resend OTP to customer via Telegram bot with rate limiting & cooldown
+ */
+export async function resendTelegramOtpHandler(req, res) {
+  const result = await MobileAuthService.resendTelegramOtp({
+    sessionId: req.body.sessionId,
+    phone: req.body.phone,
+  });
+
+  return ApiResponse.success(
+    res,
+    result,
+    result.message || 'Verification code resent.',
     200,
     { code: AuthResponseCode.OTP_SENT }
   );
@@ -62,12 +96,18 @@ export async function startTelegramRegistrationHandler(req, res) {
 
 /**
  * POST /api/customer-mobile/auth/register/telegram/verify
- * Step 2: Verify 6-digit Telegram OTP, return temporary password creation ticket
+ * Step 2: Verify 6-digit Telegram OTP, atomically create customer and mobile session
  */
 export async function verifyTelegramRegistrationHandler(req, res) {
+  const deviceInfo = req.headers['user-agent'] || req.body.deviceInfo || null;
+
   const result = await MobileAuthService.verifyTelegramRegistration({
+    sessionId: req.body.sessionId,
     phone: req.body.phone,
     otp: req.body.otp,
+    fullName: req.body.fullName,
+    password: req.body.password,
+    deviceInfo,
   });
 
   return ApiResponse.success(res, result, 'Telegram identity verified successfully.', 200, {

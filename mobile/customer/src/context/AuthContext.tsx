@@ -28,7 +28,12 @@ export interface AuthContextType {
   requestEmailOtp: (email: string, city: string) => Promise<any>;
   verifyEmailOtp: (email: string, otp: string) => Promise<any>;
   requestTelegramOtp: (phone: string, city: string) => Promise<any>;
-  verifyTelegramOtp: (phone: string, otp: string) => Promise<any>;
+  verifyTelegramOtp: (
+    phoneOrPayload: string | { sessionId?: string; phone?: string; otp: string; fullName?: string; password?: string },
+    otp?: string
+  ) => Promise<any>;
+  getTelegramSignupStatus: (sessionId: string) => Promise<any>;
+  resendTelegramOtp: (params: { sessionId?: string; phone?: string }) => Promise<any>;
   createPasswordAndAccount: (payload: {
     email?: string;
     phone?: string;
@@ -215,10 +220,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * Telegram OTP Verify
+   * Telegram OTP Verify -> If user & token returned, saves authenticated session directly
    */
-  const verifyTelegramOtp = async (phone: string, otp: string) => {
-    return await authApi.verifyTelegramOtp(phone, otp);
+  const verifyTelegramOtp = async (
+    phoneOrPayload: string | { sessionId?: string; phone?: string; otp: string; fullName?: string; password?: string },
+    otp?: string
+  ) => {
+    const res = await authApi.verifyTelegramOtp(phoneOrPayload, otp);
+    if (res.token && res.user) {
+      setToken(res.token);
+      setUser(res.user);
+      await secureStorage.saveAuthToken(res.token);
+      await secureStorage.saveUserData(res.user);
+      const primaryId = res.user.phone || res.user.email;
+      if (primaryId) {
+        await secureStorage.saveSavedIdentity(primaryId);
+        setSavedIdentity(primaryId);
+      }
+    }
+    return res;
+  };
+
+  const getTelegramSignupStatus = async (sessionId: string) => {
+    return await authApi.getTelegramSignupStatus(sessionId);
+  };
+
+  const resendTelegramOtp = async (params: { sessionId?: string; phone?: string }) => {
+    return await authApi.resendTelegramOtp(params);
   };
 
   /**
@@ -317,6 +345,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         verifyEmailOtp,
         requestTelegramOtp,
         verifyTelegramOtp,
+        getTelegramSignupStatus,
+        resendTelegramOtp,
         createPasswordAndAccount,
       }}>
       {children}

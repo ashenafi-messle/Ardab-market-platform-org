@@ -2,11 +2,14 @@
 // Ardab Market - Customer Mobile Authentication Integration Test Suite
 // ==============================================================================
 
+process.env.NODE_ENV = 'test';
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/shared/config/database.js';
+import { TelegramService } from '../src/shared/services/telegram/telegram.service.js';
 
 const app = createApp();
 
@@ -150,23 +153,52 @@ test('Customer Mobile Authentication Backend Integration Test Suite', async (sui
   // 2. REGISTRATION OPTION B: TELEGRAM BOT OTP
   // ----------------------------------------------------------------------------
 
-  await suite.test('2.1 Should dispatch Telegram OTP for valid Ethiopian phone', async () => {
+  let telegramSessionId = null;
+
+  await suite.test('2.1 Should start Telegram signup and process bot /start to deliver OTP', async () => {
     const res = await request(app)
       .post('/api/customer-mobile/auth/register/telegram/start')
       .send({ phone: testPhone, city: 'Gondar' });
 
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
-    assert.equal(res.body.code, 'OTP_SENT');
-    assert.ok(res.body.data.devOtp);
+    assert.ok(res.body.data.sessionId);
+    assert.ok(res.body.data.telegramUrl);
+    telegramSessionId = res.body.data.sessionId;
 
-    telegramOtp = res.body.data.devOtp;
+    const tokenMatch = res.body.data.telegramUrl.match(/[?&]start=([a-zA-Z0-9_-]+)/);
+    assert.ok(tokenMatch && tokenMatch[1]);
+    const rawToken = tokenMatch[1];
+
+    // Simulate customer tapping Start in the Telegram bot
+    const origSend = TelegramService.sendMessage;
+    TelegramService.sendMessage = async (chatId, text) => {
+      const match = text.match(/\*(\d{6})\*/);
+      if (match) telegramOtp = match[1];
+      return { success: true, messageId: 88123 };
+    };
+
+    try {
+      await TelegramService.handleTelegramUpdate({
+        update_id: 991,
+        message: {
+          message_id: 1,
+          chat: { id: '9928172', type: 'private' },
+          from: { id: 'tg_user_9928172', username: 'tg_test_user' },
+          text: `/start ${rawToken}`,
+        },
+      });
+    } finally {
+      TelegramService.sendMessage = origSend;
+    }
+
+    assert.ok(telegramOtp, 'Should have received OTP via bot');
   });
 
   await suite.test('2.2 Should verify Telegram OTP and return verification ticket', async () => {
     const res = await request(app)
       .post('/api/customer-mobile/auth/register/telegram/verify')
-      .send({ phone: testPhone, otp: telegramOtp });
+      .send({ sessionId: telegramSessionId, phone: testPhone, otp: telegramOtp });
 
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
@@ -174,6 +206,7 @@ test('Customer Mobile Authentication Backend Integration Test Suite', async (sui
     assert.ok(res.body.data.verificationToken);
 
     telegramVerificationToken = res.body.data.verificationToken;
+    createdTelegramCustomerId = res.body.data.customer?.id;
   });
 
   await suite.test('2.3 Should finalize Telegram registration with password creation', async () => {

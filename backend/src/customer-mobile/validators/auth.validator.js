@@ -43,16 +43,32 @@ export const requestTelegramOtpSchema = z.object({
   deliveryZone: z.string().trim().optional().nullable(),
 });
 
-export const verifyTelegramOtpSchema = z.object({
-  phone: z
-    .string({ required_error: AuthResponseCode.MISSING_REQUIRED_FIELD })
-    .trim()
-    .min(9, { message: AuthResponseCode.INVALID_PHONE }),
-  otp: z
-    .string({ required_error: AuthResponseCode.MISSING_REQUIRED_FIELD })
-    .trim()
-    .regex(/^\d{6}$/, { message: AuthResponseCode.INVALID_OTP }),
-});
+export const verifyTelegramOtpSchema = z
+  .object({
+    sessionId: z.string().trim().optional().nullable(),
+    phone: z.string().trim().optional().nullable(),
+    otp: z
+      .string({ required_error: AuthResponseCode.MISSING_REQUIRED_FIELD })
+      .trim()
+      .regex(/^\d{6}$/, { message: AuthResponseCode.INVALID_OTP }),
+    fullName: z.string().trim().optional().nullable(),
+    password: z.string().trim().optional().nullable(),
+    deviceInfo: z.string().trim().optional().nullable(),
+  })
+  .refine((data) => Boolean(data.sessionId || data.phone), {
+    message: 'Either sessionId or phone must be provided',
+    path: ['sessionId'],
+  });
+
+export const resendTelegramOtpSchema = z
+  .object({
+    sessionId: z.string().trim().optional().nullable(),
+    phone: z.string().trim().optional().nullable(),
+  })
+  .refine((data) => Boolean(data.sessionId || data.phone), {
+    message: 'Either sessionId or phone must be provided',
+    path: ['sessionId'],
+  });
 
 export const setPasswordSchema = z
   .object({
