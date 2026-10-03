@@ -12,6 +12,7 @@ import customerAddressRoutes from '../../customer/routes/address.routes.js';
 import customerProfileRoutes from '../../customer/routes/profile.routes.js';
 import customerSecurityRoutes from '../../customer/routes/security.routes.js';
 import customerSupportRoutes from '../../customer/routes/support.routes.js';
+import customerPaymentRoutes from '../../customer/routes/payment.routes.js';
 
 const customerMobileRouter = Router();
 
@@ -39,6 +40,9 @@ customerMobileRouter.use('/catalog', customerMobileCatalogRoutes);
 
 // Mount Customer Orders routes (/api/customer-mobile/orders/*)
 customerMobileRouter.use('/orders', customerOrderRoutes);
+
+// Mount Customer Payment routes (/api/customer-mobile/payments/*)
+customerMobileRouter.use('/payments', customerPaymentRoutes);
 
 // Mount Customer Notifications routes (/api/customer-mobile/notifications/*)
 customerMobileRouter.use('/notifications', customerNotificationRoutes);

@@ -87,9 +87,16 @@ export default function CheckoutScreen() {
         const liveOrder = await orderService.checkoutOrder(orderPayload);
         selectedCartItems.forEach((item) => removeFromCart(item.product.id));
         setIsPlacing(false);
-        router.replace(
-          `/checkout/success?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}` as any
-        );
+
+        if (backendPaymentMethod === 'CASH_ON_DELIVERY') {
+          router.replace(
+            `/checkout/success?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}` as any
+          );
+        } else {
+          router.replace(
+            `/checkout/payment?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}` as any
+          );
+        }
         return;
       }
     } catch (err: any) {

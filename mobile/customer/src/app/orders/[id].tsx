@@ -430,6 +430,24 @@ export default function OrderDetailsScreen() {
             <Text style={styles.totalLabel}>Total Amount</Text>
             <Text style={styles.totalValue}>{formatPrice(total)}</Text>
           </View>
+
+          {order.paymentStatus !== 'PAID' &&
+          order.status !== 'CANCELLED' &&
+          order.status !== 'REJECTED' ? (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() =>
+                router.push(
+                  `/checkout/payment?orderId=${order.id}&orderNumber=${order.orderNumber}` as any
+                )
+              }
+              style={styles.payNowBtn}>
+              <Ionicons name="card-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.payNowBtnText}>
+                Pay Now with Chapa ({formatPrice(total)})
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* Customer Support Card */}
@@ -967,5 +985,22 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.bold,
     color: '#FFFFFF',
+  },
+  payNowBtn: {
+    marginTop: Spacing.md,
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.lg,
+    gap: Spacing.sm,
+    ...Shadows.sm,
+  },
+  payNowBtnText: {
+    color: '#FFFFFF',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
   },
 });

@@ -478,6 +478,16 @@ export async function createCustomerOrderNotification(order, eventStatus, custom
       title: `Order Cancelled (#${order.orderNumber})`,
       message: customMessage || 'This order was cancelled.',
     },
+    PAYMENT_CONFIRMED: {
+      type: 'PAYMENT_CONFIRMED',
+      title: 'Payment successful',
+      message: customMessage || `Your payment for order #${order.orderNumber} has been confirmed.`,
+    },
+    PAYMENT_FAILED: {
+      type: 'ORDER_CANCELLED',
+      title: 'Payment failed',
+      message: customMessage || `Your payment for order #${order.orderNumber} was not completed.`,
+    },
     FAILED: {
       type: 'ORDER_CANCELLED',
       title: `Delivery Issue (#${order.orderNumber})`,

@@ -14,6 +14,7 @@ import { customerTelemetryMiddleware } from '../../shared/middleware/customerTel
 
 import customerNotificationRoutes from './notification.routes.js';
 import customerSupportRoutes from './support.routes.js';
+import customerPaymentRoutes from './payment.routes.js';
 import customerReviewRoutes, { productReviewSubRouter, productLevelReviewRouter } from './review.routes.js';
 
 const customerRouter = Router();
@@ -39,6 +40,9 @@ customerRouter.use('/support', customerSupportRoutes);
 // Mount Customer Order routes (/api/customer/orders/*)
 // Includes: checkout, list, detail, cancel
 customerRouter.use('/orders', customerOrderRoutes);
+
+// Mount Customer Payment routes (/api/customer/payments/*)
+customerRouter.use('/payments', customerPaymentRoutes);
 
 // Mount Customer Notification routes (/api/customer/notifications/*)
 customerRouter.use('/notifications', customerNotificationRoutes);

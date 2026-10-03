@@ -37,6 +37,8 @@ import feedbackRoutes from './admin/routes/feedback.routes.js';
 import securityRoutes from './admin/routes/security.routes.js';
 import customerRouter from './customer/routes/index.js';
 import customerMobileRouter from './customer-mobile/routes/index.js';
+import paymentWebhookRoutes from './shared/routes/webhook.routes.js';
+import adminPaymentRoutes from './admin/routes/payment.routes.js';
 import { getHealth, getLive, getReady } from './admin/controllers/health.controller.js';
 
 export function createApp() {
@@ -54,8 +56,15 @@ export function createApp() {
   // middleware (rate limiter, auth, etc.) can intercept them.
   app.options('*', cors(corsOptions));
 
-  // 3. Request Body Parsing with Strict Size Limit
-  app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+  // 3. Request Body Parsing with Strict Size Limit & Raw Body Retention
+  app.use(
+    express.json({
+      limit: REQUEST_BODY_LIMIT,
+      verify: (req, res, buf) => {
+        req.rawBody = buf;
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
 
   // 4. Request / Correlation ID
@@ -151,6 +160,16 @@ export function createApp() {
   // Customer Mobile App Routes (Isolated customer-mobile domain)
   app.use('/api/customer-mobile', customerMobileRouter);
   app.use('/api/v1/customer-mobile', customerMobileRouter);
+
+  // Payment Gateway Webhooks (Chapa)
+  app.use('/api/payments/chapa', paymentWebhookRoutes);
+  app.use('/api/v1/payments/chapa', paymentWebhookRoutes);
+
+  // Administrative Payment Control & Inspection
+  app.use('/api/admin/payments', adminPaymentRoutes);
+  app.use('/api/v1/admin/payments', adminPaymentRoutes);
+  app.use('/api/subadmin/payments', adminPaymentRoutes);
+  app.use('/api/payments', adminPaymentRoutes);
   // app.use('/api/seller', sellerRouter);
   // app.use('/api/delivery', deliveryRouter);
 

@@ -125,6 +125,15 @@ export const env = {
   TELEGRAM_WEBHOOK_URL: process.env.TELEGRAM_WEBHOOK_URL || '',
   TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   TELEGRAM_MODE: process.env.TELEGRAM_MODE || '',
+  CHAPA_MODE: process.env.CHAPA_MODE || 'test',
+  CHAPA_BASE_URL: process.env.CHAPA_BASE_URL || 'https://api.chapa.co',
+  CHAPA_SECRET_KEY: process.env.CHAPA_SECRET_KEY || '',
+  CHAPA_WEBHOOK_SECRET_HASH: process.env.CHAPA_WEBHOOK_SECRET_HASH || '',
+  CHAPA_WEBHOOK_URL:
+    process.env.CHAPA_WEBHOOK_URL ||
+    'https://ardab-market-platform-org.onrender.com/api/payments/chapa/webhook',
+  CHAPA_RETURN_URL_SCHEME:
+    process.env.CHAPA_RETURN_URL_SCHEME || 'ardabmarket://payment/chapa/callback',
 };
 
 
