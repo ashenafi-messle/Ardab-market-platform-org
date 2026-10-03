@@ -14,22 +14,26 @@ export async function initializePaymentHandler(req, res) {
   const { orderId, returnUrl } = req.body;
 
   if (!orderId) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'ORDER_ID_REQUIRED',
-        message: 'Order ID is required to initialize payment.',
-      },
-    });
+    return ApiResponse.error(res, 'ORDER_ID_REQUIRED', 'Order ID is required to initialize payment.', 400);
   }
 
-  const result = await paymentService.initializePayment({
-    customerId,
-    orderId,
-    returnUrl,
-  });
+  try {
+    const result = await paymentService.initializePayment({
+      customerId,
+      orderId,
+      returnUrl,
+    });
 
-  return ApiResponse.success(res, result, 'Payment session initialized successfully.');
+    return ApiResponse.success(res, result, 'Payment session initialized successfully.');
+  } catch (err) {
+    const status = Number(err.statusCode || err.status) || 500;
+    return ApiResponse.error(
+      res,
+      err.code || 'PAYMENT_INITIALIZATION_FAILED',
+      err.message || 'Failed to initialize payment session.',
+      status
+    );
+  }
 }
 
 /**
@@ -44,9 +48,18 @@ export async function getPaymentStatusHandler(req, res) {
     return ApiResponse.error(res, 'PAYMENT_ID_REQUIRED', 'Payment ID is required.', 400);
   }
 
-  const result = await paymentService.getPaymentStatus(customerId, paymentId);
-
-  return ApiResponse.success(res, result, 'Payment status retrieved.');
+  try {
+    const result = await paymentService.getPaymentStatus(customerId, paymentId);
+    return ApiResponse.success(res, result, 'Payment status retrieved.');
+  } catch (err) {
+    const status = Number(err.statusCode || err.status) || 500;
+    return ApiResponse.error(
+      res,
+      err.code || 'PAYMENT_STATUS_FAILED',
+      err.message || 'Failed to retrieve payment status.',
+      status
+    );
+  }
 }
 
 /**
@@ -57,10 +70,19 @@ export async function getCustomerPaymentHistoryHandler(req, res) {
   const customerId = req.customer.id;
   const { cursor, limit } = req.query;
 
-  const result = await paymentService.getCustomerPaymentHistory(customerId, {
-    cursor,
-    limit,
-  });
-
-  return ApiResponse.success(res, result, 'Payment history retrieved.');
+  try {
+    const result = await paymentService.getCustomerPaymentHistory(customerId, {
+      cursor,
+      limit,
+    });
+    return ApiResponse.success(res, result, 'Payment history retrieved.');
+  } catch (err) {
+    const status = Number(err.statusCode || err.status) || 500;
+    return ApiResponse.error(
+      res,
+      err.code || 'PAYMENT_HISTORY_FAILED',
+      err.message || 'Failed to retrieve payment history.',
+      status
+    );
+  }
 }

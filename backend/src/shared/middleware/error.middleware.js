@@ -14,9 +14,20 @@ export function errorMiddleware(err, req, res, next) {
     return next(err);
   }
 
-  // 1. Operational ApiError instances
+  // 1. Operational ApiError instances or errors with explicit statusCode/status
   if (err instanceof ApiError) {
     return ApiResponse.error(res, err.code, err.message, err.statusCode, err.details);
+  }
+
+  if (err.statusCode || err.status) {
+    const status = Number(err.statusCode || err.status) || 500;
+    return ApiResponse.error(
+      res,
+      err.code || 'APPLICATION_ERROR',
+      err.message || 'An error occurred while processing the request.',
+      status,
+      err.details || null
+    );
   }
 
   // 2. Malformed JSON Body Syntax Error

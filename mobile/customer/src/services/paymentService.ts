@@ -61,24 +61,20 @@ export const paymentService = {
     orderId: string,
     returnUrl?: string
   ): Promise<InitializePaymentResponse> {
-    try {
-      const res = await apiFetch<any>('/customer/payments/chapa/initialize', {
-        method: 'POST',
-        body: JSON.stringify({ orderId, returnUrl }),
-      });
+    const res = await apiFetch<any>('/customer/payments/chapa/initialize', {
+      method: 'POST',
+      body: JSON.stringify({ orderId, returnUrl }),
+    });
+
+    if (res.ok && res.data) {
       return (res.data?.data || res.data) as InitializePaymentResponse;
-    } catch (err: any) {
-      // Fallback alias for customer-mobile route if needed
-      try {
-        const res = await apiFetch<any>('/customer-mobile/payments/chapa/initialize', {
-          method: 'POST',
-          body: JSON.stringify({ orderId, returnUrl }),
-        });
-        return (res.data?.data || res.data) as InitializePaymentResponse;
-      } catch {
-        throw err;
-      }
     }
+
+    const errMsg =
+      res.data?.error?.message ||
+      res.data?.message ||
+      `Payment initialization failed (${res.status})`;
+    throw new Error(errMsg);
   },
 
   /**
@@ -86,17 +82,17 @@ export const paymentService = {
    * Triggers server-to-server verification check if appropriate.
    */
   async getPaymentStatus(paymentId: string): Promise<PaymentStatusResponse> {
-    try {
-      const res = await apiFetch<any>(`/customer/payments/${paymentId}/status`);
+    const res = await apiFetch<any>(`/customer/payments/${paymentId}/status`);
+
+    if (res.ok && res.data) {
       return (res.data?.data || res.data) as PaymentStatusResponse;
-    } catch (err: any) {
-      try {
-        const res = await apiFetch<any>(`/customer-mobile/payments/${paymentId}/status`);
-        return (res.data?.data || res.data) as PaymentStatusResponse;
-      } catch {
-        throw err;
-      }
     }
+
+    const errMsg =
+      res.data?.error?.message ||
+      res.data?.message ||
+      `Failed to verify payment status (${res.status})`;
+    throw new Error(errMsg);
   },
 
   /**
@@ -110,16 +106,16 @@ export const paymentService = {
     if (cursor) params.append('cursor', cursor);
     if (limit) params.append('limit', String(limit));
 
-    try {
-      const res = await apiFetch<any>(`/customer/payments/history?${params.toString()}`);
+    const res = await apiFetch<any>(`/customer/payments/history?${params.toString()}`);
+
+    if (res.ok && res.data) {
       return (res.data?.data || res.data) as PaymentHistoryResponse;
-    } catch (err: any) {
-      try {
-        const res = await apiFetch<any>(`/customer-mobile/payments/history?${params.toString()}`);
-        return (res.data?.data || res.data) as PaymentHistoryResponse;
-      } catch {
-        throw err;
-      }
     }
+
+    const errMsg =
+      res.data?.error?.message ||
+      res.data?.message ||
+      `Failed to load payment history (${res.status})`;
+    throw new Error(errMsg);
   },
 };
