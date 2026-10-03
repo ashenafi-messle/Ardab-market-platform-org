@@ -1,33 +1,41 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { useApp } from '@/store';
+import { useAuth } from '@/context/AuthContext';
 import { formatPrice, t } from '@/utils/i18n';
 import { AppHeader, AppButton, Divider } from '@/components/common';
 import { orderService } from '@/services/orderService';
+import { Address } from '@/types';
 
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { cartItems, cartSubtotal, cartTotal, addresses, placeOrder, removeFromCart, language } = useApp();
+  const auth = useAuth();
+  const { cartItems, cartSubtotal, cartTotal, addresses, removeFromCart, language } = useApp();
 
   const [selectedAddressIndex, setSelectedAddressIndex] = useState(0);
-  const [selectedPayment, setSelectedPayment] = useState<'CASH_ON_DELIVERY' | 'ONLINE'>('CASH_ON_DELIVERY');
+  const [selectedPayment, setSelectedPayment] = useState<'CASH_ON_DELIVERY' | 'ONLINE'>('ONLINE');
   const [isPlacing, setIsPlacing] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  const selectedAddress = addresses[selectedAddressIndex] || addresses[0];
+  const fallbackAddress: Address = {
+    id: 'default-addr',
+    fullName: auth.user?.fullName || 'Ardab Customer',
+    phone: auth.user?.phone || '+251911223344',
+    city: 'Addis Ababa',
+    subcity: 'Bole',
+    woreda: 'Woreda 03',
+    specificAddress: 'Bole Road, House #123',
+    isDefault: true,
+  };
+
+  const selectedAddress = addresses[selectedAddressIndex] || addresses[0] || fallbackAddress;
   const selectedCartItems = cartItems.filter((i) => i.selected);
 
   const paymentOptions = [
-    {
-      key: 'CASH_ON_DELIVERY' as const,
-      title: 'Cash on Delivery',
-      subtitle: 'Pay when your order is delivered.',
-      hint: 'Pay cash to the delivery representative upon arrival.',
-      icon: 'cash-outline',
-    },
     {
       key: 'ONLINE' as const,
       title: 'Online Payment',
@@ -35,28 +43,28 @@ export default function CheckoutScreen() {
       hint: 'Telebirr, CBE Birr, or Bank Card via Chapa checkout.',
       icon: 'card-outline',
     },
+    {
+      key: 'CASH_ON_DELIVERY' as const,
+      title: 'Cash on Delivery',
+      subtitle: 'Pay when your order is delivered.',
+      hint: 'Pay cash to the delivery representative upon arrival.',
+      icon: 'cash-outline',
+    },
   ];
 
   const handlePlaceOrder = async () => {
-    if (!selectedAddress) {
-      Alert.alert('Delivery Address Required', 'Please select or add a delivery address before placing your order.');
+    setCheckoutError(null);
+
+    // 1. Enforce Authentication
+    if (!auth.isAuthenticated) {
+      setCheckoutError('Please sign in or create an account to proceed to secure payment.');
+      router.push('/(auth)/login?redirect=/checkout' as any);
       return;
     }
 
+    // 2. Validate Cart
     if (selectedCartItems.length === 0) {
-      Alert.alert('Empty Cart', 'Please select items in your cart before proceeding to checkout.');
-      return;
-    }
-
-    const hasValidProductUuids = selectedCartItems.every(
-      (i) => i.product.id && i.product.id.length > 20
-    );
-
-    if (!hasValidProductUuids) {
-      Alert.alert(
-        'Catalog Update Required',
-        'One or more items in your cart need to be refreshed from the active catalog. Please re-add them from the shop.'
-      );
+      setCheckoutError('Please select items in your cart to checkout.');
       return;
     }
 
@@ -95,11 +103,19 @@ export default function CheckoutScreen() {
       }
     } catch (err: any) {
       setIsPlacing(false);
-      console.error('[CheckoutScreen] Checkout error:', err.message);
-      Alert.alert(
-        'Order Placement Error',
-        err.message || 'Unable to place order with backend. Please check your network and try again.'
-      );
+      const errMsg = err.message || 'Unable to place order with backend. Please try again.';
+      console.error('[CheckoutScreen] Checkout error:', errMsg);
+
+      if (
+        errMsg.toLowerCase().includes('authentication') ||
+        errMsg.toLowerCase().includes('token') ||
+        errMsg.toLowerCase().includes('unauthorized')
+      ) {
+        setCheckoutError('Authentication required. Redirecting to login...');
+        router.push('/(auth)/login?redirect=/checkout' as any);
+      } else {
+        setCheckoutError(errMsg);
+      }
     }
   };
 
@@ -248,6 +264,14 @@ export default function CheckoutScreen() {
             <Text style={styles.totalValue}>{formatPrice(cartTotal)}</Text>
           </View>
         </View>
+
+        {/* Dynamic Error Feedback Banner */}
+        {checkoutError ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={20} color="#DC2626" />
+            <Text style={styles.errorBannerText}>{checkoutError}</Text>
+          </View>
+        ) : null}
 
         {/* Dynamic Place Order / Continue to Payment Action */}
         <AppButton
@@ -475,5 +499,22 @@ const styles = StyleSheet.create({
   },
   onlineNoticeText: {
     color: Colors.primaryDark,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    borderColor: '#F87171',
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: Typography.fontSize.sm,
+    color: '#991B1B',
+    fontWeight: Typography.fontWeight.medium,
   },
 });
