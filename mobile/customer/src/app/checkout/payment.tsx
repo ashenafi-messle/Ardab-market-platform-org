@@ -192,10 +192,15 @@ export default function PaymentScreen() {
     setStatusMessage(null);
 
     try {
-      // Build deep link callback URL for Chapa redirect
-      const deepLinkUrl = Linking.createURL('payment/chapa/callback');
+      // Build callback URL: on web, use current origin; on native, use deep link
+      let returnCallbackUrl: string;
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+        returnCallbackUrl = `${window.location.origin}/checkout/payment?orderId=${orderId}`;
+      } else {
+        returnCallbackUrl = Linking.createURL('payment/chapa/callback');
+      }
 
-      const initResult = await paymentService.initializePayment(orderId, deepLinkUrl);
+      const initResult = await paymentService.initializePayment(orderId, returnCallbackUrl);
 
       if (initResult.status === 'SUCCESS') {
         setPaymentStatus('SUCCESS');
@@ -220,10 +225,16 @@ export default function PaymentScreen() {
         })
       );
 
-      // Open hosted checkout modal in browser
+      // If running on Web, navigate directly to Chapa hosted checkout
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.location.href = initResult.checkoutUrl;
+        return;
+      }
+
+      // Open hosted checkout modal in browser on iOS/Android
       const browserResult = await WebBrowser.openAuthSessionAsync(
         initResult.checkoutUrl,
-        deepLinkUrl
+        returnCallbackUrl
       );
 
       setIsInitializing(false);
@@ -232,10 +243,12 @@ export default function PaymentScreen() {
       startStatusPolling(initResult.paymentId);
     } catch (err: any) {
       setIsInitializing(false);
-      console.error('[PaymentScreen] Payment initialization error:', err.message);
+      const rawMsg = err?.message || err?.error || err;
+      const displayMsg = typeof rawMsg === 'object' ? JSON.stringify(rawMsg) : String(rawMsg);
+      console.error('[PaymentScreen] Payment initialization error:', displayMsg);
       Alert.alert(
         'Payment Initialization Failed',
-        err.message || 'Unable to connect to payment provider. Please try again in a few moments.'
+        displayMsg || 'Unable to connect to payment provider. Please try again in a few moments.'
       );
     }
   };

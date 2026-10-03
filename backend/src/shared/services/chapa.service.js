@@ -60,15 +60,25 @@ export class ChapaService {
       }
 
       if (!response.ok) {
+        let errorMessage = `Chapa API responded with status ${response.status}`;
+        if (typeof responseData?.message === 'string') {
+          errorMessage = responseData.message;
+        } else if (responseData?.message && typeof responseData.message === 'object') {
+          const details = Object.entries(responseData.message)
+            .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+            .join('; ');
+          errorMessage = details || errorMessage;
+        } else if (typeof responseData?.error === 'string') {
+          errorMessage = responseData.error;
+        }
+
         logger.error(`[ChapaService] HTTP ${response.status} from ${endpoint}`, {
           status: response.status,
           durationMs,
-          message: responseData?.message || response.statusText,
+          message: errorMessage,
         });
 
-        const error = new Error(
-          responseData?.message || `Chapa API responded with status ${response.status}`
-        );
+        const error = new Error(errorMessage);
         error.status = response.status;
         error.code = 'PROVIDER_HTTP_ERROR';
         error.data = responseData;
@@ -126,6 +136,19 @@ export class ChapaService {
       throw new Error('CHAPA_SECRET_KEY is not configured on the backend.');
     }
 
+    // Chapa requires return_url to be a valid HTTP or HTTPS URL.
+    // If a custom scheme (e.g. ardabmarket://...) or no URL is provided,
+    // route through the backend HTTP callback which handles deep link redirection.
+    let safeReturnUrl = returnUrl;
+    const isHttpUrl = safeReturnUrl && (safeReturnUrl.startsWith('http://') || safeReturnUrl.startsWith('https://'));
+    if (!isHttpUrl) {
+      const callbackBase = env.CHAPA_WEBHOOK_URL
+        ? env.CHAPA_WEBHOOK_URL.replace(/\/payments\/chapa\/webhook\/?$/, '/customer/payments/chapa/callback')
+        : 'https://ardab-market-platform-org.onrender.com/api/customer/payments/chapa/callback';
+      const deepLinkParam = safeReturnUrl ? `&deep_link=${encodeURIComponent(safeReturnUrl)}` : '';
+      safeReturnUrl = `${callbackBase}?tx_ref=${encodeURIComponent(txRef)}${deepLinkParam}`;
+    }
+
     const payload = {
       amount: String(amount),
       currency: currency.toUpperCase(),
@@ -134,7 +157,7 @@ export class ChapaService {
       last_name: (lastName || 'Shopper').trim(),
       tx_ref: txRef,
       callback_url: callbackUrl || env.CHAPA_WEBHOOK_URL,
-      return_url: returnUrl || `${env.CHAPA_RETURN_URL_SCHEME}?tx_ref=${encodeURIComponent(txRef)}`,
+      return_url: safeReturnUrl,
     };
 
     if (phoneNumber) {

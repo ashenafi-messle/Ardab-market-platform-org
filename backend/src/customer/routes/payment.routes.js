@@ -8,6 +8,7 @@ import {
   initializePaymentHandler,
   getPaymentStatusHandler,
   getCustomerPaymentHistoryHandler,
+  paymentReturnCallbackHandler,
 } from '../controllers/payment.controller.js';
 import { customerAuthMiddleware } from '../middleware/customerAuth.middleware.js';
 import { mobileAuthMiddleware } from '../../customer-mobile/middleware/auth.middleware.js';
@@ -76,6 +77,16 @@ router.post(
   paymentInitLimiter,
   unifiedCustomerAuth,
   asyncHandler(initializePaymentHandler)
+);
+
+/**
+ * @route   GET /api/customer/payments/chapa/callback
+ * @desc    Hosted checkout browser return callback for Chapa
+ * @access  Public (Browser redirect from Chapa)
+ */
+router.get(
+  '/chapa/callback',
+  asyncHandler(paymentReturnCallbackHandler)
 );
 
 /**
