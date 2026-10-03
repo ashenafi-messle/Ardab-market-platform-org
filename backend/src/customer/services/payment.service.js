@@ -35,8 +35,8 @@ export class PaymentService {
    *
    * @param {object} params
    * @param {string} params.customerId - Authenticated customer ID (from JWT/session)
-   * @param {string} params.orderId - Order UUID to pay
-   * @param {string} [params.returnUrl] - Optional mobile deep link or return URL
+   * @param {string} [params.platform] - 'web' | 'android'
+   * @param {string} [params.returnUrl] - Optional return URL override
    * @returns {Promise<{
    *   paymentId: string,
    *   txRef: string,
@@ -46,7 +46,7 @@ export class PaymentService {
    *   currency: string
    * }>}
    */
-  async initializePayment({ customerId, orderId, returnUrl }) {
+  async initializePayment({ customerId, orderId, platform = 'web', returnUrl = null }) {
     if (!orderId) {
       const err = new Error('Order ID is required.');
       err.statusCode = 400;
@@ -259,6 +259,20 @@ export class PaymentService {
       customizationDescription: customization.description,
     });
 
+    const effectivePlatform = ['web', 'android'].includes((platform || '').toLowerCase())
+      ? (platform || '').toLowerCase()
+      : 'web';
+
+    // The backend chooses the return URL. Central HTTPS callback is used so that:
+    // 1. Chapa receives a valid HTTPS URL (custom URI schemes like ardabmarket:// are rejected by Chapa API)
+    // 2. Server-side payment verification runs immediately upon customer return
+    // 3. The server then redirects cleanly to Web or Android without inline scripts
+    const callbackBase = env.CHAPA_WEBHOOK_URL
+      ? env.CHAPA_WEBHOOK_URL.replace(/\/payments\/chapa\/webhook\/?$/, '/payments/chapa/callback')
+      : 'https://ardab-market-platform-org.onrender.com/api/payments/chapa/callback';
+
+    const safeReturnUrl = returnUrl || `${callbackBase}?platform=${effectivePlatform}&tx_ref=${encodeURIComponent(txRef)}`;
+
     let chapaResponse;
     try {
       chapaResponse = await chapaService.initializeTransaction({
@@ -269,7 +283,7 @@ export class PaymentService {
         lastName,
         phoneNumber: customerPhone || undefined,
         txRef,
-        returnUrl: returnUrl || undefined,
+        returnUrl: safeReturnUrl,
         customization,
       });
 
@@ -676,8 +690,11 @@ export class PaymentService {
    * @returns {Promise<object>} Safe public payment status
    */
   async getPaymentStatus(customerId, paymentId) {
-    const payment = await prisma.payment.findUnique({
-      where: { id: paymentId },
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paymentId);
+    const payment = await prisma.payment.findFirst({
+      where: isUuid
+        ? { OR: [{ id: paymentId }, { txRef: paymentId }] }
+        : { txRef: paymentId },
       include: {
         order: {
           select: {

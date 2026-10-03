@@ -132,8 +132,12 @@ export const env = {
   CHAPA_WEBHOOK_URL:
     process.env.CHAPA_WEBHOOK_URL ||
     'https://ardab-market-platform-org.onrender.com/api/payments/chapa/webhook',
+  CHAPA_WEB_RETURN_URL:
+    process.env.CHAPA_WEB_RETURN_URL || 'https://customer-phi-wheat.vercel.app/payment/chapa/callback',
+  CHAPA_MOBILE_RETURN_URL:
+    process.env.CHAPA_MOBILE_RETURN_URL || 'ardabmarket://payment/chapa/callback',
   CHAPA_RETURN_URL_SCHEME:
-    process.env.CHAPA_RETURN_URL_SCHEME || 'ardabmarket://payment/chapa/callback',
+    process.env.CHAPA_RETURN_URL_SCHEME || process.env.CHAPA_MOBILE_RETURN_URL || 'ardabmarket://payment/chapa/callback',
 };
 
 

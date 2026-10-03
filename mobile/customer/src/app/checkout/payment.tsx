@@ -192,15 +192,8 @@ export default function PaymentScreen() {
     setStatusMessage(null);
 
     try {
-      // Build callback URL: on web, use current origin; on native, use deep link
-      let returnCallbackUrl: string;
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-        returnCallbackUrl = `${window.location.origin}/checkout/payment?orderId=${orderId}`;
-      } else {
-        returnCallbackUrl = Linking.createURL('payment/chapa/callback');
-      }
-
-      const initResult = await paymentService.initializePayment(orderId, returnCallbackUrl);
+      const targetPlatform: 'web' | 'android' = Platform.OS === 'web' ? 'web' : 'android';
+      const initResult = await paymentService.initializePayment(orderId, targetPlatform);
 
       if (initResult.status === 'SUCCESS') {
         setPaymentStatus('SUCCESS');
@@ -234,7 +227,7 @@ export default function PaymentScreen() {
       // Open hosted checkout modal in browser on iOS/Android
       const browserResult = await WebBrowser.openAuthSessionAsync(
         initResult.checkoutUrl,
-        returnCallbackUrl
+        'ardabmarket://payment/chapa/callback'
       );
 
       setIsInitializing(false);

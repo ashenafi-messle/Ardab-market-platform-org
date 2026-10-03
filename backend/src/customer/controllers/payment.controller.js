@@ -3,26 +3,35 @@
 // ==============================================================================
 
 import { prisma } from '../../shared/config/database.js';
+import { env } from '../../shared/config/env.js';
+import { logger } from '../../shared/utils/logger.js';
 import { paymentService } from '../services/payment.service.js';
 import { ApiResponse } from '../../shared/utils/apiResponse.js';
 
 /**
  * POST /api/customer/payments/chapa/initialize
  * Initialize an authoritative Chapa payment session for an order.
+ * Accepts optional platform: 'web' | 'android'.
  */
 export async function initializePaymentHandler(req, res) {
   const customerId = req.customer.id;
-  const { orderId, returnUrl } = req.body;
+  const { orderId, platform } = req.body;
 
   if (!orderId) {
     return ApiResponse.error(res, 'ORDER_ID_REQUIRED', 'Order ID is required to initialize payment.', 400);
   }
 
+  // Validate platform strictly: allowed values are 'web' or 'android'
+  const normalizedPlatform = (platform || '').toLowerCase().trim();
+  const effectivePlatform = ['web', 'android'].includes(normalizedPlatform)
+    ? normalizedPlatform
+    : 'web'; // Safe default for browser / web clients
+
   try {
     const result = await paymentService.initializePayment({
       customerId,
       orderId,
-      returnUrl,
+      platform: effectivePlatform,
     });
 
     return ApiResponse.success(res, result, 'Payment session initialized successfully.');
@@ -94,37 +103,72 @@ export async function getCustomerPaymentHistoryHandler(req, res) {
  * Triggers server-side verification and redirects to the mobile deep link or web app.
  */
 export async function paymentReturnCallbackHandler(req, res) {
-  const { tx_ref, trx_ref, status, deep_link } = req.query;
+  const { tx_ref, trx_ref, status, platform } = req.query;
   const transactionRef = tx_ref || trx_ref;
 
+  // Determine platform strictly: 'web' or 'android'
+  const normalizedPlatform = (platform || '').toLowerCase().trim();
+  const effectivePlatform = normalizedPlatform === 'android' ? 'android' : 'web';
+
+  let payment = null;
   if (transactionRef) {
     try {
-      const payment = await prisma.payment.findUnique({
+      payment = await prisma.payment.findUnique({
         where: { txRef: transactionRef },
       });
+
       if (payment && payment.status !== 'SUCCESS') {
-        await paymentService.finalizePaymentWithVerification(payment.id, payment.customerId).catch(() => {});
+        const finalized = await paymentService
+          .finalizePaymentWithVerification(transactionRef, {
+            actorType: 'STATUS_POLL',
+            actorId: payment.customerId,
+          })
+          .catch((e) => {
+            logger.warn('[PaymentCallback] Verification non-critical catch:', e.message);
+            return null;
+          });
+
+        if (finalized) {
+          payment = finalized;
+        }
       }
-    } catch {
-      // Continue to redirect even if immediate verification fails
+    } catch (err) {
+      logger.error('[PaymentCallback] Error during payment lookup/verification:', err.message);
     }
   }
 
-  // Determine redirect URL
-  const targetDeepLink = deep_link || 'ardabmarket://payment/chapa/callback';
-  const separator = targetDeepLink.includes('?') ? '&' : '?';
-  const redirectUrl = `${targetDeepLink}${separator}tx_ref=${encodeURIComponent(transactionRef || '')}&status=${encodeURIComponent(status || 'success')}`;
+  const finalStatus = payment?.status === 'SUCCESS' ? 'success' : (status || 'pending');
 
-  const html = `<!DOCTYPE html>
+  if (effectivePlatform === 'web') {
+    // Web platform: 302 redirect directly to the customer web app callback
+    const targetUrl = new URL(
+      env.CHAPA_WEB_RETURN_URL || 'https://customer-phi-wheat.vercel.app/payment/chapa/callback'
+    );
+    if (transactionRef) targetUrl.searchParams.set('tx_ref', transactionRef);
+    targetUrl.searchParams.set('status', finalStatus);
+
+    return res.redirect(302, targetUrl.toString());
+  }
+
+  // Android platform:
+  // Native scheme redirect to ardabmarket://
+  const targetMobileScheme = env.CHAPA_MOBILE_RETURN_URL || 'ardabmarket://payment/chapa/callback';
+  const separator = targetMobileScheme.includes('?') ? '&' : '?';
+  const mobileRedirectUrl = `${targetMobileScheme}${separator}tx_ref=${encodeURIComponent(transactionRef || '')}&status=${encodeURIComponent(finalStatus)}`;
+
+  // Serve clean HTML without any inline script (using meta refresh and anchor link only)
+  // Strictly complies with CSP (script-src 'self' without unsafe-inline)
+  const safeHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="0;url=${mobileRedirectUrl}">
   <title>Payment Completed - Ardab Market</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #0f172a; color: #f8fafc; padding: 20px; }
-    .card { background: #1e293b; border: 1px solid #334155; padding: 36px 28px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); max-width: 440px; width: 100%; text-align: center; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #0f172a; color: #f8fafc; padding: 20px; text-align: center; }
+    .card { background: #1e293b; border: 1px solid #334155; padding: 36px 28px; border-radius: 20px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     .icon { width: 64px; height: 64px; border-radius: 50%; background: #10b981; display: inline-flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 20px; }
     h1 { font-size: 22px; font-weight: 700; margin-bottom: 10px; color: #ffffff; }
     p { font-size: 15px; color: #94a3b8; line-height: 1.5; margin-bottom: 24px; }
@@ -136,16 +180,11 @@ export async function paymentReturnCallbackHandler(req, res) {
     <div class="icon">✓</div>
     <h1>Payment Completed</h1>
     <p>Your payment session has finished. Returning you to the Ardab Market app...</p>
-    <a href="${redirectUrl}" id="returnBtn" class="btn">Return to App</a>
+    <a href="${mobileRedirectUrl}" class="btn">Open Ardab Market App</a>
   </div>
-  <script>
-    setTimeout(function() {
-      window.location.href = "${redirectUrl}";
-    }, 600);
-  </script>
 </body>
 </html>`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  return res.status(200).send(html);
+  return res.status(200).send(safeHtml);
 }

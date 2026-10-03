@@ -56,6 +56,9 @@ export function createApp() {
   // middleware (rate limiter, auth, etc.) can intercept them.
   app.options('*', cors(corsOptions));
 
+  // 2.1 Handle favicon.ico to prevent 404 log noise in browsers
+  app.get('/favicon.ico', (req, res) => res.status(204).end());
+
   // 3. Request Body Parsing with Strict Size Limit & Raw Body Retention
   app.use(
     express.json({
