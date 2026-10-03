@@ -137,8 +137,15 @@ export class PaymentService {
       throw err;
     }
 
-    // 3. Authoritative financial validation
-    const authoritativeAmount = new Decimal(order.totalAmount);
+    // 3. Authoritative financial validation (Subtotal + Delivery Fee - Discount)
+    const subtotal = new Decimal(order.subtotal || 0);
+    const deliveryFee = new Decimal(order.deliveryFee || 0);
+    const discountAmount = new Decimal(order.discountAmount || 0);
+    const calculatedTotal = subtotal.plus(deliveryFee).minus(discountAmount);
+    const authoritativeAmount = calculatedTotal.gt(0)
+      ? calculatedTotal
+      : new Decimal(order.totalAmount || 0);
+
     if (authoritativeAmount.lte(0)) {
       const err = new Error('Invalid payable amount for order.');
       err.statusCode = 400;
@@ -235,6 +242,11 @@ export class PaymentService {
       return p;
     });
 
+    const customization = {
+      title: 'Ardab Market',
+      description: 'Online order payment',
+    };
+
     // 6. External Call to Chapa Hosted Checkout (OUTSIDE DB TRANSACTION)
     // Safe structured logging immediately before calling POST https://api.chapa.co/v1/transaction/initialize
     logger.info('[PaymentService] Chapa initialization request', {
@@ -243,8 +255,8 @@ export class PaymentService {
       txRef,
       amount: authoritativeAmount.toFixed(2),
       currency: 'ETB',
-      paymentMethod: 'ONLINE',
-      customerId: order.customerId,
+      customizationTitle: customization.title,
+      customizationDescription: customization.description,
     });
 
     let chapaResponse;
@@ -258,10 +270,7 @@ export class PaymentService {
         phoneNumber: customerPhone || undefined,
         txRef,
         returnUrl: returnUrl || undefined,
-        customization: {
-          title: `Ardab Market (#${order.orderNumber})`,
-          description: `Payment for Order #${order.orderNumber}`,
-        },
+        customization,
       });
 
       logger.info('[PaymentService] Chapa initialization response', {

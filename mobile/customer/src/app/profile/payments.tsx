@@ -129,7 +129,7 @@ export default function PaymentHistoryScreen() {
 
         <View style={styles.cardFooter}>
           <Text style={styles.refText}>Ref: {item.txRef}</Text>
-          <Text style={styles.methodText}>Channel: {item.paymentMethod || 'Chapa Escrow'}</Text>
+          <Text style={styles.methodText}>Channel: {item.paymentMethod || 'ONLINE'}</Text>
         </View>
       </TouchableOpacity>
     );
