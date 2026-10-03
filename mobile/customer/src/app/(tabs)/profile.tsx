@@ -93,6 +93,12 @@ export default function ProfileScreen() {
           subtitle={t('home.specialOffers')}
           onPress={() => router.push('/profile/notifications' as any)}
         />
+        <ProfileMenuItem
+          icon="card-outline"
+          title="Payment History"
+          subtitle="Transactions & verified receipts"
+          onPress={() => router.push('/profile/payments' as any)}
+        />
 
         {/* Section: Settings & Preferences */}
         <Text style={styles.sectionHeading}>{t('profile.sectionPreferences')}</Text>
