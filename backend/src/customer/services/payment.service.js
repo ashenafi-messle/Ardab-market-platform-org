@@ -63,6 +63,7 @@ export class PaymentService {
         customerId: true,
         status: true,
         paymentStatus: true,
+        paymentMethod: true,
         subtotal: true,
         deliveryFee: true,
         discountAmount: true,
@@ -96,6 +97,18 @@ export class PaymentService {
       const err = new Error('You do not have permission to pay for this order.');
       err.statusCode = 403;
       err.code = 'ORDER_NOT_OWNED';
+      throw err;
+    }
+
+    // Explicit guard: Cash on Delivery orders must NEVER initialize Chapa
+    if (order.paymentMethod === 'CASH_ON_DELIVERY') {
+      logger.warn('[PaymentService] Attempted Chapa initialization on Cash on Delivery order', {
+        orderId,
+        customerId,
+      });
+      const err = new Error('Cash on Delivery orders do not require online payment through Chapa.');
+      err.statusCode = 400;
+      err.code = 'CHAPA_NOT_REQUIRED_FOR_COD';
       throw err;
     }
 
@@ -341,6 +354,18 @@ export class PaymentService {
       const err = new Error('Payment not found for transaction reference.');
       err.statusCode = 404;
       err.code = 'PAYMENT_NOT_FOUND';
+      throw err;
+    }
+
+    // Explicit guard: COD payments must NEVER be verified via Chapa
+    if (payment.provider === 'COD') {
+      logger.warn('[PaymentService] Attempted Chapa verification on COD payment', {
+        txRef,
+        paymentId: payment.id,
+      });
+      const err = new Error('Cash on Delivery payments cannot be verified through Chapa.');
+      err.statusCode = 400;
+      err.code = 'CHAPA_NOT_REQUIRED_FOR_COD';
       throw err;
     }
 
@@ -609,6 +634,23 @@ export class PaymentService {
       throw err;
     }
 
+    // Cash on Delivery orders return status directly without external Chapa verification
+    if (payment.provider === 'COD' || payment.paymentMethod === 'CASH_ON_DELIVERY') {
+      return {
+        paymentId: payment.id,
+        orderId: payment.orderId,
+        orderNumber: payment.order?.orderNumber,
+        status: payment.status,
+        amount: payment.amount.toFixed(2),
+        currency: payment.currency,
+        paidAt: payment.paidAt,
+        paymentMethod: 'CASH_ON_DELIVERY',
+        provider: 'COD',
+        isSuccess: payment.status === 'SUCCESS',
+        failureReason: payment.failureReason,
+      };
+    }
+
     // If still in PENDING or PROCESSING and created more than 4 seconds ago,
     // execute an on-demand server verification in case webhook was delayed or mobile returned
     if (payment.status === 'PROCESSING' || payment.status === 'PENDING') {
@@ -720,6 +762,8 @@ export class PaymentService {
    */
   async getAdminPayments({
     status,
+    provider,
+    paymentMethod,
     startDate,
     endDate,
     search,
@@ -734,6 +778,14 @@ export class PaymentService {
 
     if (status && status !== 'ALL') {
       where.status = status;
+    }
+
+    if (provider && provider !== 'ALL') {
+      where.provider = provider;
+    }
+
+    if (paymentMethod && paymentMethod !== 'ALL') {
+      where.paymentMethod = paymentMethod;
     }
 
     if (startDate || endDate) {

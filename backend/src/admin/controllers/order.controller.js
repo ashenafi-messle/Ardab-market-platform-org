@@ -9,6 +9,7 @@ import {
   getOrderActivity,
   transitionOrderStatus,
   bulkTransitionStatus,
+  collectCodOrderPayment,
 } from '../services/order.service.js';
 import { getOrderSummary } from '../services/order.metrics.service.js';
 
@@ -163,3 +164,15 @@ export async function bulkOrderStatusHandler(req, res) {
     `Successfully transitioned ${result.count} order(s) to ${req.body.status}`
   );
 }
+
+/**
+ * POST /api/orders/:id/cod-payment/collect
+ * Records cash on delivery collection by authorized staff/courier.
+ */
+export async function collectCodPaymentHandler(req, res) {
+  const result = await collectCodOrderPayment(req.params.id, req.user, {
+    notes: req.body?.notes,
+  });
+  return ApiResponse.success(res, result, 'Cash on Delivery payment collected successfully');
+}
+

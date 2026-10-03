@@ -478,6 +478,26 @@ export async function createCustomerOrderNotification(order, eventStatus, custom
       title: `Order Cancelled (#${order.orderNumber})`,
       message: customMessage || 'This order was cancelled.',
     },
+    COD_ORDER_PLACED: {
+      type: 'ORDER_PLACED',
+      title: `Order Placed (#${order.orderNumber})`,
+      message: customMessage || `Your order #${order.orderNumber} was placed with Cash on Delivery.`,
+    },
+    COD_PAYMENT_COLLECTED: {
+      type: 'PAYMENT_CONFIRMED',
+      title: `Payment received (#${order.orderNumber})`,
+      message: customMessage || `Cash payment for order #${order.orderNumber} has been received.`,
+    },
+    ONLINE_PAYMENT_SUCCESS: {
+      type: 'PAYMENT_CONFIRMED',
+      title: `Payment successful (#${order.orderNumber})`,
+      message: customMessage || `Your payment for order #${order.orderNumber} has been confirmed.`,
+    },
+    ONLINE_PAYMENT_FAILED: {
+      type: 'ORDER_CANCELLED',
+      title: `Payment failed (#${order.orderNumber})`,
+      message: customMessage || `Your online payment for order #${order.orderNumber} was not completed.`,
+    },
     PAYMENT_CONFIRMED: {
       type: 'PAYMENT_CONFIRMED',
       title: 'Payment successful',

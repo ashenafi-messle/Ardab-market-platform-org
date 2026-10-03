@@ -115,6 +115,7 @@ enum PaymentStatus {
 
 enum PaymentProvider {
   CHAPA
+  COD
 }
 
 enum PaymentRefundStatus {
@@ -2349,7 +2350,7 @@ model Payment {
   orderId              String
   customerId           String
   provider             PaymentProvider  @default(CHAPA)
-  txRef                String           @unique
+  txRef                String?          @unique
   chapaReference       String?
   amount               Decimal          @db.Decimal(12, 2)
   currency             String           @default("ETB")

@@ -29,6 +29,7 @@ export const orderQuerySchema = z.object({
   deliveryZone: z.string().trim().optional(),
   status: z.enum(['ALL', ...ORDER_STATUS_ENUM]).optional(),
   paymentStatus: z.enum(['ALL', ...PAYMENT_STATUS_ENUM]).optional(),
+  paymentMethod: z.enum(['ALL', 'CASH_ON_DELIVERY', 'ONLINE']).optional(),
   startDate: z.string().trim().optional(),
   endDate: z.string().trim().optional(),
   sortBy: z

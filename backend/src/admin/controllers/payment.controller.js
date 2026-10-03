@@ -4,6 +4,7 @@
 
 import { prisma } from '../../shared/config/database.js';
 import { paymentService } from '../../customer/services/payment.service.js';
+import { collectCodOrderPayment } from '../services/order.service.js';
 import { ApiResponse } from '../../shared/utils/apiResponse.js';
 
 /**
@@ -11,10 +12,12 @@ import { ApiResponse } from '../../shared/utils/apiResponse.js';
  * Paginated and filtered payment listing for administrators.
  */
 export async function listPaymentsHandler(req, res) {
-  const { status, startDate, endDate, search, page, limit } = req.query;
+  const { status, provider, paymentMethod, startDate, endDate, search, page, limit } = req.query;
 
   const result = await paymentService.getAdminPayments({
     status,
+    provider,
+    paymentMethod,
     startDate,
     endDate,
     search,
@@ -22,9 +25,7 @@ export async function listPaymentsHandler(req, res) {
     limit,
   });
 
-  return res.status(200).json(
-    ApiResponse.success(result, 'Payments retrieved successfully.')
-  );
+  return ApiResponse.success(res, result, 'Payments retrieved successfully.');
 }
 
 /**
@@ -72,18 +73,10 @@ export async function getPaymentDetailsHandler(req, res) {
   });
 
   if (!payment) {
-    return res.status(404).json({
-      success: false,
-      error: {
-        code: 'PAYMENT_NOT_FOUND',
-        message: 'Payment not found.',
-      },
-    });
+    return ApiResponse.error(res, 'PAYMENT_NOT_FOUND', 'Payment not found.', 404);
   }
 
-  return res.status(200).json(
-    ApiResponse.success(payment, 'Payment details retrieved.')
-  );
+  return ApiResponse.success(res, payment, 'Payment details retrieved.');
 }
 
 /**
@@ -101,7 +94,26 @@ export async function createRefundHandler(req, res) {
     adminId
   );
 
-  return res.status(200).json(
-    ApiResponse.success(result, 'Payment refund requested successfully.')
-  );
+  return ApiResponse.success(res, result, 'Payment refund requested successfully.');
 }
+
+/**
+ * POST /api/admin/payments/:id/collect-cod
+ * Administrative cash collection by payment ID.
+ */
+export async function collectCodPaymentByIdHandler(req, res) {
+  const { id } = req.params;
+  const { notes } = req.body || {};
+
+  const payment = await prisma.payment.findUnique({
+    where: { id },
+  });
+
+  if (!payment) {
+    return ApiResponse.error(res, 'PAYMENT_NOT_FOUND', 'Payment not found.', 404);
+  }
+
+  const result = await collectCodOrderPayment(payment.orderId, req.admin || req.user, { notes });
+  return ApiResponse.success(res, result, 'Cash on Delivery payment collected successfully.');
+}
+

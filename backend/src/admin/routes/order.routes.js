@@ -15,6 +15,7 @@ import {
   rejectOrderHandler,
   cancelOrderHandler,
   bulkOrderStatusHandler,
+  collectCodPaymentHandler,
 } from '../controllers/order.controller.js';
 import { adminAuthMiddleware } from '../middleware/adminAuth.middleware.js';
 import { requirePermission } from '../middleware/adminPermission.middleware.js';
@@ -158,6 +159,17 @@ router.post(
   requirePermission(ADMIN_PERMISSIONS.ORDERS_CANCEL),
   validate({ body: orderCancelSchema }),
   asyncHandler(cancelOrderHandler)
+);
+
+/**
+ * @route   POST /api/orders/:id/cod-payment/collect
+ * @desc    Collect cash on delivery payment
+ * @access  Super Admin, Operations Manager, Delivery Staff
+ */
+router.post(
+  '/:id/cod-payment/collect',
+  requirePermission(ADMIN_PERMISSIONS.ORDERS_UPDATE_STATUS),
+  asyncHandler(collectCodPaymentHandler)
 );
 
 export default router;

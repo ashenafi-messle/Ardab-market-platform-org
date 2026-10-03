@@ -14,7 +14,7 @@ export default function CheckoutScreen() {
   const { cartItems, cartSubtotal, cartTotal, addresses, placeOrder, removeFromCart, language } = useApp();
 
   const [selectedAddressIndex, setSelectedAddressIndex] = useState(0);
-  const [selectedPayment, setSelectedPayment] = useState<'COD' | 'TELEBIRR' | 'CBE_BIRR' | 'BANK'>('COD');
+  const [selectedPayment, setSelectedPayment] = useState<'CASH_ON_DELIVERY' | 'ONLINE'>('CASH_ON_DELIVERY');
   const [isPlacing, setIsPlacing] = useState(false);
 
   const selectedAddress = addresses[selectedAddressIndex] || addresses[0];
@@ -22,46 +22,27 @@ export default function CheckoutScreen() {
 
   const paymentOptions = [
     {
-      key: 'COD',
-      title: t('checkout.cashOnDelivery'),
-      subtitle: t('checkout.cashOnDeliveryDesc'),
+      key: 'CASH_ON_DELIVERY' as const,
+      title: 'Cash on Delivery',
+      subtitle: 'Pay when your order is delivered.',
+      hint: 'Pay cash to the delivery representative upon arrival.',
       icon: 'cash-outline',
     },
     {
-      key: 'TELEBIRR',
-      title: t('checkout.telebirr'),
-      subtitle: t('checkout.telebirrDesc'),
-      icon: 'phone-portrait-outline',
-    },
-    {
-      key: 'CBE_BIRR',
-      title: t('checkout.cbeBirr'),
-      subtitle: t('checkout.cbeBirrDesc'),
+      key: 'ONLINE' as const,
+      title: 'Online Payment',
+      subtitle: 'Secure online payment through Chapa.',
+      hint: 'Telebirr, CBE Birr, or Bank Card via Chapa checkout.',
       icon: 'card-outline',
-    },
-    {
-      key: 'BANK',
-      title: t('checkout.bankTransfer'),
-      subtitle: t('checkout.bankTransferDesc'),
-      icon: 'business-outline',
     },
   ];
 
   const handlePlaceOrder = async () => {
     setIsPlacing(true);
     const paymentName =
-      paymentOptions.find((p) => p.key === selectedPayment)?.title || 'Cash on Delivery';
+      selectedPayment === 'CASH_ON_DELIVERY' ? 'Cash on Delivery' : 'Online Payment (Chapa)';
 
     try {
-      const backendPaymentMethod =
-        selectedPayment === 'COD'
-          ? 'CASH_ON_DELIVERY'
-          : selectedPayment === 'TELEBIRR'
-          ? 'TELEBIRR'
-          : selectedPayment === 'CBE_BIRR'
-          ? 'CBE_BIRR'
-          : 'BANK_TRANSFER';
-
       // Check if product IDs look like valid UUIDs from database
       const hasValidProductUuids =
         selectedCartItems.length > 0 &&
@@ -81,34 +62,40 @@ export default function CheckoutScreen() {
             neighborhood: selectedAddress.woreda || undefined,
             addressLine: selectedAddress.specificAddress || 'Addis Ababa',
           },
-          paymentMethod: backendPaymentMethod,
+          paymentMethod: selectedPayment,
         };
 
         const liveOrder = await orderService.checkoutOrder(orderPayload);
         selectedCartItems.forEach((item) => removeFromCart(item.product.id));
         setIsPlacing(false);
 
-        if (backendPaymentMethod === 'CASH_ON_DELIVERY') {
+        if (selectedPayment === 'CASH_ON_DELIVERY') {
           router.replace(
-            `/checkout/success?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}` as any
+            `/checkout/success?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}&paymentMethod=CASH_ON_DELIVERY&amount=${cartTotal}` as any
           );
         } else {
           router.replace(
-            `/checkout/payment?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}` as any
+            `/checkout/payment?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}&paymentId=${liveOrder.payment?.paymentId || ''}` as any
           );
         }
         return;
       }
     } catch (err: any) {
-      console.warn('[CheckoutScreen] Live backend checkout fallback to local order:', err.message);
+      console.warn('[CheckoutScreen] Live backend checkout error or offline fallback:', err.message);
     }
 
     setTimeout(() => {
       setIsPlacing(false);
       const newOrder = placeOrder(paymentName, selectedAddress);
-      router.replace(
-        `/checkout/success?orderId=${newOrder.id}&orderNumber=${newOrder.orderNumber}` as any
-      );
+      if (selectedPayment === 'CASH_ON_DELIVERY') {
+        router.replace(
+          `/checkout/success?orderId=${newOrder.id}&orderNumber=${newOrder.orderNumber}&paymentMethod=CASH_ON_DELIVERY&amount=${cartTotal}` as any
+        );
+      } else {
+        router.replace(
+          `/checkout/payment?orderId=${newOrder.id}&orderNumber=${newOrder.orderNumber}` as any
+        );
+      }
     }, 600);
   };
 
@@ -212,6 +199,28 @@ export default function CheckoutScreen() {
               </TouchableOpacity>
             );
           })}
+
+          {/* Dynamic Payment Method Guidance Box */}
+          <View
+            style={[
+              styles.paymentNoticeBox,
+              selectedPayment === 'ONLINE' ? styles.onlineNoticeBox : styles.codNoticeBox,
+            ]}>
+            <Ionicons
+              name={selectedPayment === 'ONLINE' ? 'shield-checkmark' : 'information-circle'}
+              size={18}
+              color={selectedPayment === 'ONLINE' ? Colors.primary : Colors.primaryDark}
+            />
+            <Text
+              style={[
+                styles.paymentNoticeText,
+                selectedPayment === 'ONLINE' ? styles.onlineNoticeText : styles.codNoticeText,
+              ]}>
+              {selectedPayment === 'ONLINE'
+                ? 'Secure payment powered by Chapa. After placing your order, you will be redirected to complete payment with Telebirr, CBE Birr, or Card.'
+                : 'Pay when your order arrives. You will pay the delivery representative directly in cash.'}
+            </Text>
+          </View>
         </View>
 
         {/* 4. Cost Breakdown */}
@@ -236,9 +245,13 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
-        {/* Place Order Action */}
+        {/* Dynamic Place Order / Continue to Payment Action */}
         <AppButton
-          title={`${t('checkout.placeOrder')} • ${formatPrice(cartTotal)}`}
+          title={
+            selectedPayment === 'ONLINE'
+              ? `Continue to Secure Payment • ${formatPrice(cartTotal)}`
+              : `Place Order • ${formatPrice(cartTotal)}`
+          }
           onPress={handlePlaceOrder}
           loading={isPlacing}
           size="lg"
@@ -430,5 +443,33 @@ const styles = StyleSheet.create({
   },
   placeOrderBtn: {
     marginTop: Spacing.sm,
+  },
+  paymentNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    marginTop: Spacing.sm,
+    borderWidth: 1,
+  },
+  codNoticeBox: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+  },
+  onlineNoticeBox: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  paymentNoticeText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    lineHeight: 16,
+  },
+  codNoticeText: {
+    color: Colors.textSecondary,
+  },
+  onlineNoticeText: {
+    color: Colors.primaryDark,
   },
 });

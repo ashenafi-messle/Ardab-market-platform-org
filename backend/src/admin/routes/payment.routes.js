@@ -7,6 +7,7 @@ import {
   listPaymentsHandler,
   getPaymentDetailsHandler,
   createRefundHandler,
+  collectCodPaymentByIdHandler,
 } from '../controllers/payment.controller.js';
 import { adminAuthMiddleware } from '../middleware/adminAuth.middleware.js';
 import { asyncHandler } from '../../shared/utils/asyncHandler.js';
@@ -36,5 +37,12 @@ router.get('/:id', asyncHandler(getPaymentDetailsHandler));
  * @access  Admin (Auth Required)
  */
 router.post('/:id/refund', asyncHandler(createRefundHandler));
+
+/**
+ * @route   POST /api/admin/payments/:id/collect-cod
+ * @desc    Collect cash on delivery payment
+ * @access  Admin (Auth Required)
+ */
+router.post('/:id/collect-cod', asyncHandler(collectCodPaymentByIdHandler));
 
 export default router;

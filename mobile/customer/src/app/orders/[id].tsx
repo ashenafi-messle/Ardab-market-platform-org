@@ -377,6 +377,7 @@ export default function OrderDetailsScreen() {
         </View>
 
         {/* Payment Summary */}
+        {/* Payment Summary */}
         <View style={styles.sectionCard}>
           <View style={styles.cardTitleWithIcon}>
             <Ionicons name="wallet-outline" size={18} color={Colors.primary} />
@@ -385,7 +386,11 @@ export default function OrderDetailsScreen() {
 
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Payment Method</Text>
-            <Text style={styles.infoValue}>{order.paymentMethod || 'Cash on Delivery'}</Text>
+            <Text style={styles.infoValue}>
+              {order.paymentMethod === 'CASH_ON_DELIVERY'
+                ? 'Cash on Delivery'
+                : 'Online Payment (Chapa)'}
+            </Text>
           </View>
 
           <View style={styles.infoRow}>
@@ -393,14 +398,26 @@ export default function OrderDetailsScreen() {
             <View
               style={[
                 styles.payStatusBadge,
-                order.paymentStatus === 'PAID' ? styles.payPaid : styles.payPending,
+                order.paymentStatus === 'PAID'
+                  ? styles.payPaid
+                  : order.paymentMethod === 'CASH_ON_DELIVERY'
+                  ? styles.payCod
+                  : styles.payPending,
               ]}>
               <Text
                 style={[
                   styles.payStatusText,
-                  order.paymentStatus === 'PAID' ? styles.payPaidText : styles.payPendingText,
+                  order.paymentStatus === 'PAID'
+                    ? styles.payPaidText
+                    : order.paymentMethod === 'CASH_ON_DELIVERY'
+                    ? styles.payCodText
+                    : styles.payPendingText,
                 ]}>
-                {order.paymentStatus || 'PENDING'}
+                {order.paymentStatus === 'PAID'
+                  ? 'Paid'
+                  : order.paymentMethod === 'CASH_ON_DELIVERY'
+                  ? 'Pay on delivery'
+                  : 'Pending Payment'}
               </Text>
             </View>
           </View>
@@ -431,7 +448,22 @@ export default function OrderDetailsScreen() {
             <Text style={styles.totalValue}>{formatPrice(total)}</Text>
           </View>
 
-          {order.paymentStatus !== 'PAID' &&
+          {/* Cash on Delivery Guidance Banner */}
+          {order.paymentMethod === 'CASH_ON_DELIVERY' &&
+          order.paymentStatus !== 'PAID' &&
+          order.status !== 'CANCELLED' &&
+          order.status !== 'REJECTED' ? (
+            <View style={styles.codSummaryNoticeBox}>
+              <Ionicons name="cash-outline" size={18} color="#B45309" />
+              <Text style={styles.codSummaryNoticeText}>
+                Cash on Delivery: You will pay {formatPrice(total)} in cash to the delivery representative when your order arrives.
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Online Payment Pay Now button (NEVER shown for COD) */}
+          {order.paymentMethod !== 'CASH_ON_DELIVERY' &&
+          order.paymentStatus !== 'PAID' &&
           order.status !== 'CANCELLED' &&
           order.status !== 'REJECTED' ? (
             <TouchableOpacity
@@ -779,6 +811,32 @@ const styles = StyleSheet.create({
     color: '#B45309',
     fontSize: Typography.fontSize.tiny,
     fontWeight: Typography.fontWeight.bold,
+  },
+  payCod: {
+    backgroundColor: '#FEF3C7',
+  },
+  payCodText: {
+    color: '#B45309',
+    fontSize: Typography.fontSize.tiny,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  codSummaryNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: '#FEF3C7',
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    marginTop: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  codSummaryNoticeText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    color: '#92400E',
+    lineHeight: 18,
+    fontWeight: Typography.fontWeight.medium,
   },
   totalRow: {
     marginTop: Spacing.xs,

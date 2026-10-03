@@ -6,12 +6,11 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 import { generateNextOrderNumber } from './orderCode.service.js';
-import {
-  validateStatusTransition,
-  getStatusTimestampUpdates,
-} from './order.status.service.js';
+import { validateStatusTransition, getStatusTimestampUpdates } from './order.status.service.js';
 import { createNotification } from './notification.service.js';
 import { createCustomerOrderNotification } from '../../customer/services/notification.service.js';
+import { logger } from '../../shared/utils/logger.js';
+import { paymentService } from '../../customer/services/payment.service.js';
 
 const Decimal = Prisma.Decimal;
 
@@ -31,6 +30,7 @@ export async function listOrders(queryOptions = {}) {
     deliveryZone,
     status,
     paymentStatus,
+    paymentMethod,
     startDate,
     endDate,
     sortBy = 'placedAt',
@@ -60,6 +60,11 @@ export async function listOrders(queryOptions = {}) {
   // Payment Status filtering
   if (paymentStatus && paymentStatus !== 'ALL') {
     where.paymentStatus = paymentStatus;
+  }
+
+  // Payment Method filtering
+  if (paymentMethod && paymentMethod !== 'ALL') {
+    where.paymentMethod = paymentMethod;
   }
 
   // Date range filtering
@@ -526,6 +531,10 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
   // 5. Generate human-readable sequential Order Number
   const orderNumber = await generateNextOrderNumber();
 
+  // Normalize paymentMethod (CASH_ON_DELIVERY or ONLINE)
+  const rawMethod = (payload.paymentMethod || 'CASH_ON_DELIVERY').toUpperCase();
+  const paymentMethod = rawMethod === 'ONLINE' ? 'ONLINE' : 'CASH_ON_DELIVERY';
+
   // 6. Execute atomic transaction
   const createdOrder = await prisma.$transaction(async (tx) => {
     const order = await tx.order.create({
@@ -543,7 +552,7 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
         totalAmount: totalAmount,
         totalWeight: orderTotalWeight,
         currency: 'ETB',
-        paymentMethod: payload.paymentMethod || 'CASH_ON_DELIVERY',
+        paymentMethod: paymentMethod,
         paymentStatus: 'PENDING',
         customerNote: payload.customerNote || null,
         idempotencyKey: payload.idempotencyKey || null,
@@ -568,7 +577,7 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
             action: 'Order Placed',
             fromStatus: null,
             toStatus: 'PENDING',
-            description: 'Order placed by customer via mobile application.',
+            description: `Order placed with ${paymentMethod === 'CASH_ON_DELIVERY' ? 'Cash on Delivery' : 'Online Payment'}.`,
             actor: 'Customer',
           },
         },
@@ -592,6 +601,41 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
       },
     });
 
+    // If Cash on Delivery, record Payment entity in PENDING state (NO CHAPA)
+    if (paymentMethod === 'CASH_ON_DELIVERY') {
+      const codPayment = await tx.payment.create({
+        data: {
+          orderId: order.id,
+          customerId: targetCustomerId,
+          provider: 'COD',
+          txRef: null,
+          amount: totalAmount,
+          currency: 'ETB',
+          status: 'PENDING',
+          paymentMethod: 'CASH_ON_DELIVERY',
+          initiatedAt: new Date(),
+        },
+      });
+
+      await tx.paymentAuditLog.create({
+        data: {
+          paymentId: codPayment.id,
+          event: 'COD_PAYMENT_CREATED',
+          previousStatus: null,
+          newStatus: 'PENDING',
+          actorType: 'CUSTOMER',
+          actorId: targetCustomerId,
+          metadata: JSON.stringify({
+            orderId: order.id,
+            orderNumber,
+            amount: totalAmount.toFixed(2),
+            paymentMethod: 'CASH_ON_DELIVERY',
+            provider: 'COD',
+          }),
+        },
+      });
+    }
+
     // Update customer lastActivityAt
     await tx.customer.update({
       where: { id: targetCustomerId },
@@ -603,9 +647,9 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
       data: {
         customerId: targetCustomerId,
         action: 'ORDER_PLACED',
-        description: `Placed order ${orderNumber} for total ${totalAmount.toFixed(2)} ETB`,
+        description: `Placed order ${orderNumber} for total ${totalAmount.toFixed(2)} ETB (${paymentMethod})`,
         actor: 'Customer',
-        metadata: JSON.stringify({ orderId: order.id, orderNumber }),
+        metadata: JSON.stringify({ orderId: order.id, orderNumber, paymentMethod }),
       },
     });
 
@@ -615,10 +659,51 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
     timeout: 20000,
   });
 
-  // Emit Customer Order Placed Notification asynchronously
+  // COD ORDER FLOW
+  if (paymentMethod === 'CASH_ON_DELIVERY') {
+    createCustomerOrderNotification(createdOrder, 'COD_ORDER_PLACED').catch(() => {});
+
+    return {
+      ...formatOrderResponse(createdOrder),
+      orderId: createdOrder.id,
+      paymentMethod: 'CASH_ON_DELIVERY',
+      paymentStatus: 'PENDING',
+      paymentRequired: false,
+      orderStatus: createdOrder.status,
+    };
+  }
+
+  // ONLINE ORDER FLOW (CHAPA)
   createCustomerOrderNotification(createdOrder, 'ORDER_PLACED').catch(() => {});
 
-  return formatOrderResponse(createdOrder);
+  let onlinePaymentData = null;
+  try {
+    const initResult = await paymentService.initializePayment({
+      customerId: targetCustomerId,
+      orderId: createdOrder.id,
+      returnUrl: payload.returnUrl,
+    });
+    onlinePaymentData = {
+      paymentId: initResult.paymentId,
+      txRef: initResult.txRef,
+      checkoutUrl: initResult.checkoutUrl,
+      status: initResult.status,
+    };
+  } catch (err) {
+    logger.warn('[OrderService] Immediate Chapa initialization deferred during checkout:', {
+      orderId: createdOrder.id,
+      error: err.message,
+    });
+  }
+
+  return {
+    ...formatOrderResponse(createdOrder),
+    orderId: createdOrder.id,
+    paymentMethod: 'ONLINE',
+    paymentStatus: 'PENDING',
+    paymentRequired: true,
+    payment: onlinePaymentData,
+  };
 }
 
 /**
@@ -706,5 +791,149 @@ function formatOrderResponse(o) {
       description: a.description,
       actor: a.actor,
     })),
+  };
+}
+
+/**
+ * Authorized admin or delivery representative collects cash on delivery.
+ *
+ * @param {string} orderId - Order UUID
+ * @param {object} adminUser - Authenticated admin/driver user object
+ * @param {object} options - { notes }
+ * @returns {Promise<object>}
+ */
+export async function collectCodOrderPayment(orderId, adminUser, { notes = null } = {}) {
+  if (!orderId) {
+    throw ApiError.badRequest('Order ID is required.');
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+  });
+
+  if (!order) {
+    throw ApiError.notFound('Order not found.', 'ORDER_NOT_FOUND');
+  }
+
+  if (order.paymentMethod !== 'CASH_ON_DELIVERY') {
+    throw ApiError.badRequest(
+      `Order uses ${order.paymentMethod || 'non-COD'} payment method. Only Cash on Delivery orders can be collected.`,
+      'ORDER_NOT_COD'
+    );
+  }
+
+  if (order.paymentStatus === 'PAID') {
+    throw ApiError.badRequest(
+      'Cash on Delivery payment has already been collected for this order.',
+      'COD_PAYMENT_ALREADY_COLLECTED'
+    );
+  }
+
+  if (['CANCELLED', 'REJECTED'].includes(order.status)) {
+    throw ApiError.badRequest(
+      `Cannot collect COD payment for an order with status "${order.status}".`,
+      'ORDER_NOT_PAYABLE'
+    );
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    // Locate or create the COD payment record
+    let payment = await tx.payment.findFirst({
+      where: { orderId: order.id, provider: 'COD' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!payment) {
+      payment = await tx.payment.create({
+        data: {
+          orderId: order.id,
+          customerId: order.customerId,
+          provider: 'COD',
+          txRef: null,
+          amount: order.totalAmount,
+          currency: 'ETB',
+          status: 'PENDING',
+          paymentMethod: 'CASH_ON_DELIVERY',
+          initiatedAt: new Date(),
+        },
+      });
+    }
+
+    if (payment.status === 'SUCCESS') {
+      throw ApiError.badRequest(
+        'Cash on Delivery payment has already been collected.',
+        'COD_PAYMENT_ALREADY_COLLECTED'
+      );
+    }
+
+    const updatedPayment = await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'SUCCESS',
+        paidAt: new Date(),
+        providerStatus: 'CASH_COLLECTED',
+      },
+    });
+
+    const updatedOrder = await tx.order.update({
+      where: { id: order.id },
+      data: {
+        paymentStatus: 'PAID',
+      },
+    });
+
+    await tx.paymentAuditLog.create({
+      data: {
+        paymentId: payment.id,
+        event: 'COD_PAYMENT_COLLECTED',
+        previousStatus: payment.status,
+        newStatus: 'SUCCESS',
+        actorType: 'ADMIN',
+        actorId: adminUser?.id || 'Admin',
+        metadata: JSON.stringify({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          amount: order.totalAmount.toFixed(2),
+          collector: adminUser?.fullName || adminUser?.username || 'Staff',
+          notes: notes || 'Cash on Delivery payment collected by representative.',
+        }),
+      },
+    });
+
+    await tx.orderActivity.create({
+      data: {
+        orderId: order.id,
+        action: 'COD Payment Collected',
+        fromStatus: order.status,
+        toStatus: order.status,
+        description: `Cash on Delivery payment of ${order.totalAmount.toFixed(2)} ETB collected by ${adminUser?.fullName || 'representative'}.`,
+        actor: adminUser?.fullName || 'Staff',
+      },
+    });
+
+    return { payment: updatedPayment, order: updatedOrder };
+  });
+
+  // Notify customer asynchronously
+  createCustomerOrderNotification(
+    order,
+    'COD_PAYMENT_COLLECTED',
+    `Cash payment for order #${order.orderNumber} has been received.`
+  ).catch(() => {});
+
+  return {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    paymentId: result.payment.id,
+    paymentMethod: 'CASH_ON_DELIVERY',
+    paymentStatus: 'PAID',
+    payment: {
+      id: result.payment.id,
+      provider: 'COD',
+      status: 'SUCCESS',
+      amount: result.payment.amount.toFixed(2),
+      currency: result.payment.currency,
+      paidAt: result.payment.paidAt,
+    },
   };
 }

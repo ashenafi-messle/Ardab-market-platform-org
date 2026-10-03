@@ -349,13 +349,30 @@ export const orderService = {
       neighborhood?: string;
       addressLine: string;
     };
-    paymentMethod?: string;
+    paymentMethod?: 'CASH_ON_DELIVERY' | 'ONLINE' | string;
     customerNote?: string;
     idempotencyKey?: string;
-  }): Promise<CustomerOrder> {
+    returnUrl?: string;
+  }): Promise<CustomerOrder & {
+    paymentRequired?: boolean;
+    payment?: {
+      paymentId: string;
+      txRef?: string;
+      checkoutUrl?: string;
+      status: string;
+    } | null;
+  }> {
     const res = await apiFetch<{
       success: boolean;
-      data: CustomerOrder;
+      data: CustomerOrder & {
+        paymentRequired?: boolean;
+        payment?: {
+          paymentId: string;
+          txRef?: string;
+          checkoutUrl?: string;
+          status: string;
+        } | null;
+      };
       message?: string;
     }>('/customer/orders/checkout', {
       method: 'POST',
