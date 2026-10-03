@@ -21,6 +21,10 @@ export interface PaymentStatusResponse {
   paymentId: string;
   orderId: string;
   orderNumber: string;
+  provider?: string;
+  paymentMethod?: string;
+  txRef?: string;
+  reference?: string | null;
   status: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'EXPIRED' | 'REFUNDED';
   amount: string;
   currency: string;

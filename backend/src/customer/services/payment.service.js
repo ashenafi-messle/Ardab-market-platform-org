@@ -201,7 +201,7 @@ export class PaymentService {
           amount: authoritativeAmount,
           currency: 'ETB',
           status: 'PENDING',
-          paymentMethod: 'UNKNOWN',
+          paymentMethod: 'ONLINE',
           initiatedAt: new Date(),
         },
       });
@@ -236,6 +236,17 @@ export class PaymentService {
     });
 
     // 6. External Call to Chapa Hosted Checkout (OUTSIDE DB TRANSACTION)
+    // Safe structured logging immediately before calling POST https://api.chapa.co/v1/transaction/initialize
+    logger.info('[PaymentService] Chapa initialization request', {
+      orderId: order.id,
+      paymentId: payment.id,
+      txRef,
+      amount: authoritativeAmount.toFixed(2),
+      currency: 'ETB',
+      paymentMethod: 'ONLINE',
+      customerId: order.customerId,
+    });
+
     let chapaResponse;
     try {
       chapaResponse = await chapaService.initializeTransaction({
@@ -251,6 +262,13 @@ export class PaymentService {
           title: `Ardab Market (#${order.orderNumber})`,
           description: `Payment for Order #${order.orderNumber}`,
         },
+      });
+
+      logger.info('[PaymentService] Chapa initialization response', {
+        status: chapaResponse?.raw?.status || 'success',
+        checkoutUrlExists: Boolean(chapaResponse?.checkoutUrl),
+        txRef,
+        reference: chapaResponse?.raw?.data?.reference || null,
       });
     } catch (err) {
       logger.error('[PaymentService] Chapa initialization failed', {
@@ -280,9 +298,9 @@ export class PaymentService {
         },
       }).catch(() => {});
 
-      const publicError = new Error('Failed to initiate Chapa payment gateway. Please try again.');
-      publicError.statusCode = 502;
-      publicError.code = 'PAYMENT_INITIALIZATION_FAILED';
+      const publicError = new Error(err.message || 'Failed to initiate Chapa payment gateway. Please try again.');
+      publicError.statusCode = err.status || 502;
+      publicError.code = err.code || 'PAYMENT_INITIALIZATION_FAILED';
       throw publicError;
     }
 
@@ -379,6 +397,10 @@ export class PaymentService {
         paymentId: payment.id,
         orderId: payment.orderId,
         orderNumber: payment.order?.orderNumber,
+        provider: payment.provider || 'CHAPA',
+        paymentMethod: payment.paymentMethod || 'ONLINE',
+        txRef: payment.txRef,
+        reference: payment.chapaReference || null,
         status: 'SUCCESS',
         amount: payment.amount.toFixed(2),
         currency: payment.currency,
@@ -407,42 +429,78 @@ export class PaymentService {
     const expectedAmount = new Decimal(payment.amount);
     const verifiedAmount = new Decimal(verifyResult.amount || 0);
 
-    if (verifyResult.isSuccess && !expectedAmount.equals(verifiedAmount)) {
-      logger.error('[PaymentService] CRITICAL: Amount mismatch during verification', {
-        txRef,
-        expected: expectedAmount.toFixed(2),
-        verified: verifiedAmount.toFixed(2),
-      });
+    if (verifyResult.isSuccess) {
+      if (!expectedAmount.equals(verifiedAmount)) {
+        logger.error('[PaymentService] CRITICAL: Amount mismatch during verification', {
+          txRef,
+          expected: expectedAmount.toFixed(2),
+          verified: verifiedAmount.toFixed(2),
+        });
 
-      await prisma.paymentAuditLog.create({
-        data: {
-          paymentId: payment.id,
-          event: 'PAYMENT_AMOUNT_MISMATCH',
-          previousStatus: payment.status,
-          newStatus: 'FAILED',
-          actorType: 'SECURITY',
-          metadata: JSON.stringify({
-            expected: expectedAmount.toFixed(2),
-            received: verifiedAmount.toFixed(2),
-          }),
-        },
-      });
+        await prisma.paymentAuditLog.create({
+          data: {
+            paymentId: payment.id,
+            event: 'PAYMENT_AMOUNT_MISMATCH',
+            previousStatus: payment.status,
+            newStatus: 'FAILED',
+            actorType: 'SECURITY',
+            metadata: JSON.stringify({
+              expected: expectedAmount.toFixed(2),
+              received: verifiedAmount.toFixed(2),
+            }),
+          },
+        });
 
-      const mismatchError = new Error('Security Error: Payment amount mismatch.');
-      mismatchError.statusCode = 400;
-      mismatchError.code = 'PAYMENT_AMOUNT_MISMATCH';
-      throw mismatchError;
-    }
+        const mismatchError = new Error('Security Error: Payment amount mismatch.');
+        mismatchError.statusCode = 400;
+        mismatchError.code = 'PAYMENT_AMOUNT_MISMATCH';
+        throw mismatchError;
+      }
 
-    if (verifyResult.isSuccess && verifyResult.currency !== 'ETB') {
-      logger.error('[PaymentService] CRITICAL: Currency mismatch during verification', {
-        txRef,
-        currency: verifyResult.currency,
-      });
-      const currencyError = new Error('Security Error: Invalid payment currency.');
-      currencyError.statusCode = 400;
-      currencyError.code = 'PAYMENT_CURRENCY_MISMATCH';
-      throw currencyError;
+      if (verifyResult.currency !== 'ETB') {
+        logger.error('[PaymentService] CRITICAL: Currency mismatch during verification', {
+          txRef,
+          currency: verifyResult.currency,
+        });
+        const currencyError = new Error('Security Error: Invalid payment currency.');
+        currencyError.statusCode = 400;
+        currencyError.code = 'PAYMENT_CURRENCY_MISMATCH';
+        throw currencyError;
+      }
+
+      if (verifyResult.txRef && verifyResult.txRef !== payment.txRef) {
+        logger.error('[PaymentService] CRITICAL: txRef mismatch during verification', {
+          expected: payment.txRef,
+          verified: verifyResult.txRef,
+        });
+        const txRefError = new Error('Security Error: Payment reference mismatch.');
+        txRefError.statusCode = 400;
+        txRefError.code = 'PAYMENT_TXREF_MISMATCH';
+        throw txRefError;
+      }
+
+      if (!verifyResult.reference) {
+        logger.error('[PaymentService] CRITICAL: Missing transaction reference from Chapa', {
+          txRef,
+        });
+        const refError = new Error('Provider transaction reference missing.');
+        refError.statusCode = 400;
+        refError.code = 'PROVIDER_REFERENCE_MISSING';
+        throw refError;
+      }
+
+      if (verifyResult.raw?.mode && env.CHAPA_MODE) {
+        if (verifyResult.raw.mode.toLowerCase() !== env.CHAPA_MODE.toLowerCase()) {
+          logger.error('[PaymentService] CRITICAL: Chapa mode mismatch', {
+            expected: env.CHAPA_MODE,
+            received: verifyResult.raw.mode,
+          });
+          const modeError = new Error('Security Error: Payment environment mode mismatch.');
+          modeError.statusCode = 400;
+          modeError.code = 'PAYMENT_MODE_MISMATCH';
+          throw modeError;
+        }
+      }
     }
 
     // 5. Short Atomic Database Transaction around local state changes
@@ -588,6 +646,10 @@ export class PaymentService {
       paymentId: finalized.id,
       orderId: payment.orderId,
       orderNumber: payment.order?.orderNumber,
+      provider: finalized.provider || 'CHAPA',
+      paymentMethod: finalized.paymentMethod || 'ONLINE',
+      txRef: finalized.txRef,
+      reference: finalized.chapaReference || null,
       status: finalized.status,
       amount: finalized.amount.toFixed(2),
       currency: finalized.currency,
@@ -640,12 +702,14 @@ export class PaymentService {
         paymentId: payment.id,
         orderId: payment.orderId,
         orderNumber: payment.order?.orderNumber,
+        provider: 'COD',
+        paymentMethod: 'CASH_ON_DELIVERY',
+        txRef: payment.txRef,
+        reference: null,
         status: payment.status,
         amount: payment.amount.toFixed(2),
         currency: payment.currency,
         paidAt: payment.paidAt,
-        paymentMethod: 'CASH_ON_DELIVERY',
-        provider: 'COD',
         isSuccess: payment.status === 'SUCCESS',
         failureReason: payment.failureReason,
       };
@@ -665,6 +729,10 @@ export class PaymentService {
             paymentId: verified.paymentId,
             orderId: verified.orderId,
             orderNumber: verified.orderNumber,
+            provider: verified.provider || payment.provider || 'CHAPA',
+            paymentMethod: verified.paymentMethod || payment.paymentMethod || 'ONLINE',
+            txRef: verified.txRef || payment.txRef,
+            reference: verified.reference || payment.chapaReference || null,
             status: verified.status,
             amount: verified.amount,
             currency: verified.currency,
@@ -686,6 +754,10 @@ export class PaymentService {
       paymentId: payment.id,
       orderId: payment.orderId,
       orderNumber: payment.order?.orderNumber,
+      provider: payment.provider || 'CHAPA',
+      paymentMethod: payment.paymentMethod || 'ONLINE',
+      txRef: payment.txRef,
+      reference: payment.chapaReference || null,
       status: payment.status,
       amount: payment.amount.toFixed(2),
       currency: payment.currency,

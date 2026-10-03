@@ -347,7 +347,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `ord-${Date.now()}`,
       orderNumber: `ARD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
       createdAt: new Date().toISOString(),
-      status: 'CONFIRMED',
+      status: 'PENDING',
       items: selectedCartItems.map((item) => ({
         product: item.product,
         quantity: item.quantity,
@@ -358,9 +358,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deliveryFee: cartDelivery,
       discount: 0,
       total: cartTotal,
+      totalAmount: cartTotal,
+      totalEtb: cartTotal,
       shippingAddress: address,
       paymentMethod,
-      paymentStatus: paymentMethod === 'Cash on Delivery' ? 'PENDING' : 'PAID',
+      paymentStatus: 'PENDING',
       estimatedDelivery: 'Estimated tomorrow by 5:00 PM',
       trackingSteps: [
         {

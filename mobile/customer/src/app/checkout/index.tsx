@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,65 +38,69 @@ export default function CheckoutScreen() {
   ];
 
   const handlePlaceOrder = async () => {
-    setIsPlacing(true);
-    const paymentName =
-      selectedPayment === 'CASH_ON_DELIVERY' ? 'Cash on Delivery' : 'Online Payment (Chapa)';
-
-    try {
-      // Check if product IDs look like valid UUIDs from database
-      const hasValidProductUuids =
-        selectedCartItems.length > 0 &&
-        selectedCartItems.every((i) => i.product.id && i.product.id.length > 20);
-
-      if (hasValidProductUuids && selectedAddress) {
-        const orderPayload = {
-          items: selectedCartItems.map((item) => ({
-            productId: item.product.id,
-            quantity: item.quantity,
-          })),
-          deliveryAddress: {
-            recipientName: selectedAddress.fullName,
-            phone: selectedAddress.phone,
-            city: selectedAddress.city,
-            deliveryZone: selectedAddress.subcity || undefined,
-            neighborhood: selectedAddress.woreda || undefined,
-            addressLine: selectedAddress.specificAddress || 'Addis Ababa',
-          },
-          paymentMethod: selectedPayment,
-        };
-
-        const liveOrder = await orderService.checkoutOrder(orderPayload);
-        selectedCartItems.forEach((item) => removeFromCart(item.product.id));
-        setIsPlacing(false);
-
-        if (selectedPayment === 'CASH_ON_DELIVERY') {
-          router.replace(
-            `/checkout/success?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}&paymentMethod=CASH_ON_DELIVERY&amount=${cartTotal}` as any
-          );
-        } else {
-          router.replace(
-            `/checkout/payment?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}&paymentId=${liveOrder.payment?.paymentId || ''}` as any
-          );
-        }
-        return;
-      }
-    } catch (err: any) {
-      console.warn('[CheckoutScreen] Live backend checkout error or offline fallback:', err.message);
+    if (!selectedAddress) {
+      Alert.alert('Delivery Address Required', 'Please select or add a delivery address before placing your order.');
+      return;
     }
 
-    setTimeout(() => {
+    if (selectedCartItems.length === 0) {
+      Alert.alert('Empty Cart', 'Please select items in your cart before proceeding to checkout.');
+      return;
+    }
+
+    const hasValidProductUuids = selectedCartItems.every(
+      (i) => i.product.id && i.product.id.length > 20
+    );
+
+    if (!hasValidProductUuids) {
+      Alert.alert(
+        'Catalog Update Required',
+        'One or more items in your cart need to be refreshed from the active catalog. Please re-add them from the shop.'
+      );
+      return;
+    }
+
+    setIsPlacing(true);
+
+    try {
+      const orderPayload = {
+        items: selectedCartItems.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+        })),
+        deliveryAddress: {
+          recipientName: selectedAddress.fullName,
+          phone: selectedAddress.phone,
+          city: selectedAddress.city,
+          deliveryZone: selectedAddress.subcity || undefined,
+          neighborhood: selectedAddress.woreda || undefined,
+          addressLine: selectedAddress.specificAddress || 'Addis Ababa',
+        },
+        paymentMethod: selectedPayment,
+      };
+
+      const liveOrder = await orderService.checkoutOrder(orderPayload);
+      selectedCartItems.forEach((item) => removeFromCart(item.product.id));
       setIsPlacing(false);
-      const newOrder = placeOrder(paymentName, selectedAddress);
+
       if (selectedPayment === 'CASH_ON_DELIVERY') {
+        const orderAmount = liveOrder.totalEtb || (liveOrder.totalAmount ? parseFloat(String(liveOrder.totalAmount)) : cartTotal);
         router.replace(
-          `/checkout/success?orderId=${newOrder.id}&orderNumber=${newOrder.orderNumber}&paymentMethod=CASH_ON_DELIVERY&amount=${cartTotal}` as any
+          `/checkout/success?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}&paymentMethod=CASH_ON_DELIVERY&amount=${orderAmount}` as any
         );
       } else {
         router.replace(
-          `/checkout/payment?orderId=${newOrder.id}&orderNumber=${newOrder.orderNumber}` as any
+          `/checkout/payment?orderId=${liveOrder.id}&orderNumber=${liveOrder.orderNumber}&paymentId=${liveOrder.payment?.paymentId || ''}` as any
         );
       }
-    }, 600);
+    } catch (err: any) {
+      setIsPlacing(false);
+      console.error('[CheckoutScreen] Checkout error:', err.message);
+      Alert.alert(
+        'Order Placement Error',
+        err.message || 'Unable to place order with backend. Please check your network and try again.'
+      );
+    }
   };
 
   return (

@@ -29,9 +29,7 @@ export async function initializePaymentHandler(req, res) {
     returnUrl,
   });
 
-  return res.status(200).json(
-    ApiResponse.success(result, 'Payment session initialized successfully.')
-  );
+  return ApiResponse.success(res, result, 'Payment session initialized successfully.');
 }
 
 /**
@@ -43,20 +41,12 @@ export async function getPaymentStatusHandler(req, res) {
   const { paymentId } = req.params;
 
   if (!paymentId) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'PAYMENT_ID_REQUIRED',
-        message: 'Payment ID is required.',
-      },
-    });
+    return ApiResponse.error(res, 'PAYMENT_ID_REQUIRED', 'Payment ID is required.', 400);
   }
 
   const result = await paymentService.getPaymentStatus(customerId, paymentId);
 
-  return res.status(200).json(
-    ApiResponse.success(result, 'Payment status retrieved.')
-  );
+  return ApiResponse.success(res, result, 'Payment status retrieved.');
 }
 
 /**
@@ -72,7 +62,5 @@ export async function getCustomerPaymentHistoryHandler(req, res) {
     limit,
   });
 
-  return res.status(200).json(
-    ApiResponse.success(result, 'Payment history retrieved.')
-  );
+  return ApiResponse.success(res, result, 'Payment history retrieved.');
 }

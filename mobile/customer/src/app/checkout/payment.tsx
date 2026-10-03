@@ -53,6 +53,7 @@ export default function PaymentScreen() {
   const [isInitializing, setIsInitializing] = useState<boolean>(false);
   const [isPollingStatus, setIsPollingStatus] = useState<boolean>(false);
   const [activePaymentId, setActivePaymentId] = useState<string | null>(params.paymentId || null);
+  const [confirmedPayment, setConfirmedPayment] = useState<PaymentStatusResponse | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<
     'IDLE' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'
   >('IDLE');
@@ -76,8 +77,8 @@ export default function PaymentScreen() {
       const loadedOrder = res.order;
       setOrder(loadedOrder);
 
-      // If already paid in database, update screen immediately
-      if (loadedOrder.paymentStatus === 'PAID') {
+      // Only mark SUCCESS if confirmed by backend database and NOT a local mock order
+      if (loadedOrder.paymentStatus === 'PAID' && !idToLoad.startsWith('ord-')) {
         setPaymentStatus('SUCCESS');
       }
     } catch (err: any) {
@@ -110,7 +111,7 @@ export default function PaymentScreen() {
     }
   }, [orderId, fetchOrder]);
 
-  // 2. Poll payment status from backend with controlled retry limits
+  // 2. Poll payment status from backend with controlled retry limits and backoff (2s, 4s, 6s, 8s, 10s)
   const startStatusPolling = useCallback(
     (paymentIdToPoll: string) => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
@@ -119,6 +120,8 @@ export default function PaymentScreen() {
       setPaymentStatus('PROCESSING');
       setStatusMessage('Confirming your payment with Chapa...');
 
+      const backoffDelays = [2000, 4000, 6000, 8000, 10000];
+
       const poll = async () => {
         try {
           const statusRes: PaymentStatusResponse = await paymentService.getPaymentStatus(
@@ -126,6 +129,7 @@ export default function PaymentScreen() {
           );
 
           if (statusRes.status === 'SUCCESS' || statusRes.isSuccess) {
+            setConfirmedPayment(statusRes);
             setPaymentStatus('SUCCESS');
             setIsPollingStatus(false);
             setStatusMessage('Payment verified successfully!');
@@ -149,15 +153,23 @@ export default function PaymentScreen() {
             return;
           }
 
-          // Continue polling if still PROCESSING and within 5 attempts (10 seconds)
-          pollAttemptsRef.current += 1;
-          if (pollAttemptsRef.current < 5) {
-            pollTimerRef.current = setTimeout(poll, 2000);
+          if (statusRes.status === 'EXPIRED') {
+            setPaymentStatus('FAILED');
+            setIsPollingStatus(false);
+            setStatusMessage('Payment session expired. Please try again.');
+            await AsyncStorage.removeItem(RECOVERY_STORAGE_KEY);
+            return;
+          }
+
+          // Controlled backoff: 2s, 4s, 6s, 8s, 10s
+          if (pollAttemptsRef.current < backoffDelays.length) {
+            const nextDelay = backoffDelays[pollAttemptsRef.current];
+            pollAttemptsRef.current += 1;
+            pollTimerRef.current = setTimeout(poll, nextDelay);
           } else {
-            // Stop polling after 5 attempts, advise customer
             setIsPollingStatus(false);
             setStatusMessage(
-              'Your payment is still being processed by the bank. We will notify you once confirmed.'
+              'Payment is being confirmed. Please don\'t make another payment.'
             );
           }
         } catch (err: any) {
@@ -240,8 +252,16 @@ export default function PaymentScreen() {
     );
   }
 
-  const orderNum = order?.orderNumber || params.orderNumber || 'Pending';
-  const totalAmount = order?.totalAmount ?? order?.totalEtb ?? 0;
+  const orderNum = confirmedPayment?.orderNumber || order?.orderNumber || params.orderNumber || 'Pending';
+  const totalAmount = order?.totalAmount != null
+    ? (typeof order.totalAmount === 'number' ? order.totalAmount : parseFloat(order.totalAmount))
+    : (order?.totalEtb ?? (order?.total != null ? (typeof order.total === 'number' ? order.total : parseFloat(order.total)) : 0));
+  const confirmedAmount = confirmedPayment?.amount != null
+    ? parseFloat(confirmedPayment.amount)
+    : (totalAmount > 0 ? totalAmount : null);
+  const currency = confirmedPayment?.currency || order?.currency || 'ETB';
+  const provider = confirmedPayment?.provider || 'CHAPA';
+
   const subtotal = order?.subtotal ?? order?.subtotalEtb ?? 0;
   const deliveryFee = order?.deliveryFee ?? order?.deliveryFeeEtb ?? 0;
   const discount = order?.discountAmount ?? order?.discountEtb ?? 0;
@@ -269,16 +289,18 @@ export default function PaymentScreen() {
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Amount Paid</Text>
               <Text style={[styles.rowValueBold, { color: Colors.primary }]}>
-                {formatPrice(totalAmount)}
+                {confirmedAmount != null && confirmedAmount > 0
+                  ? formatPrice(confirmedAmount)
+                  : 'Verifying amount...'}
               </Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Currency</Text>
-              <Text style={styles.rowValue}>ETB (Ethiopian Birr)</Text>
+              <Text style={styles.rowValue}>{currency} (Ethiopian Birr)</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Payment Provider</Text>
-              <Text style={styles.rowValue}>Chapa Escrow</Text>
+              <Text style={styles.rowValue}>{provider}</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Status</Text>
