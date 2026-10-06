@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ScrollView,
   RefreshControl,
@@ -6,15 +6,14 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, Typography, Radius } from '@/theme';
+import { Colors, Spacing, Typography, Radius, Shadows } from '@/theme';
 import { Product, Category } from '@/types';
-import { productService } from '@/services/productService';
-import { categoryService } from '@/services/categoryService';
-import { fetchUnreadCount } from '@/services/notificationService';
+import { homeService, HomeLatestOrder } from '@/services/homeService';
 import { useApp } from '@/store';
 import { t } from '@/localization';
 import {
@@ -30,106 +29,211 @@ import {
 } from '@/components/home';
 import { CategoryDrawer } from '@/components/categories';
 
+const ACTIVE_ORDER_STATUSES = [
+  'PENDING',
+  'CONFIRMED',
+  'PROCESSING',
+  'READY_FOR_DELIVERY',
+  'ASSIGNED_TO_TRIP',
+  'PICKED_UP',
+  'IN_TRANSIT',
+];
+
 export default function HomeScreen() {
   const router = useRouter();
-  const { language } = useApp();
+  const {
+    language,
+    currentCity,
+    cartItems,
+    syncCartWithValidatedProducts,
+    syncWishlistIdsFromHome,
+  } = useApp();
 
   // Sidebar drawer state
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
 
-  // State management for independent section loading & resilience
-  const [loadingCategories, setLoadingCategories] = useState<boolean>(() => !categoryService.hasCachedTree());
-  const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState(false);
+  // Initial cached state check to avoid initial flashing
+  const initialCache = homeService.getMemoryCachedHome();
+
+  // Loading states
+  const [loadingInitial, setLoadingInitial] = useState<boolean>(!initialCache);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [errorState, setErrorState] = useState<string | null>(null);
+  const [cartNotice, setCartNotice] = useState<string | null>(null);
 
-  const mapNodeToCategory = (node: any): Category => {
-    const imgUrl = (node.latestProductImage || node.imageUrl || node.image || '').trim();
-    return {
-      id: node.id,
-      name: node.name,
-      nameAmharic: node.nameAmharic,
-      slug: node.slug || node.id,
-      icon: node.icon || 'grid-outline',
-      image: imgUrl,
-      imageUrl: imgUrl || undefined,
-      productCount: node.productCount || 0,
-      subcategories: (node.children || []).map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        nameAmharic: c.nameAmharic,
-        image: (c.latestProductImage || c.imageUrl || c.image || '').trim(),
-        productCount: c.productCount || 0,
-      })),
+  // Guard against concurrent refresh operations (double pull / rapid gestures)
+  const isRefreshingRef = useRef<boolean>(false);
+
+  // Marketplace section states
+  const [categories, setCategories] = useState<Category[]>(initialCache?.categories || []);
+  const [specialOffers, setSpecialOffers] = useState<Product[]>(initialCache?.specialOffers || []);
+  const [trendingProducts, setTrendingProducts] = useState<Product[]>(initialCache?.trendingProducts || []);
+  const [recommendedProducts, setRecommendedProducts] = useState<Product[]>(initialCache?.recommendedProducts || []);
+  const [heroProducts, setHeroProducts] = useState<Product[]>(initialCache?.heroProducts || []);
+  const [unreadCount, setUnreadCount] = useState<number>(initialCache?.unreadNotificationCount || 0);
+  const [latestOrder, setLatestOrder] = useState<HomeLatestOrder | null>(initialCache?.latestOrder || null);
+
+  /**
+   * Applies freshly fetched Home data to all dependent UI sections atomically
+   */
+  const applyHomeData = useCallback(
+    (data: any) => {
+      if (!data) return;
+
+      if (Array.isArray(data.categories)) {
+        setCategories(data.categories);
+      }
+      if (Array.isArray(data.specialOffers)) {
+        setSpecialOffers(data.specialOffers);
+      }
+      if (Array.isArray(data.trendingProducts)) {
+        setTrendingProducts(data.trendingProducts);
+      }
+      if (Array.isArray(data.recommendedProducts)) {
+        setRecommendedProducts(data.recommendedProducts);
+      }
+      if (Array.isArray(data.heroProducts) && data.heroProducts.length > 0) {
+        setHeroProducts(data.heroProducts);
+      } else if (Array.isArray(data.trendingProducts)) {
+        setHeroProducts(data.trendingProducts.slice(0, 2));
+      }
+
+      setUnreadCount(Number(data.unreadNotificationCount || 0));
+      setLatestOrder(data.latestOrder || null);
+
+      // Sync customer wishlist IDs if provided
+      if (Array.isArray(data.wishlistProductIds)) {
+        syncWishlistIdsFromHome(data.wishlistProductIds);
+      }
+
+      // Sync and validate prices for items currently in customer's cart
+      if (Array.isArray(data.cartValidation) && data.cartValidation.length > 0) {
+        const { priceChanged, outOfStockChanged } = syncCartWithValidatedProducts(data.cartValidation);
+        if (priceChanged) {
+          setCartNotice(
+            language === 'am'
+              ? 'በጋሪዎ ውስጥ ያሉ አንዳንድ ዕቃዎች ወቅታዊ ዋጋ ተዘምኗል'
+              : 'Some items in your cart had price updates.'
+          );
+        } else if (outOfStockChanged) {
+          setCartNotice(
+            language === 'am'
+              ? 'በጋሪዎ ውስጥ ያሉ አንዳንድ ዕቃዎች በአሁኑ ወቅት አልቀዋል'
+              : 'Some items in your cart are currently out of stock.'
+          );
+        }
+      }
+    },
+    [language, syncCartWithValidatedProducts, syncWishlistIdsFromHome]
+  );
+
+  /**
+   * Main data loader for initial load and background focus updates
+   */
+  const loadData = useCallback(
+    async (force = false) => {
+      // Deduplicate: if an explicit refresh is currently in progress, skip
+      if (isRefreshingRef.current && !force) return;
+
+      try {
+        setErrorState(null);
+
+        const cartProductIds = (cartItems || []).map((item) => item.product.id).filter(Boolean);
+
+        const data = await homeService.fetchHomeData({
+          city: currentCity,
+          cartProductIds,
+          forceRefresh: force,
+        });
+
+        applyHomeData(data);
+      } catch (err: any) {
+        // Keep existing UI intact, only show lightweight error if we have no data at all
+        if (categories.length === 0 && trendingProducts.length === 0) {
+          setErrorState(
+            err?.message || (language === 'am' ? 'ማደስ አልተቻለም። እባክዎ እንደገና ይሞክሩ።' : "Couldn't refresh. Please try again.")
+          );
+        }
+      } finally {
+        setLoadingInitial(false);
+      }
+    },
+    [applyHomeData, cartItems, categories.length, currentCity, language, trendingProducts.length]
+  );
+
+  // Restore persisted offline cache on cold start for instantaneous rendering
+  useEffect(() => {
+    let isMounted = true;
+
+    homeService.getPersistedHomeData().then((persisted) => {
+      if (isMounted && persisted && categories.length === 0) {
+        applyHomeData(persisted);
+        setLoadingInitial(false);
+      }
+    });
+
+    // Background fetch latest server data
+    loadData(false);
+
+    return () => {
+      isMounted = false;
     };
-  };
-
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const cached = categoryService.getCachedTree();
-    if (cached && cached.length > 0) {
-      return cached.map(mapNodeToCategory);
-    }
-    return [];
-  });
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-
-  // Trending & Recommended subsets
-  const trendingProducts = allProducts.filter((p) => p.isPopular || p.isFlashDeal || (p.rating && p.rating >= 4));
-  const recommendedProducts = allProducts.filter((p) => p.isRecommended || !p.isPopular);
-  const heroProducts = allProducts.slice(0, 2);
-
-  const loadData = async (force = false) => {
-    try {
-      setErrorState(null);
-      if (allProducts.length === 0) {
-        setLoadingProducts(true);
-      }
-
-      // Parallelize independent catalog requests
-      const [productRes, categoryRes] = await Promise.allSettled([
-        productService.fetchProducts({ limit: 20, forceRefresh: force }),
-        categoryService.getCategoryTree(force),
-      ]);
-
-      if (productRes.status === 'fulfilled' && productRes.value) {
-        setAllProducts(productRes.value);
-      }
-
-      if (categoryRes.status === 'fulfilled' && categoryRes.value) {
-        setCategories(categoryRes.value.map(mapNodeToCategory));
-      }
-    } catch {
-      setErrorState(t('errors.general'));
-    } finally {
-      setLoadingProducts(false);
-      setLoadingCategories(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
   }, []);
 
-  const [unreadCount, setUnreadCount] = useState<number>(0);
+  // Screen focus listener with sensible stale-time cooldown (does NOT spam on every tab switch)
+  useFocusEffect(
+    useCallback(() => {
+      if (!homeService.isFresh()) {
+        loadData(false);
+      }
+    }, [loadData])
+  );
 
-  const checkUnread = async () => {
-    try {
-      const count = await fetchUnreadCount();
-      setUnreadCount(count);
-    } catch {
-      // Non-critical
-    }
-  };
-
-  useEffect(() => {
-    checkUnread();
-  }, []);
-
+  /**
+   * Native Pull-To-Refresh handler
+   * Guarantees:
+   * - Native refresh spinner
+   * - Does NOT reset or blank the screen
+   * - Existing data remains visible during refresh
+   * - Request deduplication against repeated pull gestures
+   * - Authoritative backend discount and price updates
+   */
   const handleRefresh = async () => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     setRefreshing(true);
-    await Promise.all([loadData(true), checkUnread()]);
-    setRefreshing(false);
+    setErrorState(null);
+    setCartNotice(null);
+
+    const refreshStartTime = Date.now();
+    console.log('[HomeRefresh] pull-to-refresh started');
+
+    try {
+      const cartProductIds = (cartItems || []).map((item) => item.product.id).filter(Boolean);
+
+      const freshData = await homeService.fetchHomeData({
+        city: currentCity,
+        cartProductIds,
+        forceRefresh: true,
+      });
+
+      applyHomeData(freshData);
+      console.log(`[HomeRefresh] pull-to-refresh completed in ${Date.now() - refreshStartTime}ms`);
+    } catch (err: any) {
+      console.warn('[HomeRefresh] pull-to-refresh error:', err?.message);
+      // Keep existing data visible, show friendly lightweight notification
+      setErrorState(
+        language === 'am'
+          ? 'ማደስ አልተቻለም። እባክዎ እንደገና ይሞክሩ።'
+          : "Couldn't refresh. Please try again."
+      );
+    } finally {
+      isRefreshingRef.current = false;
+      setRefreshing(false);
+    }
   };
+
+  const hasActiveOrder = latestOrder && ACTIVE_ORDER_STATUSES.includes(latestOrder.status);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']} key={language}>
@@ -155,7 +259,7 @@ export default function HomeScreen() {
         onClose={() => setIsCategoryDrawerOpen(false)}
       />
 
-      {/* Main Scrollable Marketplace Area */}
+      {/* Main Scrollable Marketplace Area with Native Pull-To-Refresh */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -165,9 +269,11 @@ export default function HomeScreen() {
             onRefresh={handleRefresh}
             colors={[Colors.primary]}
             tintColor={Colors.primary}
+            title={refreshing ? (language === 'am' ? 'በማደስ ላይ...' : 'Refreshing...') : undefined}
+            titleColor={Colors.textMuted}
           />
         }>
-        {/* Error notification banner if any */}
+        {/* Lightweight Non-blocking Error Banner */}
         {errorState ? (
           <View style={styles.errorBanner}>
             <Ionicons name="alert-circle" size={16} color={Colors.error} />
@@ -178,8 +284,47 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
+        {/* Lightweight Cart Price Update Notice */}
+        {cartNotice ? (
+          <View style={styles.noticeBanner}>
+            <Ionicons name="information-circle" size={16} color={Colors.primary} />
+            <Text style={styles.noticeText}>{cartNotice}</Text>
+            <TouchableOpacity onPress={() => setCartNotice(null)}>
+              <Ionicons name="close" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Live Active Order Tracking Card if customer has an ongoing order */}
+        {hasActiveOrder && latestOrder ? (
+          <TouchableOpacity
+            style={styles.activeOrderCard}
+            activeOpacity={0.85}
+            onPress={() => router.push(`/orders/${latestOrder.id}` as any)}>
+            <View style={styles.orderIconBox}>
+              <Ionicons name="bicycle" size={20} color={Colors.primary} />
+            </View>
+            <View style={styles.orderInfo}>
+              <View style={styles.orderHeaderRow}>
+                <Text style={styles.orderNumberText}>
+                  Order #{latestOrder.orderNumber}
+                </Text>
+                <View style={styles.orderStatusBadge}>
+                  <Text style={styles.orderStatusBadgeText}>
+                    {latestOrder.status.replace(/_/g, ' ')}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.orderDeliveryText} numberOfLines={1}>
+                {latestOrder.estimatedDelivery || (language === 'am' ? 'ትዕዛዝዎ በሂደት ላይ ነው' : 'In transit to delivery address')}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        ) : null}
+
         {/* B. Hero / Promotional Area with Floating Cards */}
-        {loadingProducts ? (
+        {loadingInitial && heroProducts.length === 0 ? (
           <HomeSkeleton type="hero" />
         ) : (
           <HomeHero
@@ -189,18 +334,18 @@ export default function HomeScreen() {
           />
         )}
 
-        {/* C. Quick Category Section */}
-        {loadingCategories ? (
+        {/* C. Quick Category Section (Live DB images from Super Admin products) */}
+        {loadingInitial && categories.length === 0 ? (
           <HomeSkeleton type="categories" />
         ) : (
           <CategoryCarousel categories={categories} />
         )}
 
-        {/* D. Special Offers Section with Animated Glow */}
-        <SpecialOffers />
+        {/* D. Special Offers Section (Authoritative Backend Discount Rules) */}
+        <SpecialOffers products={specialOffers} />
 
         {/* E. Trending Products Carousel */}
-        {loadingProducts ? (
+        {loadingInitial && trendingProducts.length === 0 ? (
           <HomeSkeleton type="products" />
         ) : (
           <TrendingProducts
@@ -213,7 +358,7 @@ export default function HomeScreen() {
         <MarketplaceBenefits />
 
         {/* F. Recommended Products 2-Column Grid */}
-        {loadingProducts ? (
+        {loadingInitial && recommendedProducts.length === 0 ? (
           <HomeSkeleton type="products" />
         ) : (
           <RecommendedProducts
@@ -280,5 +425,76 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.error,
+  },
+  noticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    borderRadius: Radius.md,
+    gap: Spacing.xs,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    color: Colors.primaryDark,
+    fontWeight: Typography.fontWeight.medium,
+  },
+  activeOrderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+    padding: Spacing.sm,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: '#E0E7E1',
+    gap: Spacing.sm,
+    ...Shadows.sm,
+  },
+  orderIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orderInfo: {
+    flex: 1,
+  },
+  orderHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  orderNumberText: {
+    fontSize: 12,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+  },
+  orderStatusBadge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: Radius.pill,
+  },
+  orderStatusBadgeText: {
+    fontSize: 9,
+    fontWeight: Typography.fontWeight.bold,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
+  orderDeliveryText: {
+    fontSize: 11,
+    color: Colors.textMuted,
   },
 });

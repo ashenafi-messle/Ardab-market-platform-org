@@ -63,7 +63,12 @@ export const memoryCache = new MemoryCache();
 export function publicApiCache(ttlSeconds = 300, keyGenerator = null) {
   return (req, res, next) => {
     // Only cache GET requests without Authorization headers (public only)
-    if (req.method !== 'GET' || req.headers.authorization) {
+    const isNoCache =
+      req.headers['cache-control']?.includes('no-cache') ||
+      req.headers.pragma === 'no-cache' ||
+      req.query?.force === 'true';
+
+    if (req.method !== 'GET' || req.headers.authorization || isNoCache) {
       return next();
     }
 

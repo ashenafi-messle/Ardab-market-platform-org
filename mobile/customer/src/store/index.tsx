@@ -38,6 +38,14 @@ interface AppContextType {
   toggleCartItemSelect: (productId: string) => void;
   selectAllCartItems: (selected: boolean) => void;
   clearCart: () => void;
+  syncCartWithValidatedProducts: (validatedProducts: Array<{
+    id: string;
+    name: string;
+    price: number;
+    originalPrice?: number | null;
+    discountPercent?: number;
+    isAvailable: boolean;
+  }>) => { priceChanged: boolean; outOfStockChanged: boolean };
   cartCount: number;
   cartSubtotal: number;
   cartTotal: number;
@@ -48,6 +56,7 @@ interface AppContextType {
   toggleWishlist: (product: Product) => Promise<void>;
   isInWishlist: (productId: string) => boolean;
   refreshWishlist: () => Promise<void>;
+  syncWishlistIdsFromHome: (productIds: string[]) => void;
 
   // Orders
   orders: Order[];
@@ -275,6 +284,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCartItems([]);
   };
 
+  const syncCartWithValidatedProducts = useCallback(
+    (validatedProducts: Array<{
+      id: string;
+      name: string;
+      price: number;
+      originalPrice?: number | null;
+      discountPercent?: number;
+      isAvailable: boolean;
+    }>) => {
+      let priceChanged = false;
+      let outOfStockChanged = false;
+
+      if (!validatedProducts || validatedProducts.length === 0) {
+        return { priceChanged, outOfStockChanged };
+      }
+
+      const valMap = new Map(validatedProducts.map((p) => [p.id, p]));
+
+      setCartItems((prevItems) => {
+        let hasModifications = false;
+        const updated = prevItems.map((item) => {
+          const val = valMap.get(item.product.id);
+          if (!val) return item;
+
+          const newPrice = val.price;
+          const oldItemPrice = item.product.price;
+          const availabilityChanged = !val.isAvailable && item.product.stock > 0;
+
+          if (
+            newPrice !== oldItemPrice ||
+            availabilityChanged ||
+            val.discountPercent !== item.product.discountPercentage
+          ) {
+            hasModifications = true;
+            if (newPrice !== oldItemPrice) priceChanged = true;
+            if (availabilityChanged) outOfStockChanged = true;
+
+            return {
+              ...item,
+              product: {
+                ...item.product,
+                price: newPrice,
+                oldPrice: val.originalPrice ?? item.product.oldPrice,
+                discountPercentage:
+                  val.discountPercent && val.discountPercent > 0
+                    ? val.discountPercent
+                    : undefined,
+                stock: val.isAvailable ? item.product.stock : 0,
+              },
+            };
+          }
+          return item;
+        });
+
+        if (hasModifications) {
+          secureStorage.setItem(STORAGE_CART_KEY, JSON.stringify(updated)).catch(() => {});
+          return updated;
+        }
+        return prevItems;
+      });
+
+      return { priceChanged, outOfStockChanged };
+    },
+    []
+  );
+
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
   const selectedCartItems = cartItems.filter((item) => item.selected);
@@ -335,6 +410,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const refreshWishlist = async () => {
     await loadWishlist();
   };
+
+  const syncWishlistIdsFromHome = useCallback((productIds: string[]) => {
+    if (Array.isArray(productIds)) {
+      setWishlistProductIds(productIds);
+      secureStorage.setItem(STORAGE_WISHLIST_KEY, JSON.stringify(productIds)).catch(() => {});
+    }
+  }, []);
 
   // Derives full product list for wishlist strictly from real products
   const wishlistProducts = wishlistProductIds
@@ -485,6 +567,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleCartItemSelect,
         selectAllCartItems,
         clearCart,
+        syncCartWithValidatedProducts,
         cartCount,
         cartSubtotal,
         cartTotal,
@@ -493,6 +576,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleWishlist,
         isInWishlist,
         refreshWishlist,
+        syncWishlistIdsFromHome,
         orders,
         placeOrder,
         cancelLocalOrder,

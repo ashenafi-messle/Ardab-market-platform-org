@@ -5,6 +5,9 @@
 import { Router } from 'express';
 import customerMobileAuthRoutes from './auth.routes.js';
 import customerMobileCatalogRoutes from './catalog.routes.js';
+import { getHomeDataHandler } from '../../customer/controllers/home.controller.js';
+import { optionalCustomerAuthMiddleware } from '../../customer/middleware/customerAuth.middleware.js';
+import { asyncHandler } from '../../shared/utils/asyncHandler.js';
 import customerOrderRoutes from '../../customer/routes/order.routes.js';
 import customerNotificationRoutes from '../../customer/routes/notification.routes.js';
 import customerWishlistRoutes from '../../customer/routes/wishlist.routes.js';
@@ -15,6 +18,9 @@ import customerSupportRoutes from '../../customer/routes/support.routes.js';
 import customerPaymentRoutes from '../../customer/routes/payment.routes.js';
 
 const customerMobileRouter = Router();
+
+// Mount Consolidated Customer Mobile Home route (/api/customer-mobile/home)
+customerMobileRouter.get('/home', optionalCustomerAuthMiddleware, asyncHandler(getHomeDataHandler));
 
 // Mount Customer Mobile Authentication routes (/api/customer-mobile/auth/*)
 customerMobileRouter.use('/auth', customerMobileAuthRoutes);

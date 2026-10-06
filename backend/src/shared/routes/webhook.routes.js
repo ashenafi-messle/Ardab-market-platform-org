@@ -35,7 +35,7 @@ const webhookLimiter = rateLimit({
 router.post(
   '/webhook',
   webhookLimiter,
-  asyncHandler(chapaWebhookHandler)
+  asyncHandler(chapaCallbackHandler)
 );
 
 /**

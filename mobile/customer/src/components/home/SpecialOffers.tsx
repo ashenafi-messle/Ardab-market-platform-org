@@ -26,8 +26,10 @@ export interface SpecialOffersProps {
 
 export const SpecialOffers: React.FC<SpecialOffersProps> = ({ products: initialProducts }) => {
   const router = useRouter();
-  const [offers, setOffers] = useState<Product[]>(initialProducts || []);
-  const [loading, setLoading] = useState<boolean>(!initialProducts);
+  const [offers, setOffers] = useState<Product[]>(() =>
+    initialProducts ? initialProducts.filter((p) => p.discountPercentage && p.discountPercentage > 0) : []
+  );
+  const [loading, setLoading] = useState<boolean>(initialProducts === undefined);
 
   // Subtle animated glow pulse
   const glowAnim = useRef(new Animated.Value(0.4)).current;
@@ -52,7 +54,7 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = ({ products: initialP
   }, []);
 
   useEffect(() => {
-    if (initialProducts) {
+    if (initialProducts !== undefined) {
       setOffers(initialProducts.filter((p) => p.discountPercentage && p.discountPercentage > 0));
       setLoading(false);
       return;

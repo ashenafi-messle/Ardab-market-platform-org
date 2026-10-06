@@ -16,11 +16,17 @@ import customerNotificationRoutes from './notification.routes.js';
 import customerSupportRoutes from './support.routes.js';
 import customerPaymentRoutes from './payment.routes.js';
 import customerReviewRoutes, { productReviewSubRouter, productLevelReviewRouter } from './review.routes.js';
+import { getHomeDataHandler } from '../controllers/home.controller.js';
+import { optionalCustomerAuthMiddleware } from '../middleware/customerAuth.middleware.js';
+import { asyncHandler } from '../../shared/utils/asyncHandler.js';
 
 const customerRouter = Router();
 
 // Apply unified customer web app telemetry recorder
 customerRouter.use(customerTelemetryMiddleware);
+
+// Mount Consolidated Customer Home route (/api/customer/home)
+customerRouter.get('/home', optionalCustomerAuthMiddleware, asyncHandler(getHomeDataHandler));
 
 // Mount Customer Authentication routes (/api/customer/auth/*)
 customerRouter.use('/auth', customerAuthRoutes);
