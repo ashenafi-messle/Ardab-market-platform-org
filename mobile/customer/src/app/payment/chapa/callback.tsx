@@ -31,6 +31,7 @@ const RECOVERY_STORAGE_KEY = '@ardab_pending_payment';
 export default function ChapaCallbackScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    paymentId?: string;
     tx_ref?: string;
     trx_ref?: string;
     status?: string;
@@ -58,7 +59,7 @@ export default function ChapaCallbackScreen() {
           } catch {}
         }
 
-        const identifier = params.tx_ref || params.trx_ref || parsed?.txRef || parsed?.paymentId;
+        const identifier = params.paymentId || params.tx_ref || params.trx_ref || parsed?.paymentId || parsed?.txRef;
 
         if (!identifier) {
           if (isMounted) {
@@ -115,7 +116,7 @@ export default function ChapaCallbackScreen() {
       isMounted = false;
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [params.tx_ref, params.trx_ref]);
+  }, [params.paymentId, params.tx_ref, params.trx_ref]);
 
   // 1. Rendering Verification in progress
   if (verificationState === 'CONFIRMING') {

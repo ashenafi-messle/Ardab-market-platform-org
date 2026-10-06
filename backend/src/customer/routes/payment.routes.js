@@ -81,11 +81,21 @@ router.post(
 
 /**
  * @route   GET /api/customer/payments/chapa/callback
- * @desc    Hosted checkout browser return callback for Chapa
- * @access  Public (Browser redirect from Chapa)
+ * @desc    Hosted checkout browser callback for Chapa
+ * @access  Public (Redirect or webhook from Chapa)
+ */
+router.all(
+  '/chapa/callback',
+  asyncHandler(paymentReturnCallbackHandler)
+);
+
+/**
+ * @route   GET /api/customer/payments/chapa/return
+ * @desc    Hosted checkout browser return for Chapa
+ * @access  Public
  */
 router.get(
-  '/chapa/callback',
+  '/chapa/return',
   asyncHandler(paymentReturnCallbackHandler)
 );
 

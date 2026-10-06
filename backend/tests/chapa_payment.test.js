@@ -108,6 +108,22 @@ test('Ardab Market: Production Chapa Payment System Test Suite', async (t) => {
   t.after(async () => {
     // Cleanup created records
     try {
+      if (orderA) {
+        await prisma.paymentAuditLog.deleteMany({
+          where: { payment: { orderId: orderA.id } },
+        });
+        await prisma.paymentAttempt.deleteMany({
+          where: { payment: { orderId: orderA.id } },
+        });
+        await prisma.paymentRefund.deleteMany({
+          where: { payment: { orderId: orderA.id } },
+        });
+        await prisma.payment.deleteMany({
+          where: { orderId: orderA.id },
+        });
+        await prisma.order.delete({ where: { id: orderA.id } }).catch(() => {});
+      }
+
       if (createdPaymentIds.length > 0) {
         await prisma.paymentAuditLog.deleteMany({
           where: { paymentId: { in: createdPaymentIds } },
@@ -123,10 +139,9 @@ test('Ardab Market: Production Chapa Payment System Test Suite', async (t) => {
         });
       }
 
-      if (orderA) await prisma.order.delete({ where: { id: orderA.id } });
-      if (orderCancelled) await prisma.order.delete({ where: { id: orderCancelled.id } });
-      if (customerA) await prisma.customer.delete({ where: { id: customerA.id } });
-      if (customerB) await prisma.customer.delete({ where: { id: customerB.id } });
+      if (orderCancelled) await prisma.order.delete({ where: { id: orderCancelled.id } }).catch(() => {});
+      if (customerA) await prisma.customer.delete({ where: { id: customerA.id } }).catch(() => {});
+      if (customerB) await prisma.customer.delete({ where: { id: customerB.id } }).catch(() => {});
     } catch (e) {
       console.warn('Cleanup notice:', e.message);
     }

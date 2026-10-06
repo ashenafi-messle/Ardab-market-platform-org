@@ -59,14 +59,15 @@ export const paymentService = {
    */
   async initializePayment(
     orderId: string,
-    platform: 'web' | 'android' = 'web'
+    platform: 'web' | 'android' | 'WEB' | 'ANDROID' = 'android'
   ): Promise<InitializePaymentResponse> {
+    const normalizedPlatform = (platform || '').toUpperCase() === 'WEB' ? 'WEB' : 'ANDROID';
     const res = await apiFetch<any>('/customer/payments/chapa/initialize', {
       method: 'POST',
       body: JSON.stringify({
         orderId,
         paymentMethod: 'ONLINE',
-        platform,
+        platform: normalizedPlatform,
       }),
     });
 

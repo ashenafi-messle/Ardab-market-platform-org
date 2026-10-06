@@ -11,7 +11,7 @@ import { ApiResponse } from '../../shared/utils/apiResponse.js';
 /**
  * POST /api/customer/payments/chapa/initialize
  * Initialize an authoritative Chapa payment session for an order.
- * Accepts optional platform: 'web' | 'android'.
+ * Accepts platform: 'WEB' | 'ANDROID' (case-insensitive).
  */
 export async function initializePaymentHandler(req, res) {
   const customerId = req.customer.id;
@@ -21,11 +21,9 @@ export async function initializePaymentHandler(req, res) {
     return ApiResponse.error(res, 'ORDER_ID_REQUIRED', 'Order ID is required to initialize payment.', 400);
   }
 
-  // Validate platform strictly: allowed values are 'web' or 'android'
-  const normalizedPlatform = (platform || '').toLowerCase().trim();
-  const effectivePlatform = ['web', 'android'].includes(normalizedPlatform)
-    ? normalizedPlatform
-    : 'web'; // Safe default for browser / web clients
+  // Validate platform strictly: allowed values are 'WEB' or 'ANDROID'
+  const normalizedPlatform = (platform || '').toUpperCase().trim();
+  const effectivePlatform = normalizedPlatform === 'WEB' ? 'WEB' : 'ANDROID';
 
   try {
     const result = await paymentService.initializePayment({
@@ -98,93 +96,179 @@ export async function getCustomerPaymentHistoryHandler(req, res) {
 }
 
 /**
- * GET /api/customer/payments/chapa/callback
- * Browser return endpoint for Chapa hosted checkout redirects.
- * Triggers server-side verification and redirects to the mobile deep link or web app.
+ * GET /api/payments/chapa/return
+ * Central HTTPS return gateway on Ardab backend.
+ *
+ * Flow:
+ * 1. Receive transaction reference from Chapa return redirect.
+ * 2. Find Payment record in database.
+ * 3. Verify payment server-side if not already verified.
+ * 4. Check Payment.platform:
+ *    - ANDROID: HTTP 302 redirect to ardabmarket://payment/chapa/callback?paymentId=<PAYMENT_ID>
+ *    - WEB: HTTP 302 redirect to https://customer-phi-wheat.vercel.app/payment/chapa/callback?paymentId=<PAYMENT_ID>&tx_ref=<tx_ref>
+ * 5. Clean HTTP 302 redirect with zero inline scripts, completely CSP-safe.
  */
-export async function paymentReturnCallbackHandler(req, res) {
-  const { tx_ref, trx_ref, status, platform } = req.query;
-  const transactionRef = tx_ref || trx_ref;
+export async function chapaReturnHandler(req, res) {
+  const { tx_ref, trx_ref, reference, paymentId, status } = req.query;
+  const transactionRef = tx_ref || trx_ref || reference;
 
-  // Determine platform strictly: 'web' or 'android'
-  const normalizedPlatform = (platform || '').toLowerCase().trim();
-  const effectivePlatform = normalizedPlatform === 'android' ? 'android' : 'web';
+  logger.info('[ChapaReturn] Customer returned from Chapa checkout', {
+    transactionRef,
+    paymentId,
+    status,
+    userAgent: req.headers['user-agent'],
+  });
 
   let payment = null;
-  if (transactionRef) {
-    try {
+
+  try {
+    if (paymentId) {
+      payment = await prisma.payment.findUnique({
+        where: { id: paymentId },
+      });
+    }
+
+    if (!payment && transactionRef) {
       payment = await prisma.payment.findUnique({
         where: { txRef: transactionRef },
       });
-
-      if (payment && payment.status !== 'SUCCESS') {
-        const finalized = await paymentService
-          .finalizePaymentWithVerification(transactionRef, {
-            actorType: 'STATUS_POLL',
-            actorId: payment.customerId,
-          })
-          .catch((e) => {
-            logger.warn('[PaymentCallback] Verification non-critical catch:', e.message);
-            return null;
-          });
-
-        if (finalized) {
-          payment = finalized;
-        }
-      }
-    } catch (err) {
-      logger.error('[PaymentCallback] Error during payment lookup/verification:', err.message);
     }
+
+    if (!payment && transactionRef) {
+      payment = await prisma.payment.findFirst({
+        where: { chapaReference: transactionRef },
+      });
+    }
+
+    // Verify payment server-side if not already verified as SUCCESS
+    if (payment && payment.status !== 'SUCCESS') {
+      const finalized = await paymentService
+        .finalizePaymentWithVerification(payment.txRef, {
+          actorType: 'STATUS_POLL',
+          actorId: payment.customerId,
+        })
+        .catch((e) => {
+          logger.warn('[ChapaReturn] On-demand verification non-critical error:', e.message);
+          return null;
+        });
+
+      if (finalized) {
+        payment = await prisma.payment.findUnique({
+          where: { id: payment.id },
+        });
+      }
+    }
+  } catch (err) {
+    logger.error('[ChapaReturn] Exception during return verification:', err.message);
   }
 
-  const finalStatus = payment?.status === 'SUCCESS' ? 'success' : (status || 'pending');
+  // Determine originating platform
+  const storedPlatform = (payment?.platform || '').toUpperCase().trim();
+  const isAndroid = storedPlatform === 'ANDROID' || (
+    !storedPlatform && (req.headers['user-agent'] || '').toLowerCase().includes('android')
+  );
 
-  if (effectivePlatform === 'web') {
-    // Web platform: 302 redirect directly to the customer web app callback
-    const targetUrl = new URL(
-      env.CHAPA_WEB_RETURN_URL || 'https://customer-phi-wheat.vercel.app/payment/chapa/callback'
-    );
-    if (transactionRef) targetUrl.searchParams.set('tx_ref', transactionRef);
-    targetUrl.searchParams.set('status', finalStatus);
+  const finalPaymentId = payment?.id || paymentId || '';
+  const finalTxRef = payment?.txRef || transactionRef || '';
 
-    return res.redirect(302, targetUrl.toString());
+  if (isAndroid || storedPlatform === 'ANDROID') {
+    // Android platform: Server-side HTTP 302 redirect to native custom URI scheme
+    const targetScheme = env.CHAPA_MOBILE_RETURN_URL || 'ardabmarket://payment/chapa/callback';
+    const separator = targetScheme.includes('?') ? '&' : '?';
+    const mobileRedirectUrl = `${targetScheme}${separator}paymentId=${encodeURIComponent(finalPaymentId)}${finalTxRef ? `&tx_ref=${encodeURIComponent(finalTxRef)}` : ''}`;
+
+    logger.info('[ChapaReturn] Issuing 302 redirect to Android native scheme', {
+      redirectUrl: mobileRedirectUrl,
+      paymentId: finalPaymentId,
+    });
+
+    return res.redirect(302, mobileRedirectUrl);
   }
 
-  // Android platform:
-  // Native scheme redirect to ardabmarket://
-  const targetMobileScheme = env.CHAPA_MOBILE_RETURN_URL || 'ardabmarket://payment/chapa/callback';
-  const separator = targetMobileScheme.includes('?') ? '&' : '?';
-  const mobileRedirectUrl = `${targetMobileScheme}${separator}tx_ref=${encodeURIComponent(transactionRef || '')}&status=${encodeURIComponent(finalStatus)}`;
+  // Web platform: Server-side HTTP 302 redirect to customer web callback
+  const targetWebUrl = new URL(
+    env.CHAPA_WEB_RETURN_URL || 'https://customer-phi-wheat.vercel.app/payment/chapa/callback'
+  );
+  if (finalPaymentId) targetWebUrl.searchParams.set('paymentId', finalPaymentId);
+  if (finalTxRef) targetWebUrl.searchParams.set('tx_ref', finalTxRef);
+  targetWebUrl.searchParams.set('status', payment?.status === 'SUCCESS' ? 'success' : (status || 'pending'));
 
-  // Serve clean HTML without any inline script (using meta refresh and anchor link only)
-  // Strictly complies with CSP (script-src 'self' without unsafe-inline)
-  const safeHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="0;url=${mobileRedirectUrl}">
-  <title>Payment Completed - Ardab Market</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #0f172a; color: #f8fafc; padding: 20px; text-align: center; }
-    .card { background: #1e293b; border: 1px solid #334155; padding: 36px 28px; border-radius: 20px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-    .icon { width: 64px; height: 64px; border-radius: 50%; background: #10b981; display: inline-flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 20px; }
-    h1 { font-size: 22px; font-weight: 700; margin-bottom: 10px; color: #ffffff; }
-    p { font-size: 15px; color: #94a3b8; line-height: 1.5; margin-bottom: 24px; }
-    .btn { display: block; width: 100%; background: #2563eb; color: #ffffff; padding: 14px 20px; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 16px; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">✓</div>
-    <h1>Payment Completed</h1>
-    <p>Your payment session has finished. Returning you to the Ardab Market app...</p>
-    <a href="${mobileRedirectUrl}" class="btn">Open Ardab Market App</a>
-  </div>
-</body>
-</html>`;
+  logger.info('[ChapaReturn] Issuing 302 redirect to Customer Web callback', {
+    redirectUrl: targetWebUrl.toString(),
+    paymentId: finalPaymentId,
+  });
 
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  return res.status(200).send(safeHtml);
+  return res.redirect(302, targetWebUrl.toString());
 }
+
+/**
+ * GET/POST /api/payments/chapa/callback
+ * Server-side callback endpoint for Chapa.
+ *
+ * Flow:
+ * 1. Receive Chapa callback data.
+ * 2. Extract tx_ref/trx_ref correctly.
+ * 3. Find Ardab Payment record.
+ * 4. Call Chapa verify endpoint.
+ * 5. Verify status, tx_ref, amount, currency, mode.
+ * 6. Update Payment.status = SUCCESS and Order.paymentStatus = PAID.
+ * 7. Database update is atomic and idempotent.
+ */
+export async function chapaCallbackHandler(req, res) {
+  const transactionRef =
+    req.query.tx_ref ||
+    req.query.trx_ref ||
+    req.body?.tx_ref ||
+    req.body?.trx_ref ||
+    req.query.reference ||
+    req.body?.reference;
+
+  logger.info('[ChapaCallback] Processing Chapa callback request', {
+    transactionRef,
+    method: req.method,
+    query: req.query,
+  });
+
+  if (!transactionRef) {
+    if (req.headers.accept?.includes('text/html')) {
+      return res.redirect(302, '/api/payments/chapa/return');
+    }
+    return res.status(400).json({ status: 'failed', message: 'Missing transaction reference in callback.' });
+  }
+
+  try {
+    const verified = await paymentService.finalizePaymentWithVerification(transactionRef, {
+      actorType: 'CALLBACK',
+    });
+
+    // If browser navigates directly to /callback, redirect to /return
+    if (req.headers.accept?.includes('text/html')) {
+      return res.redirect(302, `/api/payments/chapa/return?tx_ref=${encodeURIComponent(transactionRef)}`);
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Payment verified and marked PAID.',
+      data: {
+        paymentId: verified.paymentId,
+        orderId: verified.orderId,
+        status: verified.status,
+      },
+    });
+  } catch (err) {
+    logger.error('[ChapaCallback] Error verifying callback transaction:', err.message);
+
+    if (req.headers.accept?.includes('text/html')) {
+      return res.redirect(302, `/api/payments/chapa/return?tx_ref=${encodeURIComponent(transactionRef)}&status=failed`);
+    }
+
+    return res.status(200).json({
+      status: 'failed',
+      message: err.message,
+    });
+  }
+}
+
+// Backward compatibility alias
+export const paymentReturnCallbackHandler = chapaReturnHandler;
+

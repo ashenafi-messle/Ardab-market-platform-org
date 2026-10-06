@@ -154,6 +154,9 @@ export class PaymentService {
     }
 
     // 4. Duplicate protection & reuse of active checkout session
+    const normalizedPlatform = (platform || '').toUpperCase().trim();
+    const storedPlatform = normalizedPlatform === 'WEB' ? 'WEB' : 'ANDROID';
+
     const existingActivePayment = await prisma.payment.findFirst({
       where: {
         orderId,
@@ -167,11 +170,12 @@ export class PaymentService {
       const minutesSinceCreation =
         (Date.now() - new Date(existingActivePayment.createdAt).getTime()) / (1000 * 60);
 
-      // Chapa checkout sessions typically remain active for 30 minutes; reuse within 20m
-      if (minutesSinceCreation < 20) {
+      // Only reuse if created within 20m AND matches the requested platform
+      if (minutesSinceCreation < 20 && existingActivePayment.platform === storedPlatform) {
         logger.info('[PaymentService] Reusing active pending payment session', {
           paymentId: existingActivePayment.id,
           txRef: existingActivePayment.txRef,
+          platform: existingActivePayment.platform,
         });
 
         return {
@@ -197,13 +201,14 @@ export class PaymentService {
     let customerPhone = (order.customer?.phone || '').replace(/[^0-9]/g, '');
     if (customerPhone.startsWith('251')) customerPhone = '0' + customerPhone.slice(3);
 
-    // Create Payment in PENDING state within local atomic transaction
+    // Create Payment in PENDING state with platform within local atomic transaction
     const payment = await prisma.$transaction(async (tx) => {
       const p = await tx.payment.create({
         data: {
           orderId: order.id,
           customerId: order.customerId,
           provider: 'CHAPA',
+          platform: storedPlatform,
           txRef,
           amount: authoritativeAmount,
           currency: 'ETB',
@@ -235,6 +240,7 @@ export class PaymentService {
             orderId: order.id,
             orderNumber: order.orderNumber,
             amount: authoritativeAmount.toFixed(2),
+            platform: storedPlatform,
           }),
         },
       });
@@ -255,23 +261,17 @@ export class PaymentService {
       txRef,
       amount: authoritativeAmount.toFixed(2),
       currency: 'ETB',
+      platform: storedPlatform,
       customizationTitle: customization.title,
       customizationDescription: customization.description,
     });
 
-    const effectivePlatform = ['web', 'android'].includes((platform || '').toLowerCase())
-      ? (platform || '').toLowerCase()
-      : 'web';
-
-    // The backend chooses the return URL. Central HTTPS callback is used so that:
-    // 1. Chapa receives a valid HTTPS URL (custom URI schemes like ardabmarket:// are rejected by Chapa API)
-    // 2. Server-side payment verification runs immediately upon customer return
-    // 3. The server then redirects cleanly to Web or Android without inline scripts
-    const callbackBase = env.CHAPA_WEBHOOK_URL
-      ? env.CHAPA_WEBHOOK_URL.replace(/\/payments\/chapa\/webhook\/?$/, '/payments/chapa/callback')
-      : 'https://ardab-market-platform-org.onrender.com/api/payments/chapa/callback';
-
-    const safeReturnUrl = returnUrl || `${callbackBase}?platform=${effectivePlatform}&tx_ref=${encodeURIComponent(txRef)}`;
+    // Central HTTPS callback & return URLs as per system specifications:
+    // callback_url: https://ardab-market-platform-org.onrender.com/api/payments/chapa/callback
+    // return_url:   https://ardab-market-platform-org.onrender.com/api/payments/chapa/return?tx_ref=...
+    const callbackUrl = env.CHAPA_CALLBACK_URL || 'https://ardab-market-platform-org.onrender.com/api/payments/chapa/callback';
+    const returnBase = env.CHAPA_RETURN_URL || 'https://ardab-market-platform-org.onrender.com/api/payments/chapa/return';
+    const safeReturnUrl = `${returnBase}?tx_ref=${encodeURIComponent(txRef)}`;
 
     let chapaResponse;
     try {
@@ -283,6 +283,7 @@ export class PaymentService {
         lastName,
         phoneNumber: customerPhone || undefined,
         txRef,
+        callbackUrl,
         returnUrl: safeReturnUrl,
         customization,
       });
@@ -648,8 +649,8 @@ export class PaymentService {
         return failedPayment;
       }
     }, {
-      maxWait: 5000,
-      timeout: 10000,
+      maxWait: 10000,
+      timeout: 30000,
     });
 
     // 6. Post-transaction async notification dispatch

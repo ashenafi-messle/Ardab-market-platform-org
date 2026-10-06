@@ -138,6 +138,12 @@ export const env = {
     process.env.CHAPA_MOBILE_RETURN_URL || 'ardabmarket://payment/chapa/callback',
   CHAPA_RETURN_URL_SCHEME:
     process.env.CHAPA_RETURN_URL_SCHEME || process.env.CHAPA_MOBILE_RETURN_URL || 'ardabmarket://payment/chapa/callback',
+  CHAPA_CALLBACK_URL:
+    process.env.CHAPA_CALLBACK_URL ||
+    'https://ardab-market-platform-org.onrender.com/api/payments/chapa/callback',
+  CHAPA_RETURN_URL:
+    process.env.CHAPA_RETURN_URL ||
+    'https://ardab-market-platform-org.onrender.com/api/payments/chapa/return',
 };
 
 

@@ -4,8 +4,10 @@
 
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { chapaWebhookHandler } from '../controllers/webhook.controller.js';
-import { paymentReturnCallbackHandler } from '../../customer/controllers/payment.controller.js';
+import {
+  chapaCallbackHandler,
+  chapaReturnHandler,
+} from '../../customer/controllers/payment.controller.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
@@ -37,13 +39,23 @@ router.post(
 );
 
 /**
- * @route   GET /api/payments/chapa/callback
- * @desc    Public browser return callback for Chapa hosted checkout redirects
- * @access  Public (Browser navigation)
+ * @route   ALL /api/payments/chapa/callback
+ * @desc    Server-side callback handling for Chapa
+ * @access  Public
+ */
+router.all(
+  '/callback',
+  asyncHandler(chapaCallbackHandler)
+);
+
+/**
+ * @route   GET /api/payments/chapa/return
+ * @desc    Central HTTPS return gateway for browser redirects from Chapa
+ * @access  Public
  */
 router.get(
-  '/callback',
-  asyncHandler(paymentReturnCallbackHandler)
+  '/return',
+  asyncHandler(chapaReturnHandler)
 );
 
 export default router;

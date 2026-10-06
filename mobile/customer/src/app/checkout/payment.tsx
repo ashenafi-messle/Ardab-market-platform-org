@@ -192,7 +192,7 @@ export default function PaymentScreen() {
     setStatusMessage(null);
 
     try {
-      const targetPlatform: 'web' | 'android' = Platform.OS === 'web' ? 'web' : 'android';
+      const targetPlatform: 'WEB' | 'ANDROID' = Platform.OS === 'web' ? 'WEB' : 'ANDROID';
       const initResult = await paymentService.initializePayment(orderId, targetPlatform);
 
       if (initResult.status === 'SUCCESS') {
@@ -231,6 +231,27 @@ export default function PaymentScreen() {
       );
 
       setIsInitializing(false);
+
+      if (browserResult.type === 'success' && browserResult.url) {
+        try {
+          const parsedUrl = new URL(browserResult.url);
+          const paymentIdFromUrl = parsedUrl.searchParams.get('paymentId');
+          if (paymentIdFromUrl) {
+            router.push({
+              pathname: '/payment/chapa/callback',
+              params: { paymentId: paymentIdFromUrl },
+            } as any);
+            return;
+          }
+        } catch {
+          // If URL parsing fails, fallback to router.push with initResult.paymentId
+          router.push({
+            pathname: '/payment/chapa/callback',
+            params: { paymentId: initResult.paymentId },
+          } as any);
+          return;
+        }
+      }
 
       // When browser completes or returns, authoritatively poll backend status
       startStatusPolling(initResult.paymentId);
