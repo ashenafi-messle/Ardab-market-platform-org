@@ -8,7 +8,9 @@
     "scheme": "ardabmarket",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "bundleIdentifier": "com.ashu2288.customer",
+      "icon": "./assets/images/icon.png",
+      "supportsTablet": false
     },
     "android": {
       "adaptiveIcon": {
