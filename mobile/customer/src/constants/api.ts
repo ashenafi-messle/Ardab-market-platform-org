@@ -150,7 +150,11 @@ export async function apiFetch<T = any>(
           parsedData = { message: text };
         }
 
-        stopTimer({ status: res.status, attempt });
+        stopTimer({
+          status: res.status,
+          payloadBytes: text ? text.length : 0,
+          attempt,
+        });
 
         return {
           ok: res.ok,

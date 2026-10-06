@@ -40,8 +40,21 @@ export const perfMonitor = {
         recentMetrics.shift();
       }
 
-      const metaStr = metric.metadata ? ` | ${JSON.stringify(metric.metadata)}` : '';
-      console.log(`[PERF] ⚡ ${label}: ${durationMs}ms${metaStr}`);
+      let metaSummary = '';
+      if (metric.metadata) {
+        const parts: string[] = [];
+        if (metric.metadata.status) parts.push(`status=${metric.metadata.status}`);
+        if (metric.metadata.payloadBytes !== undefined) {
+          parts.push(`payload=${(metric.metadata.payloadBytes / 1024).toFixed(1)}KB`);
+        }
+        if (metric.metadata.attempt && metric.metadata.attempt > 0) {
+          parts.push(`attempt=${metric.metadata.attempt}`);
+        }
+        if (metric.metadata.error) parts.push(`error=${metric.metadata.error}`);
+        metaSummary = parts.length > 0 ? ` | ${parts.join(', ')}` : '';
+      }
+
+      console.log(`[PERF][MOBILE] ⚡ ${label} = ${durationMs}ms${metaSummary}`);
       return durationMs;
     };
   },

@@ -19,6 +19,7 @@ import {
 } from '../../shared/utils/crypto.js';
 import { TelegramService } from '../../shared/services/telegram/telegram.service.js';
 import { logger } from '../../shared/utils/logger.js';
+import { startBackendPerf } from '../../shared/utils/perfTracker.js';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -618,28 +619,48 @@ export class MobileAuthService {
   // ----------------------------------------------------------------------------
 
   static async login({ identifier, password, deviceInfo }) {
+    const perf = startBackendPerf('auth/login');
     const cleanId = String(identifier).trim();
-
     const isEmail = cleanId.includes('@');
-    let customer = null;
 
+    const customerSelect = {
+      id: true,
+      customerCode: true,
+      fullName: true,
+      phone: true,
+      email: true,
+      passwordHash: true,
+      city: true,
+      profileImageUrl: true,
+      status: true,
+      verificationStatus: true,
+      createdAt: true,
+    };
+
+    let customer = null;
     if (isEmail) {
       customer = await prisma.customer.findFirst({
         where: { email: cleanId.toLowerCase() },
+        select: customerSelect,
       });
     } else {
       const normalized = normalizeEthiopianPhone(cleanId);
       const searchPhones = normalized.isValid ? normalized.variants : [cleanId];
       customer = await prisma.customer.findFirst({
         where: { phone: { in: searchPhones } },
+        select: customerSelect,
       });
     }
 
+    perf.checkpoint('db_lookup');
+
     if (!customer || !customer.passwordHash) {
+      perf.end({ status: 'invalid_credentials' });
       throw ApiError.unauthorized('Invalid email, phone, or password.', AuthResponseCode.INVALID_CREDENTIALS);
     }
 
     if (customer.status === 'SUSPENDED') {
+      perf.end({ status: 'suspended' });
       throw ApiError.forbidden(
         'Your customer account has been suspended. Please contact support.',
         AuthResponseCode.ACCOUNT_SUSPENDED
@@ -647,23 +668,31 @@ export class MobileAuthService {
     }
 
     if (customer.status === 'INACTIVE') {
+      perf.end({ status: 'inactive' });
       throw ApiError.forbidden('Your customer account is inactive.', AuthResponseCode.ACCOUNT_INACTIVE);
     }
 
     // Verify bcrypt hash
     const isPasswordValid = await bcrypt.compare(password, customer.passwordHash);
+    perf.checkpoint('bcrypt_verify');
+
     if (!isPasswordValid) {
+      perf.end({ status: 'invalid_password' });
       throw ApiError.unauthorized('Invalid email, phone, or password.', AuthResponseCode.INVALID_CREDENTIALS);
     }
 
-    // Update last activity timestamp
-    await prisma.customer.update({
+    // Update last activity timestamp asynchronously without blocking session response
+    prisma.customer.update({
       where: { id: customer.id },
       data: { lastActivityAt: new Date() },
     }).catch(() => {});
 
-    // Create session (genuine login)
-    return MobileSessionService.createSession(customer.id, deviceInfo, { isLogin: true });
+    // Create session passing pre-queried customer directly to eliminate duplicate findUnique
+    const sessionResult = await MobileSessionService.createSession(customer, deviceInfo, { isLogin: true });
+    perf.checkpoint('session_create');
+    perf.end({ customerId: customer.id, success: true });
+
+    return sessionResult;
   }
 
   // ----------------------------------------------------------------------------

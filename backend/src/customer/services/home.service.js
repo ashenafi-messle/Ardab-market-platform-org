@@ -9,9 +9,10 @@
 import { prisma } from '../../shared/config/database.js';
 import { MobileCatalogService } from '../../customer-mobile/services/catalog.service.js';
 import { logger } from '../../shared/utils/logger.js';
+import { startBackendPerf } from '../../shared/utils/perfTracker.js';
 
 export async function getConsolidatedHomeData({ customerId = null, city = 'All Cities', cartProductIds = [] }) {
-  const startTime = Date.now();
+  const perf = startBackendPerf('customer-mobile/home', { hasCustomer: !!customerId, city });
 
   // 1. Parallelize core marketplace catalog queries
   const catalogPromises = [
@@ -203,6 +204,13 @@ export async function getConsolidatedHomeData({ customerId = null, city = 'All C
     specialOffersCount: specialOffersRes?.items?.length || 0,
     trendingCount: trendingRes?.items?.length || 0,
     durationMs,
+  });
+
+  perf.end({
+    categories: categories?.length || 0,
+    specialOffers: specialOffersRes?.items?.length || 0,
+    trending: trendingRes?.items?.length || 0,
+    cartValidation: cartValidation.length,
   });
 
   return {

@@ -184,12 +184,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(result.token);
       setUser(result.user);
 
-      // Save token in secure storage (NEVER plain passwords!)
-      await secureStorage.saveAuthToken(result.token);
-      await secureStorage.saveUserData(result.user);
-
-      // Save identity for convenient returning user experience
-      await secureStorage.saveSavedIdentity(identifier.trim());
+      // Save token, user data, and identity in parallel
+      await Promise.all([
+        secureStorage.saveAuthToken(result.token),
+        secureStorage.saveUserData(result.user),
+        secureStorage.saveSavedIdentity(identifier.trim()),
+      ]);
       setSavedIdentity(identifier.trim());
 
       return result.user;

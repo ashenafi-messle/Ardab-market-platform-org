@@ -5,6 +5,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import compression from 'compression';
 
 // Configurations
 import { corsOptions, helmetOptions, REQUEST_BODY_LIMIT } from './shared/config/security.js';
@@ -56,7 +57,18 @@ export function createApp() {
   // middleware (rate limiter, auth, etc.) can intercept them.
   app.options('*', cors(corsOptions));
 
-  // 2.1 Handle favicon.ico to prevent 404 log noise in browsers
+  // 2.1 HTTP Response Compression (Gzip)
+  app.use(
+    compression({
+      threshold: 1024,
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) return false;
+        return compression.filter(req, res);
+      },
+    })
+  );
+
+  // 2.2 Handle favicon.ico to prevent 404 log noise in browsers
   app.get('/favicon.ico', (req, res) => res.status(204).end());
 
   // 3. Request Body Parsing with Strict Size Limit & Raw Body Retention

@@ -17,6 +17,20 @@ import {
 } from '../../admin/services/category.service.js';
 import { getPublicProductRatingSummaries } from '../../customer/services/review.service.js';
 
+// In-memory cache structures for high-performance read throughput
+let cachedCategoryTree = null;
+let categoryTreeCacheTimestamp = 0;
+const CATEGORY_TREE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const specialOffersCache = new Map();
+const SPECIAL_OFFERS_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export function invalidateCatalogCaches() {
+  cachedCategoryTree = null;
+  categoryTreeCacheTimestamp = 0;
+  specialOffersCache.clear();
+}
+
 /**
  * Format a lightweight customer mobile product card
  */
@@ -430,6 +444,17 @@ export class MobileCatalogService {
     const limit = Math.min(48, Math.max(1, parseInt(query.limit || query.pageSize || 10, 10)));
     const skip = (page - 1) * limit;
 
+    const cityKey = (query.city || 'all').toLowerCase();
+    const cacheKey = `${cityKey}:${limit}`;
+    const now = Date.now();
+
+    if (page === 1 && !query.forceRefresh) {
+      const cached = specialOffersCache.get(cacheKey);
+      if (cached && now - cached.timestamp < SPECIAL_OFFERS_CACHE_TTL_MS) {
+        return cached.data;
+      }
+    }
+
     const where = {
       status: 'ACTIVE',
       discountPercent: { gt: 0 },
@@ -502,7 +527,7 @@ export class MobileCatalogService {
 
     const totalPages = Math.ceil(total / limit) || 1;
 
-    return {
+    const result = {
       items: formattedProducts,
       pagination: {
         page,
@@ -516,15 +541,33 @@ export class MobileCatalogService {
         hasPrevPage: page > 1,
       },
     };
+
+    if (page === 1) {
+      specialOffersCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    }
+
+    return result;
   }
 
   /**
    * Get complete hierarchical category tree with unlimited depth,
    * enriched with the latest added product images for each category.
    */
-  static async getCategoryTree() {
+  static async getCategoryTree(options = {}) {
+    const now = Date.now();
+    if (
+      !options.forceRefresh &&
+      cachedCategoryTree &&
+      now - categoryTreeCacheTimestamp < CATEGORY_TREE_CACHE_TTL_MS
+    ) {
+      return cachedCategoryTree;
+    }
+
     const rawTree = await fetchAdminCategoryTree({ activeOnly: 'true' });
-    return attachLatestProductImagesToCategoryTree(rawTree);
+    const enrichedTree = await attachLatestProductImagesToCategoryTree(rawTree);
+    cachedCategoryTree = enrichedTree;
+    categoryTreeCacheTimestamp = now;
+    return enrichedTree;
   }
 
   /**

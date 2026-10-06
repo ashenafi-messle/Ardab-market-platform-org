@@ -61,22 +61,27 @@ export class MobileSessionService {
    * Generates access token + cryptographically random refresh token.
    * Persists SHA-256 hash of refresh token into customer_mobile_sessions table.
    */
-  static async createSession(customerId, deviceInfo = null, { isLogin = false } = {}) {
-    const customer = await prisma.customer.findUnique({
-      where: { id: customerId },
-      select: {
-        id: true,
-        customerCode: true,
-        fullName: true,
-        phone: true,
-        email: true,
-        city: true,
-        profileImageUrl: true,
-        status: true,
-        verificationStatus: true,
-        createdAt: true,
-      },
-    });
+  static async createSession(customerOrId, deviceInfo = null, { isLogin = false } = {}) {
+    let customer = null;
+    if (typeof customerOrId === 'object' && customerOrId !== null && customerOrId.id) {
+      customer = customerOrId;
+    } else {
+      customer = await prisma.customer.findUnique({
+        where: { id: customerOrId },
+        select: {
+          id: true,
+          customerCode: true,
+          fullName: true,
+          phone: true,
+          email: true,
+          city: true,
+          profileImageUrl: true,
+          status: true,
+          verificationStatus: true,
+          createdAt: true,
+        },
+      });
+    }
 
     if (!customer) {
       throw ApiError.notFound('Customer account not found', AuthResponseCode.CUSTOMER_NOT_FOUND);
@@ -121,17 +126,15 @@ export class MobileSessionService {
       },
     });
 
-    // 4. If this is a genuine new login and other valid session(s) exist, trigger security alert immediately
+    // 4. Non-blocking asynchronous dispatch of security notification
     if (isLogin && hasExistingValidSession) {
-      try {
-        await createCustomerSecurityNotification({
-          customerId: customer.id,
-          sessionId: newSession.id,
-          deviceInfo,
-        });
-      } catch (err) {
+      createCustomerSecurityNotification({
+        customerId: customer.id,
+        sessionId: newSession.id,
+        deviceInfo,
+      }).catch((err) => {
         console.warn('[SECURITY] Failed to dispatch security login notification:', err.message);
-      }
+      });
     }
 
     return {
