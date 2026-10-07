@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography, Radius, Shadows } from '@/theme';
@@ -128,40 +128,34 @@ export default function HomeScreen() {
   );
 
   /**
-   * Main data loader for initial load and background focus updates
+   * Dedicated initial data loader for when the app is opened.
+   * Completely decoupled from the pull-to-refresh feature.
    */
-  const loadData = useCallback(
-    async (force = false) => {
-      // Deduplicate: if an explicit refresh is currently in progress, skip
-      if (isRefreshingRef.current && !force) return;
+  const loadInitialData = useCallback(async () => {
+    try {
+      setErrorState(null);
 
-      try {
-        setErrorState(null);
+      const cartProductIds = (cartItems || []).map((item) => item.product.id).filter(Boolean);
 
-        const cartProductIds = (cartItems || []).map((item) => item.product.id).filter(Boolean);
+      const data = await homeService.fetchInitialHomeData({
+        city: currentCity,
+        cartProductIds,
+      });
 
-        const data = await homeService.fetchHomeData({
-          city: currentCity,
-          cartProductIds,
-          forceRefresh: force,
-        });
-
-        applyHomeData(data);
-      } catch (err: any) {
-        // Keep existing UI intact, only show lightweight error if we have no data at all
-        if (categories.length === 0 && trendingProducts.length === 0) {
-          setErrorState(
-            err?.message || (language === 'am' ? 'ማደስ አልተቻለም። እባክዎ እንደገና ይሞክሩ።' : "Couldn't refresh. Please try again.")
-          );
-        }
-      } finally {
-        setLoadingInitial(false);
+      applyHomeData(data);
+    } catch (err: any) {
+      // Keep existing UI intact, only show lightweight error if we have no cached data at all
+      if (categories.length === 0 && trendingProducts.length === 0) {
+        setErrorState(
+          err?.message || (language === 'am' ? 'መረጃ መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።' : "Couldn't load marketplace data. Please try again.")
+        );
       }
-    },
-    [applyHomeData, cartItems, categories.length, currentCity, language, trendingProducts.length]
-  );
+    } finally {
+      setLoadingInitial(false);
+    }
+  }, [applyHomeData, cartItems, categories.length, currentCity, language, trendingProducts.length]);
 
-  // Restore persisted offline cache on cold start for instantaneous rendering
+  // Restore persisted offline cache on cold start for instantaneous rendering, then fetch initial data
   useEffect(() => {
     let isMounted = true;
 
@@ -172,31 +166,22 @@ export default function HomeScreen() {
       }
     });
 
-    // Background fetch latest server data
-    loadData(false);
+    // Fetch initial home data on app open (independent of refresh)
+    loadInitialData();
 
     return () => {
       isMounted = false;
     };
-  }, []);
-
-  // Screen focus listener with sensible stale-time cooldown (does NOT spam on every tab switch)
-  useFocusEffect(
-    useCallback(() => {
-      if (!homeService.isFresh()) {
-        loadData(false);
-      }
-    }, [loadData])
-  );
+  }, [loadInitialData]);
 
   /**
    * Native Pull-To-Refresh handler
    * Guarantees:
+   * - ONLY updates data to latest when customer explicitly performs refresh on Home
    * - Native refresh spinner
    * - Does NOT reset or blank the screen
    * - Existing data remains visible during refresh
-   * - Request deduplication against repeated pull gestures
-   * - Authoritative backend discount and price updates
+   * - Deduplication against repeated gestures
    */
   const handleRefresh = async () => {
     if (isRefreshingRef.current) return;
@@ -206,21 +191,20 @@ export default function HomeScreen() {
     setCartNotice(null);
 
     const refreshStartTime = Date.now();
-    console.log('[HomeRefresh] pull-to-refresh started');
+    console.log('[HomeRefresh] Customer initiated pull-to-refresh');
 
     try {
       const cartProductIds = (cartItems || []).map((item) => item.product.id).filter(Boolean);
 
-      const freshData = await homeService.fetchHomeData({
+      const freshData = await homeService.refreshHomeData({
         city: currentCity,
         cartProductIds,
-        forceRefresh: true,
       });
 
       applyHomeData(freshData);
-      console.log(`[HomeRefresh] pull-to-refresh completed in ${Date.now() - refreshStartTime}ms`);
+      console.log(`[HomeRefresh] Pull-to-refresh finished in ${Date.now() - refreshStartTime}ms`);
     } catch (err: any) {
-      console.warn('[HomeRefresh] pull-to-refresh error:', err?.message);
+      console.warn('[HomeRefresh] Pull-to-refresh error:', err?.message);
       // Keep existing data visible, show friendly lightweight notification
       setErrorState(
         language === 'am'

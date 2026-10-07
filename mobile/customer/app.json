@@ -10,7 +10,10 @@
     "ios": {
       "bundleIdentifier": "com.ashu2288.customer",
       "icon": "./assets/images/icon.png",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {

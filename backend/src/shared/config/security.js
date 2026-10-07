@@ -32,7 +32,7 @@ export const helmetOptions = {
  */
 export const corsOptions = {
   origin: (origin, callback) => {
-    // Allow non-browser clients (Postman, health checks, curl) with no origin header
+    // Allow non-browser clients (React Native mobile, Postman, health checks, curl) with no origin header
     if (!origin) {
       return callback(null, true);
     }
@@ -41,8 +41,13 @@ export const corsOptions = {
       return callback(null, true);
     }
 
-    // In development mode, allow localhost variations
-    if (env.IS_DEVELOPMENT && /^http:\/\/localhost:\d+$/.test(origin)) {
+    // Allow any localhost/127.0.0.1 port (Expo web :8081, Admin :3000, Customer web :3001, etc.)
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow official Vercel preview/production deployments
+    if (/^https:\/\/.*\.vercel\.app$/.test(origin)) {
       return callback(null, true);
     }
 
@@ -67,6 +72,12 @@ export const corsOptions = {
     'x-app-source',
     'X-Client-Device-Id',
     'x-client-device-id',
+    'Cache-Control',
+    'cache-control',
+    'Pragma',
+    'pragma',
+    'Expires',
+    'expires',
   ],
   exposedHeaders: ['X-Request-ID', 'X-Idempotency-Key', 'Content-Range', 'X-Total-Count'],
   maxAge: 86400,         // 24 hours — browsers cache preflight result

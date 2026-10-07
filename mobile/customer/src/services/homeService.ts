@@ -87,7 +87,8 @@ export function mapNodeToCategory(node: any): Category {
 class HomeService {
   private inMemoryCache: HomeData | null = null;
   private lastFetchedTimestamp: number = 0;
-  private inFlightFetchPromise: Promise<HomeData> | null = null;
+  private inFlightInitialPromise: Promise<HomeData> | null = null;
+  private inFlightRefreshPromise: Promise<HomeData> | null = null;
 
   /**
    * Retrieves synchronous in-memory cached Home data if present
@@ -118,7 +119,7 @@ class HomeService {
   }
 
   /**
-   * Checks whether the current Home data is fresh enough to skip background re-fetching on screen focus
+   * Checks whether the current Home data is fresh enough
    */
   public isFresh(): boolean {
     return (
@@ -128,34 +129,65 @@ class HomeService {
   }
 
   /**
-   * Consolidated Home data fetch.
-   * If `forceRefresh` is true (pull-to-refresh), bypasses stale cache and forces fresh backend fetch.
-   * Request coalescing ensures multiple simultaneous calls share a single network request.
+   * Parses raw consolidated backend payload into the strongly-typed HomeData structure
    */
-  public async fetchHomeData(params: {
+  private parseHomePayload(payload: any): HomeData {
+    // Map categories tree
+    const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
+    const mappedCategories = rawCategories.map(mapNodeToCategory);
+
+    // Map product lists using authoritative mobile product mapper
+    const rawOffers = Array.isArray(payload.specialOffers) ? payload.specialOffers : [];
+    const specialOffers = rawOffers
+      .map(mapBackendProductToMobile)
+      .filter((p: Product) => p.discountPercentage && p.discountPercentage > 0);
+
+    const rawTrending = Array.isArray(payload.trendingProducts) ? payload.trendingProducts : [];
+    const trendingProducts = rawTrending.map(mapBackendProductToMobile);
+
+    const rawRecommended = Array.isArray(payload.recommendedProducts) ? payload.recommendedProducts : [];
+    const recommendedProducts = rawRecommended.map(mapBackendProductToMobile);
+
+    const rawHero =
+      Array.isArray(payload.heroProducts) && payload.heroProducts.length > 0
+        ? payload.heroProducts.map(mapBackendProductToMobile)
+        : trendingProducts.slice(0, 2);
+
+    return {
+      categories: mappedCategories,
+      specialOffers,
+      trendingProducts,
+      recommendedProducts,
+      heroProducts: rawHero,
+      unreadNotificationCount: Number(payload.unreadNotificationCount || 0),
+      latestOrder: payload.latestOrder || null,
+      wishlistProductIds: Array.isArray(payload.wishlistProductIds) ? payload.wishlistProductIds : [],
+      customer: payload.customer || null,
+      cartValidation: Array.isArray(payload.cartValidation) ? payload.cartValidation : [],
+      serverTimestamp: payload.serverTimestamp || new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Initial data fetch for when the customer opens the app.
+   * Completely separated from the refresh feature.
+   */
+  public async fetchInitialHomeData(params: {
     city?: string;
     cartProductIds?: string[];
-    forceRefresh?: boolean;
   } = {}): Promise<HomeData> {
-    const { city = 'All Cities', cartProductIds = [], forceRefresh = false } = params;
+    const { city = 'All Cities', cartProductIds = [] } = params;
 
-    // Return in-flight fetch promise if a refresh/request is already running (deduplication)
-    if (this.inFlightFetchPromise) {
-      return this.inFlightFetchPromise;
-    }
-
-    // Cooldown check for screen focus (do not refetch if fresh, unless user explicitly pulled to refresh)
-    if (!forceRefresh && this.isFresh() && this.inMemoryCache) {
-      return this.inMemoryCache;
+    // Return in-flight initial fetch promise if already running
+    if (this.inFlightInitialPromise) {
+      return this.inFlightInitialPromise;
     }
 
     const startTime = Date.now();
-    console.log('[HomeRefresh] started', { forceRefresh, city });
+    console.log('[HomeData] Initial home fetch started', { city });
 
-    this.inFlightFetchPromise = (async () => {
+    this.inFlightInitialPromise = (async () => {
       try {
-        console.log('[HomeRefresh] request started');
-
         const queryParams = new URLSearchParams();
         if (city && city !== 'All Cities') {
           queryParams.append('city', city);
@@ -163,33 +195,18 @@ class HomeService {
         if (cartProductIds && cartProductIds.length > 0) {
           queryParams.append('cartProductIds', cartProductIds.join(','));
         }
-        if (forceRefresh) {
-          queryParams.append('force', 'true');
-        }
 
         const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
-
-        // Headers for pull-to-refresh cache-busting
-        const headers: Record<string, string> = {};
-        if (forceRefresh) {
-          headers['Cache-Control'] = 'no-cache';
-          headers['Pragma'] = 'no-cache';
-        }
 
         // Try primary mobile route with fallback to general customer route
         let res;
         try {
           res = await apiFetch<any>(`/customer-mobile/home${queryString}`, {
             method: 'GET',
-            headers,
-            skipDeduplication: forceRefresh,
           });
         } catch (mobileErr) {
-          // Fallback to /customer/home
           res = await apiFetch<any>(`/customer/home${queryString}`, {
             method: 'GET',
-            headers,
-            skipDeduplication: forceRefresh,
           });
         }
 
@@ -197,39 +214,7 @@ class HomeService {
           throw new Error('Failed to load marketplace home data from server');
         }
 
-        const payload = res.data.data || res.data;
-
-        // Map categories tree
-        const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
-        const mappedCategories = rawCategories.map(mapNodeToCategory);
-
-        // Map product lists using authoritative mobile product mapper
-        const rawOffers = Array.isArray(payload.specialOffers) ? payload.specialOffers : [];
-        const specialOffers = rawOffers.map(mapBackendProductToMobile).filter((p: Product) => p.discountPercentage && p.discountPercentage > 0);
-
-        const rawTrending = Array.isArray(payload.trendingProducts) ? payload.trendingProducts : [];
-        const trendingProducts = rawTrending.map(mapBackendProductToMobile);
-
-        const rawRecommended = Array.isArray(payload.recommendedProducts) ? payload.recommendedProducts : [];
-        const recommendedProducts = rawRecommended.map(mapBackendProductToMobile);
-
-        const rawHero = Array.isArray(payload.heroProducts) && payload.heroProducts.length > 0
-          ? payload.heroProducts.map(mapBackendProductToMobile)
-          : trendingProducts.slice(0, 2);
-
-        const homeData: HomeData = {
-          categories: mappedCategories,
-          specialOffers,
-          trendingProducts,
-          recommendedProducts,
-          heroProducts: rawHero,
-          unreadNotificationCount: Number(payload.unreadNotificationCount || 0),
-          latestOrder: payload.latestOrder || null,
-          wishlistProductIds: Array.isArray(payload.wishlistProductIds) ? payload.wishlistProductIds : [],
-          customer: payload.customer || null,
-          cartValidation: Array.isArray(payload.cartValidation) ? payload.cartValidation : [],
-          serverTimestamp: payload.serverTimestamp || new Date().toISOString(),
-        };
+        const homeData = this.parseHomePayload(res.data.data || res.data);
 
         // Update in-memory cache and timestamp
         this.inMemoryCache = homeData;
@@ -238,22 +223,94 @@ class HomeService {
         // Background persist to secure storage
         secureStorage.setItem(STORAGE_HOME_CACHE_KEY, JSON.stringify(homeData)).catch(() => {});
 
-        const duration = Date.now() - startTime;
-        console.log(`[HomeRefresh] success duration: ${duration}ms`, {
-          categories: homeData.categories.length,
-          offers: homeData.specialOffers.length,
-          trending: homeData.trendingProducts.length,
-          unreadCount: homeData.unreadNotificationCount,
-        });
-
+        console.log(`[HomeData] Initial fetch success (${Date.now() - startTime}ms)`);
         return homeData;
       } catch (err: any) {
-        const duration = Date.now() - startTime;
-        console.warn(`[HomeRefresh] failed duration: ${duration}ms`, {
-          message: err?.message || 'Unknown network error',
-        });
+        console.warn(`[HomeData] Initial fetch error (${Date.now() - startTime}ms):`, err?.message);
 
         // If network request failed but we have cached data, return cached data to prevent UI blanking
+        if (this.inMemoryCache) {
+          return this.inMemoryCache;
+        }
+
+        const persisted = await this.getPersistedHomeData();
+        if (persisted) {
+          return persisted;
+        }
+
+        throw err;
+      } finally {
+        this.inFlightInitialPromise = null;
+      }
+    })();
+
+    return this.inFlightInitialPromise;
+  }
+
+  /**
+   * Dedicated Refresh feature method.
+   * ONLY invoked when the customer explicitly performs the refresh action on the Home screen.
+   * Updates data to the latest one directly from backend.
+   */
+  public async refreshHomeData(params: {
+    city?: string;
+    cartProductIds?: string[];
+  } = {}): Promise<HomeData> {
+    const { city = 'All Cities', cartProductIds = [] } = params;
+
+    // Deduplicate against multiple simultaneous refresh gestures
+    if (this.inFlightRefreshPromise) {
+      return this.inFlightRefreshPromise;
+    }
+
+    const startTime = Date.now();
+    console.log('[HomeRefresh] Customer action: pull-to-refresh started', { city });
+
+    this.inFlightRefreshPromise = (async () => {
+      try {
+        const queryParams = new URLSearchParams();
+        if (city && city !== 'All Cities') {
+          queryParams.append('city', city);
+        }
+        if (cartProductIds && cartProductIds.length > 0) {
+          queryParams.append('cartProductIds', cartProductIds.join(','));
+        }
+        queryParams.append('force', 'true');
+
+        const queryString = `?${queryParams.toString()}`;
+
+        let res;
+        try {
+          res = await apiFetch<any>(`/customer-mobile/home${queryString}`, {
+            method: 'GET',
+            skipDeduplication: true,
+          });
+        } catch (mobileErr) {
+          res = await apiFetch<any>(`/customer/home${queryString}`, {
+            method: 'GET',
+            skipDeduplication: true,
+          });
+        }
+
+        if (!res.ok || !res.data) {
+          throw new Error('Failed to refresh marketplace home data from server');
+        }
+
+        const homeData = this.parseHomePayload(res.data.data || res.data);
+
+        // Update in-memory cache and timestamp with latest authoritative data
+        this.inMemoryCache = homeData;
+        this.lastFetchedTimestamp = Date.now();
+
+        // Background persist to secure storage
+        secureStorage.setItem(STORAGE_HOME_CACHE_KEY, JSON.stringify(homeData)).catch(() => {});
+
+        console.log(`[HomeRefresh] Pull-to-refresh completed successfully in ${Date.now() - startTime}ms`);
+        return homeData;
+      } catch (err: any) {
+        console.warn(`[HomeRefresh] Pull-to-refresh failed in ${Date.now() - startTime}ms:`, err?.message);
+
+        // Keep current cache intact so screen does not blank out
         if (this.inMemoryCache) {
           return this.inMemoryCache;
         }
@@ -269,11 +326,26 @@ class HomeService {
             : "Couldn't refresh. Please try again."
         );
       } finally {
-        this.inFlightFetchPromise = null;
+        this.inFlightRefreshPromise = null;
       }
     })();
 
-    return this.inFlightFetchPromise;
+    return this.inFlightRefreshPromise;
+  }
+
+  /**
+   * Backwards-compatible general fetch method.
+   * Delegates to refreshHomeData if forceRefresh is true, or fetchInitialHomeData otherwise.
+   */
+  public async fetchHomeData(params: {
+    city?: string;
+    cartProductIds?: string[];
+    forceRefresh?: boolean;
+  } = {}): Promise<HomeData> {
+    if (params.forceRefresh) {
+      return this.refreshHomeData(params);
+    }
+    return this.fetchInitialHomeData(params);
   }
 }
 
