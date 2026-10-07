@@ -213,7 +213,8 @@ class HomeService {
         }
 
         if (!res.ok || !res.data) {
-          throw new Error('Failed to load marketplace home data from server');
+          const errMsg = res.data?.message || (res.status ? `Server error (HTTP ${res.status})` : 'Failed to load marketplace home data from server');
+          throw new Error(errMsg);
         }
 
         const homeData = this.parseHomePayload(res.data.data || res.data);
@@ -228,7 +229,11 @@ class HomeService {
         console.log(`[HomeData] Initial fetch success (${Date.now() - startTime}ms)`);
         return homeData;
       } catch (err: any) {
-        console.warn(`[HomeData] Initial fetch error (${Date.now() - startTime}ms):`, err?.message);
+        console.warn(`[HomeData] Initial fetch error (${Date.now() - startTime}ms):`, {
+          endpoint: '/customer-mobile/home',
+          city,
+          message: err?.message || 'Unknown network error',
+        });
 
         // If network request failed but we have cached data, return cached data to prevent UI blanking
         if (this.inMemoryCache) {

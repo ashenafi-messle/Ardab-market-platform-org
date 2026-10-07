@@ -12,6 +12,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { startBackendPerf } from '../../shared/utils/perfTracker.js';
 
 export async function getConsolidatedHomeData({ customerId = null, city = 'All Cities', cartProductIds = [] }) {
+  const startTime = Date.now();
   const perf = startBackendPerf('customer-mobile/home', { hasCustomer: !!customerId, city });
 
   // 1. Parallelize core marketplace catalog queries
@@ -168,7 +169,13 @@ export async function getConsolidatedHomeData({ customerId = null, city = 'All C
       paymentStatus: rawOrder.paymentStatus,
       paymentMethod: rawOrder.paymentMethod,
       total: rawOrder.totalAmount ? Number(rawOrder.totalAmount) : 0,
-      placedAt: rawOrder.placedAt ? rawOrder.placedAt.toISOString() : rawOrder.createdAt?.toISOString(),
+      placedAt: rawOrder.placedAt instanceof Date
+        ? rawOrder.placedAt.toISOString()
+        : rawOrder.placedAt
+        ? String(rawOrder.placedAt)
+        : rawOrder.createdAt instanceof Date
+        ? rawOrder.createdAt.toISOString()
+        : new Date().toISOString(),
       estimatedDelivery: rawOrder.estimatedDelivery || null,
       deliveryStatus: rawOrder.delivery?.status || null,
     };

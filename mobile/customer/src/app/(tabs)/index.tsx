@@ -147,7 +147,9 @@ export default function HomeScreen() {
       // Keep existing UI intact, only show lightweight error if we have no cached data at all
       if (categories.length === 0 && trendingProducts.length === 0) {
         setErrorState(
-          err?.message || (language === 'am' ? 'መረጃ መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።' : "Couldn't load marketplace data. Please try again.")
+          language === 'am'
+            ? 'የገበያውን መረጃ ማግኘት አልተቻለም። እባክዎ ወደ ታች ስበው እንደገና ይሞክሩ።'
+            : "Couldn't load the latest marketplace data. Pull down to try again."
         );
       }
     } finally {

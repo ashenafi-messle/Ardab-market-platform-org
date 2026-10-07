@@ -8,6 +8,7 @@
 
 import { ApiResponse } from '../../shared/utils/apiResponse.js';
 import { getConsolidatedHomeData } from '../services/home.service.js';
+import { logger } from '../../shared/utils/logger.js';
 
 export async function getHomeDataHandler(req, res, next) {
   try {
@@ -25,6 +26,12 @@ export async function getHomeDataHandler(req, res, next) {
 
     return ApiResponse.success(res, homeData, 'Home data fetched successfully');
   } catch (error) {
+    logger.error('[CustomerMobileHome] Failed to load marketplace home data:', {
+      error: error.message,
+      stack: error.stack,
+      city: req.query.city,
+      customerId: req.customer?.id,
+    });
     return next(error);
   }
 }
