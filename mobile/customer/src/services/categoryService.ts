@@ -6,6 +6,7 @@
 // ==============================================================================
 
 import { apiFetch } from '@/constants/api';
+import { resolveCategoryIcon } from '@/utils/categoryIcon';
 
 export interface CategoryNode {
   id: string;
@@ -69,7 +70,7 @@ export const categoryService = {
               name: node.name,
               nameAmharic: node.nameAmharic || node.name,
               slug: node.slug || node.id,
-              icon: node.icon || 'grid-outline',
+              icon: resolveCategoryIcon(node.icon, 'grid-outline'),
               image: effectiveImg,
               imageUrl: effectiveImg || undefined,
               latestProductImage: node.latestProductImage || undefined,
@@ -121,7 +122,7 @@ export const categoryService = {
                 name: item.name,
                 nameAmharic: item.nameAmharic || item.name,
                 slug: item.slug || item.id,
-                icon: item.icon || 'grid-outline',
+                icon: resolveCategoryIcon(item.icon, 'grid-outline'),
                 image: effectiveImg,
                 imageUrl: effectiveImg || undefined,
                 latestProductImage: item.latestProductImage || undefined,
@@ -158,7 +159,7 @@ export const categoryService = {
           name: c.name,
           nameAmharic: c.nameAmharic || c.name,
           slug: c.slug || c.id,
-          icon: c.icon || 'grid-outline',
+          icon: resolveCategoryIcon(c.icon, 'grid-outline'),
           image: effectiveImg,
           imageUrl: effectiveImg || undefined,
           latestProductImage: c.latestProductImage || undefined,

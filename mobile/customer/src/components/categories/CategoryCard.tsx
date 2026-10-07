@@ -17,6 +17,8 @@ import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { CategoryNode } from '@/services/categoryService';
 import { useApp } from '@/store';
 
+import { resolveCategoryIcon } from '@/utils/categoryIcon';
+
 interface CategoryCardProps {
   category: CategoryNode;
   onPress: () => void;
@@ -46,7 +48,7 @@ export const CategoryCard: React.FC<CategoryCardProps> = ({
         ) : (
           <View style={styles.iconFallback}>
             <Ionicons
-              name={(category.icon as any) || 'folder-outline'}
+              name={resolveCategoryIcon(category.icon, 'folder-outline')}
               size={22}
               color={Colors.primary}
             />

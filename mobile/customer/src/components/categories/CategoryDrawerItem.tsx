@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing } from '@/theme';
 import { CategoryNode } from '@/services/categoryService';
 import { useApp } from '@/store';
+import { resolveCategoryIcon } from '@/utils/categoryIcon';
 
 interface CategoryDrawerItemProps {
   category: CategoryNode;
@@ -66,7 +67,7 @@ export const CategoryDrawerItem: React.FC<CategoryDrawerItemProps> = ({
               <Image source={{ uri: category.image }} style={styles.catImage} resizeMode="cover" />
             ) : (
               <Ionicons
-                name={(category.icon as any) || 'folder-outline'}
+                name={resolveCategoryIcon(category.icon, 'folder-outline')}
                 size={18}
                 color={expanded ? Colors.primaryDark : Colors.primary}
               />

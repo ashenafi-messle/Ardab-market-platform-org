@@ -63,6 +63,8 @@ export interface HomeData {
 const STORAGE_HOME_CACHE_KEY = 'ardab_cached_home_data';
 const HOME_STALE_TIME_MS = 60 * 1000; // 60 seconds stale-while-revalidate cooldown for screen focus
 
+import { resolveCategoryIcon } from '@/utils/categoryIcon';
+
 export function mapNodeToCategory(node: any): Category {
   const imgUrl = (node.latestProductImage || node.imageUrl || node.image || '').trim();
   return {
@@ -70,7 +72,7 @@ export function mapNodeToCategory(node: any): Category {
     name: node.name,
     nameAmharic: node.nameAmharic,
     slug: node.slug || node.id,
-    icon: node.icon || 'grid-outline',
+    icon: resolveCategoryIcon(node.icon, 'grid-outline'),
     image: imgUrl,
     imageUrl: imgUrl || undefined,
     productCount: node.productCount || 0,

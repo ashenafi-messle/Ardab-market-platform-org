@@ -10,6 +10,7 @@ import { AnimatedPressable } from '../common/AnimatedPressable';
 import { useApp } from '@/store';
 import { t } from '@/localization';
 import { ImagePresets, DEFAULT_BLURHASH } from '@/utils/imageOptimizer';
+import { resolveCategoryIcon } from '@/utils/categoryIcon';
 
 export interface CategoryCarouselProps {
   categories: Category[];
@@ -63,7 +64,7 @@ export const CategoryCarousel: React.FC<CategoryCarouselProps> = ({
                 ) : (
                   <View style={styles.fallbackIconContainer}>
                     <Ionicons
-                      name={(category.icon as any) || 'grid-outline'}
+                      name={resolveCategoryIcon(category.icon, 'grid-outline')}
                       size={24}
                       color={Colors.primaryDark}
                     />

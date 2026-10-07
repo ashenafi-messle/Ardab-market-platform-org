@@ -5,6 +5,8 @@ import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { Category } from '@/types';
 import { useApp } from '@/store';
 
+import { resolveCategoryIcon } from '@/utils/categoryIcon';
+
 export interface CategoryCardProps {
   category: Category;
   onPress: () => void;
@@ -31,7 +33,7 @@ export const CategoryCard: React.FC<CategoryCardProps> = ({
           {category.image ? (
             <Image source={{ uri: category.image }} style={styles.circleImage} resizeMode="cover" />
           ) : (
-            <Ionicons name={category.icon as any || 'grid-outline'} size={28} color={Colors.primary} />
+            <Ionicons name={resolveCategoryIcon(category.icon, 'grid-outline')} size={28} color={Colors.primary} />
           )}
         </View>
         <Text style={styles.circleLabel} numberOfLines={2}>
