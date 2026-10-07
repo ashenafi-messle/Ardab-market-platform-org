@@ -2,21 +2,40 @@ import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   Animated,
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
-import { BRAND_TAGLINE, BRAND_SUPPORTING_TEXT } from '@/constants/branding';
 import { Product } from '@/types';
 import { AnimatedPressable } from '../common/AnimatedPressable';
-import { t, formatPrice } from '@/localization';
+import { t } from '@/localization';
+import { getOptimizedImageUrl } from '@/utils/imageOptimizer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// 2:3 aspect ratio of the Cloudinary graphic (1024 x 1536)
+const SLOGAN_ASPECT_RATIO = 2 / 3;
+
+// Responsive height calculation:
+// Compact phones (~320-360px): ~195-200px
+// Standard phones (~375-400px): ~205-220px
+// Large phones / tablets (>400px): capped at 235px
+const sloganImageHeight = Math.min(Math.max(Math.round(SCREEN_WIDTH * 0.54), 195), 235);
+const sloganImageWidth = Math.round(sloganImageHeight * SLOGAN_ASPECT_RATIO);
+
+const HERO_SLOGAN_IMAGE_RAW =
+  'https://res.cloudinary.com/dr9umkixr/image/upload/v1791360017/Ardab_Market__Shop_Smart_Live_Better_kitqsw.png';
+
+const OPTIMIZED_SLOGAN_IMAGE_URL =
+  getOptimizedImageUrl(HERO_SLOGAN_IMAGE_RAW, {
+    width: 600,
+    format: 'auto',
+  }) || HERO_SLOGAN_IMAGE_RAW;
 
 export interface HomeHeroProps {
   heroProducts?: Product[];
@@ -25,7 +44,6 @@ export interface HomeHeroProps {
 }
 
 export const HomeHero: React.FC<HomeHeroProps> = ({
-  heroProducts = [],
   onShopNow,
   onExploreCategories,
 }) => {
@@ -36,9 +54,8 @@ export const HomeHero: React.FC<HomeHeroProps> = ({
   const slideAnim = useRef(new Animated.Value(20)).current;
   const scaleAnim = useRef(new Animated.Value(0.92)).current;
 
-  // Floating decorative element animations
-  const floatAnim1 = useRef(new Animated.Value(0)).current;
-  const floatAnim2 = useRef(new Animated.Value(0)).current;
+  // Subtle floating animation for promotional slogan image
+  const floatAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Entrance animation sequence
@@ -62,42 +79,32 @@ export const HomeHero: React.FC<HomeHeroProps> = ({
     ]).start();
 
     // Gentle continuous floating loop
-    const createFloatLoop = (anim: Animated.Value, duration: number, distance: number) => {
-      return Animated.loop(
-        Animated.sequence([
-          Animated.timing(anim, {
-            toValue: -distance,
-            duration: duration,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: distance,
-            duration: duration,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: duration,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-    };
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: -5,
+          duration: 2500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 5,
+          duration: 2500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 2500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
 
-    const loop1 = createFloatLoop(floatAnim1, 2400, 6);
-    const loop2 = createFloatLoop(floatAnim2, 2800, 5);
-
-    loop1.start();
-    loop2.start();
+    floatLoop.start();
 
     return () => {
-      loop1.stop();
-      loop2.stop();
+      floatLoop.stop();
     };
   }, []);
-
-  const prod1 = heroProducts[0];
-  const prod2 = heroProducts[1];
 
   const handleShopNow = () => {
     if (onShopNow) {
@@ -124,85 +131,57 @@ export const HomeHero: React.FC<HomeHeroProps> = ({
           transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
         },
       ]}>
-      {/* Background Decorative Circles */}
+      {/* Background Decorative Shapes */}
       <View style={styles.circleBg1} />
       <View style={styles.circleBg2} />
       <View style={styles.circleBg3} />
 
-      <View style={styles.contentRow}>
-        {/* Left Column: Text & CTAs */}
-        <View style={styles.textColumn}>
-          {/* Verified Badge */}
-          <View style={styles.tagBadge}>
-            <Ionicons name="shield-checkmark" size={13} color={Colors.accent} />
-            <Text style={styles.tagText}>{t('home.verifiedMarketplace')}</Text>
-          </View>
-
-          <Text style={styles.headline}>{t('home.heroTitle')}</Text>
-          <Text style={styles.supporting}>{t('home.heroSubtitle')}</Text>
-
-          {/* Action Buttons */}
-          <View style={styles.ctaRow}>
-            <AnimatedPressable
-              scaleTo={0.94}
-              onPress={handleShopNow}
-              accessibilityLabel={t('home.shopNow')}
-              style={styles.primaryBtn}>
-              <Text style={styles.primaryBtnText}>{t('home.shopNow')}</Text>
-              <Ionicons name="arrow-forward" size={14} color="#003B18" />
-            </AnimatedPressable>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleExplore}
-              accessibilityLabel={t('home.exploreCategories')}
-              style={styles.secondaryBtn}>
-              <Text style={styles.secondaryBtnText}>{t('common.explore')}</Text>
-            </TouchableOpacity>
-          </View>
+      <View style={styles.contentContainer}>
+        {/* 1. Hero Heading / Verified Brand Badge: Ardab Market */}
+        <View style={styles.tagBadge}>
+          <Ionicons name="shield-checkmark" size={13} color={Colors.accent} />
+          <Text style={styles.tagText}>Ardab Market</Text>
         </View>
 
-        {/* Right Column: Floating Product Cards */}
-        <View style={styles.productVisualArea}>
-          {prod1 ? (
-            <Animated.View
-              style={[
-                styles.floatingCard1,
-                { transform: [{ translateY: floatAnim1 }, { rotate: '-6deg' }] },
-              ]}>
-              <Image
-                source={{ uri: prod1.images[0] }}
-                style={styles.cardImage}
-                resizeMode="cover"
-              />
-              <View style={styles.cardTag}>
-                <Text style={styles.cardTagText} numberOfLines={1}>
-                  {prod1.name.split(' ')[0]}
-                </Text>
-                <Text style={styles.cardPriceText}>{formatPrice(prod1.price)}</Text>
-              </View>
-            </Animated.View>
-          ) : null}
+        {/* 2. Large, clearly visible Ardab Market slogan image */}
+        <Animated.View
+          style={[
+            styles.imageWrapper,
+            {
+              transform: [{ translateY: floatAnim }],
+            },
+          ]}>
+          <ExpoImage
+            source={{ uri: OPTIMIZED_SLOGAN_IMAGE_URL }}
+            style={styles.sloganImage}
+            contentFit="contain"
+            priority="high"
+            cachePolicy="memory-disk"
+            transition={200}
+            accessible={true}
+            accessibilityRole="image"
+            accessibilityLabel="Ardab Market — Shop Smart, Live Better"
+          />
+        </Animated.View>
 
-          {prod2 ? (
-            <Animated.View
-              style={[
-                styles.floatingCard2,
-                { transform: [{ translateY: floatAnim2 }, { rotate: '5deg' }] },
-              ]}>
-              <Image
-                source={{ uri: prod2.images[0] }}
-                style={styles.cardImage}
-                resizeMode="cover"
-              />
-              <View style={styles.cardTag}>
-                <Text style={styles.cardTagText} numberOfLines={1}>
-                  {prod2.name.split(' ')[0]}
-                </Text>
-                <Text style={styles.cardPriceText}>{formatPrice(prod2.price)}</Text>
-              </View>
-            </Animated.View>
-          ) : null}
+        {/* 3. Existing CTA buttons */}
+        <View style={styles.ctaRow}>
+          <AnimatedPressable
+            scaleTo={0.94}
+            onPress={handleShopNow}
+            accessibilityLabel={t('home.shopNow')}
+            style={styles.primaryBtn}>
+            <Text style={styles.primaryBtnText}>{t('home.shopNow')}</Text>
+            <Ionicons name="arrow-forward" size={14} color="#003B18" />
+          </AnimatedPressable>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleExplore}
+            accessibilityLabel={t('home.exploreCategories')}
+            style={styles.secondaryBtn}>
+            <Text style={styles.secondaryBtnText}>{t('common.explore')}</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Animated.View>
@@ -216,10 +195,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     backgroundColor: Colors.primaryDark,
     borderRadius: Radius.xl,
-    padding: Spacing.lg,
+    paddingVertical: Spacing.md + 2,
+    paddingHorizontal: Spacing.md,
     overflow: 'hidden',
     position: 'relative',
-    minHeight: 185,
     borderWidth: 1,
     borderColor: 'rgba(0, 160, 0, 0.25)',
     ...Shadows.md,
@@ -252,60 +231,58 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
   },
-  contentRow: {
-    flexDirection: 'row',
+  contentContainer: {
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     zIndex: 1,
-  },
-  textColumn: {
-    flex: 1.15,
-    paddingRight: Spacing.xs,
   },
   tagBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: 'rgba(0, 160, 0, 0.28)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: Radius.pill,
-    alignSelf: 'flex-start',
-    marginBottom: Spacing.xs + 2,
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
     borderWidth: 1,
     borderColor: 'rgba(0, 200, 83, 0.35)',
   },
   tagText: {
     color: '#E6F7E6',
-    fontSize: 10,
-    fontWeight: Typography.fontWeight.semibold,
+    fontSize: 12,
+    fontWeight: Typography.fontWeight.bold,
+    letterSpacing: 0.3,
   },
-  headline: {
-    fontSize: Typography.fontSize.xl + 1,
-    fontWeight: Typography.fontWeight.heavy,
-    color: Colors.textInverse,
-    lineHeight: 25,
-    letterSpacing: -0.4,
-  },
-  supporting: {
-    fontSize: 11,
-    color: Colors.primaryMuted,
-    lineHeight: 16,
-    marginTop: 4,
+  imageWrapper: {
+    width: sloganImageWidth,
+    height: sloganImageHeight,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     marginBottom: Spacing.md,
+    ...Shadows.md,
+  },
+  sloganImage: {
+    width: '100%',
+    height: '100%',
   },
   ctaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    justifyContent: 'center',
+    gap: Spacing.sm + 2,
   },
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#FFFFFF',
-    paddingVertical: 7,
-    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    paddingHorizontal: Spacing.lg,
     borderRadius: Radius.pill,
     ...Shadows.sm,
   },
@@ -315,8 +292,8 @@ const styles = StyleSheet.create({
     color: '#003B18',
   },
   secondaryBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: Spacing.sm,
+    paddingVertical: 7,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.pill,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.35)',
@@ -325,56 +302,5 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     color: Colors.textInverse,
     fontWeight: Typography.fontWeight.semibold,
-  },
-  productVisualArea: {
-    flex: 0.85,
-    height: 145,
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  floatingCard1: {
-    position: 'absolute',
-    top: 5,
-    right: 15,
-    width: 82,
-    backgroundColor: '#FFFFFF',
-    borderRadius: Radius.md,
-    padding: 3,
-    ...Shadows.md,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  floatingCard2: {
-    position: 'absolute',
-    bottom: 5,
-    right: 2,
-    width: 86,
-    backgroundColor: '#FFFFFF',
-    borderRadius: Radius.md,
-    padding: 3,
-    ...Shadows.md,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  cardImage: {
-    width: '100%',
-    height: 52,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surface,
-  },
-  cardTag: {
-    paddingVertical: 2,
-    paddingHorizontal: 2,
-  },
-  cardTagText: {
-    fontSize: 9,
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.text,
-  },
-  cardPriceText: {
-    fontSize: 8,
-    fontWeight: Typography.fontWeight.heavy,
-    color: Colors.primaryDark,
   },
 });
