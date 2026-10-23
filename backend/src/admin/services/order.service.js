@@ -478,11 +478,29 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
 
   const productMap = new Map(products.map((p) => [p.id, p]));
 
-  // Check product active status
+  // Check product active and availability status
   for (const item of payload.items) {
     const prod = productMap.get(item.productId);
+    if (prod.isSoldOut) {
+      throw ApiError.badRequest(
+        `Product "${prod.name}" is currently sold out and cannot be purchased.`,
+        'PRODUCT_SOLD_OUT',
+        { productId: prod.id, productName: prod.name }
+      );
+    }
+    if (prod.status === 'OUT_OF_STOCK') {
+      throw ApiError.badRequest(
+        `Product "${prod.name}" is currently out of stock and cannot be purchased.`,
+        'PRODUCT_OUT_OF_STOCK',
+        { productId: prod.id, productName: prod.name }
+      );
+    }
     if (prod.status !== 'ACTIVE') {
-      throw ApiError.badRequest(`Product "${prod.name}" is currently ${prod.status} and cannot be ordered.`);
+      throw ApiError.badRequest(
+        `Product "${prod.name}" is currently ${prod.status} and cannot be ordered.`,
+        'PRODUCT_UNAVAILABLE',
+        { productId: prod.id, productName: prod.name }
+      );
     }
   }
 

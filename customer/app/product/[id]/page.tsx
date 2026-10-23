@@ -77,15 +77,20 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     fetchProduct();
   }, [productId]);
 
+  const isSoldOut = Boolean(product?.isSoldOut || product?.availabilityStatus === 'SOLD_OUT');
+  const isOutOfStock = Boolean(product?.status === 'OUT_OF_STOCK' || product?.availabilityStatus === 'OUT_OF_STOCK');
+  const isUnavailable = isSoldOut || isOutOfStock || (product && (product.status !== 'ACTIVE' || product.isAvailable === false));
+  const isAvailable = Boolean(product && !isUnavailable);
+
   const handleAddToCart = () => {
-    if (!product) return;
+    if (!product || !isAvailable) return;
     addToCart(product, quantity, selectedAttributes);
     setAddedSuccess(true);
     setTimeout(() => setAddedSuccess(false), 2500);
   };
 
   const handleBuyNow = () => {
-    if (!product) return;
+    if (!product || !isAvailable) return;
     addToCart(product, quantity, selectedAttributes);
     router.push('/checkout');
   };
@@ -225,7 +230,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   const inWishlist = isInWishlist(product.id);
   const displayPrice = product.price ?? product.sellingPrice;
-  const isAvailable = product.status === 'ACTIVE' || (product.stock !== undefined && product.stock > 0);
 
   // Robust gallery image resolution with Cloudinary and professional fallback
   const rawImages = (product.images && product.images.length > 0)
@@ -442,18 +446,39 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             {/* Stock Availability */}
-            <div className="mb-4">
-              {isAvailable ? (
+            <div className="mb-3">
+              {isSoldOut ? (
+                <span className="badge bg-danger shadow-sm px-3 py-2 rounded-pill text-uppercase fw-bold">
+                  <i className="bi bi-slash-circle me-1"></i> {t('marketplace.card.soldOut', 'Sold Out')}
+                </span>
+              ) : isOutOfStock ? (
+                <span className="badge bg-secondary shadow-sm px-3 py-2 rounded-pill text-uppercase fw-bold">
+                  <i className="bi bi-x-circle-fill me-1"></i> {t('out_of_stock')}
+                </span>
+              ) : isAvailable ? (
                 <span className="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill">
                   <i className="bi bi-check-circle-fill me-1"></i> {t('in_stock')}
                   {product.unit ? ` (${product.unit})` : ''}
                 </span>
               ) : (
-                <span className="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill">
-                  <i className="bi bi-x-circle-fill me-1"></i> {t('out_of_stock')}
+                <span className="badge bg-dark-subtle text-dark border px-3 py-2 rounded-pill">
+                  <i className="bi bi-slash-circle me-1"></i> {t('common.status.unavailable', 'Unavailable')}
                 </span>
               )}
             </div>
+
+            {/* Sold Out / Unavailable Notice */}
+            {isUnavailable && (
+              <div className="alert alert-danger py-2 px-3 mb-4 rounded-3 small d-flex align-items-center gap-2">
+                <i className="bi bi-exclamation-triangle-fill flex-shrink-0 fs-5 text-danger"></i>
+                <div>
+                  <strong>{isSoldOut ? t('marketplace.card.soldOut', 'Sold Out') : t('out_of_stock')}</strong>:{' '}
+                  {isSoldOut
+                    ? t('marketplace.card.unavailableNotice', 'This product is currently sold out and unavailable for order.')
+                    : t('out_of_stock')}
+                </div>
+              </div>
+            )}
 
             {/* Product Description */}
             {product.description && (
@@ -556,6 +581,19 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     {t('buy_now')}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {!isAvailable && (
+              <div className="d-flex flex-column gap-2 mb-4 mt-auto">
+                <button
+                  type="button"
+                  disabled
+                  className="btn btn-secondary btn-lg rounded-pill fw-bold"
+                >
+                  <i className="bi bi-slash-circle me-2"></i>
+                  {isSoldOut ? t('marketplace.card.soldOut', 'Sold Out') : t('out_of_stock')}
+                </button>
               </div>
             )}
 

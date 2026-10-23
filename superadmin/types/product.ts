@@ -184,6 +184,9 @@ export interface Product {
   availability?: 'IN_STOCK' | 'OUT_OF_STOCK' | 'LIMITED';
   cityAvailability: string[]; // e.g. ['All Cities'] or ['Gondar', 'Bahir Dar']
   status: ProductStatus;
+  isSoldOut?: boolean;
+  isAvailable?: boolean;
+  availabilityStatus?: 'AVAILABLE' | 'SOLD_OUT' | 'OUT_OF_STOCK' | 'INACTIVE';
   attributeValues?: ProductAttributeValueItem[];
   createdAt: string;
   updatedAt: string;
@@ -204,6 +207,7 @@ export interface CreateProductInput {
   images?: string[];
   cityAvailability?: string[];
   status?: ProductStatus;
+  isSoldOut?: boolean;
 }
 
 export interface UpdateProductInput {
@@ -221,6 +225,7 @@ export interface UpdateProductInput {
   images?: string[];
   cityAvailability?: string[];
   status?: ProductStatus;
+  isSoldOut?: boolean;
 }
 
 export interface ProductListParams {

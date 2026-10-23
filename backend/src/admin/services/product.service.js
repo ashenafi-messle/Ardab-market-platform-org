@@ -17,6 +17,7 @@ import { getDescendantCategoryIds, getCategoryPath } from './category.service.js
 import { resolveEffectiveCategoryAttributes } from './categoryAttribute.service.js';
 import { getPublicProductRatingSummaries } from '../../customer/services/review.service.js';
 import { createNewProductNotification } from '../../customer/services/notification.service.js';
+import { invalidateCatalogCaches } from '../../customer-mobile/services/catalog.service.js';
 
 async function recordProductAuditLog({ adminUser, action, productId, ipAddress, changesSummary }) {
   try {
@@ -90,9 +91,22 @@ function formatProduct(product, rating = null) {
   }));
 
   const ratingSummary = rating || product.rating || { average: null, count: 0 };
+  const isSoldOut = Boolean(product.isSoldOut);
+  const isAvailable = product.status === 'ACTIVE' && !isSoldOut;
+  let availabilityStatus = 'AVAILABLE';
+  if (isSoldOut) {
+    availabilityStatus = 'SOLD_OUT';
+  } else if (product.status === 'OUT_OF_STOCK') {
+    availabilityStatus = 'OUT_OF_STOCK';
+  } else if (product.status !== 'ACTIVE') {
+    availabilityStatus = 'INACTIVE';
+  }
 
   return {
     ...product,
+    isSoldOut,
+    isAvailable,
+    availabilityStatus,
     costPrice: product.costPrice !== null && product.costPrice !== undefined ? Number(product.costPrice) : null,
     originalPrice: product.originalPrice !== null && product.originalPrice !== undefined ? Number(product.originalPrice) : null,
     sellingPrice: Number(product.sellingPrice),
@@ -119,6 +133,11 @@ export async function listProducts(query = {}) {
   // Status Filter
   if (query.status && query.status !== 'ALL') {
     where.status = query.status;
+  }
+
+  // Availability / Sold Out Filter
+  if (query.isSoldOut !== undefined) {
+    where.isSoldOut = query.isSoldOut === true || query.isSoldOut === 'true';
   }
 
   // Seller / Product Owner Filter
@@ -564,6 +583,7 @@ export async function createProduct(data, filesOrAdmin = [], adminOrIp = null, m
           sellingPrice: data.sellingPrice,
           discountPercent: data.discountPercent !== undefined && data.discountPercent !== null ? Number(data.discountPercent) : 0,
           status: data.status || 'ACTIVE',
+          isSoldOut: Boolean(data.isSoldOut || false),
           cityAvailability: Array.isArray(data.cityAvailability) && data.cityAvailability.length > 0
             ? data.cityAvailability
             : ['All Cities'],
@@ -747,6 +767,7 @@ export async function updateProduct(id, data, adminUser = null, ipAddress = null
   if (data.discountPercent !== undefined) updateData.discountPercent = Number(data.discountPercent);
   if (data.cityAvailability !== undefined) updateData.cityAvailability = data.cityAvailability;
   if (data.status !== undefined) updateData.status = data.status;
+  if (data.isSoldOut !== undefined) updateData.isSoldOut = Boolean(data.isSoldOut);
 
   // Attribute Values Validation & Preparation if provided or if category changed
   let shouldUpdateAttributes = false;
@@ -992,6 +1013,66 @@ export async function toggleProductStatus(id, newStatus = null, adminUser = null
         error: notifErr.message,
       });
     });
+  }
+
+  return formatProduct(updated);
+}
+
+/**
+ * Toggle or update product availability (mark Sold Out or restore availability)
+ */
+export async function toggleProductAvailability(id, isSoldOut, adminUser = null, ipAddress = null) {
+  const existing = await prisma.product.findUnique({
+    where: { id },
+    select: { id: true, name: true, itemCode: true, status: true, isSoldOut: true },
+  });
+
+  if (!existing) {
+    throw ApiError.notFound('Product not found', 'PRODUCT_NOT_FOUND');
+  }
+
+  if (typeof isSoldOut !== 'boolean') {
+    throw ApiError.badRequest('isSoldOut must be a boolean', 'INVALID_AVAILABILITY_STATE');
+  }
+
+  const updated = await prisma.product.update({
+    where: { id },
+    data: { isSoldOut },
+    include: {
+      seller: {
+        select: {
+          id: true,
+          companyName: true,
+          name: true,
+          city: true,
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
+      images: {
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
+  });
+
+  await recordProductAuditLog({
+    adminUser,
+    action: 'PRODUCT_AVAILABILITY_CHANGED',
+    productId: updated.id,
+    ipAddress,
+    changesSummary: `Changed product availability (isSoldOut: ${existing.isSoldOut} -> ${isSoldOut}) for "${updated.name}" [${updated.itemCode}]`,
+  });
+
+  // Invalidate in-memory catalog caches
+  try {
+    invalidateCatalogCaches();
+  } catch (err) {
+    logger.warn('[PRODUCT SERVICE] Non-blocking cache invalidation error:', { error: err.message });
   }
 
   return formatProduct(updated);

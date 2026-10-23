@@ -35,6 +35,14 @@ export default function CheckoutScreen() {
   const selectedAddress = addresses[selectedAddressIndex] || addresses[0] || fallbackAddress;
   const selectedCartItems = cartItems.filter((i) => i.selected);
 
+  const hasSoldOutItems = selectedCartItems.some(
+    (i) =>
+      i.product.isSoldOut ||
+      i.product.availabilityStatus === 'SOLD_OUT' ||
+      i.product.status === 'OUT_OF_STOCK' ||
+      i.product.availabilityStatus === 'OUT_OF_STOCK'
+  );
+
   const paymentOptions = [
     {
       key: 'ONLINE' as const,
@@ -65,6 +73,11 @@ export default function CheckoutScreen() {
     // 2. Validate Cart
     if (selectedCartItems.length === 0) {
       setCheckoutError('Please select items in your cart to checkout.');
+      return;
+    }
+
+    if (hasSoldOutItems) {
+      setCheckoutError(t('cart.containsSoldOut'));
       return;
     }
 
@@ -276,12 +289,15 @@ export default function CheckoutScreen() {
         {/* Dynamic Place Order / Continue to Payment Action */}
         <AppButton
           title={
-            selectedPayment === 'ONLINE'
+            hasSoldOutItems
+              ? t('cart.containsSoldOut')
+              : selectedPayment === 'ONLINE'
               ? `Continue to Secure Payment • ${formatPrice(cartTotal)}`
               : `Place Order • ${formatPrice(cartTotal)}`
           }
           onPress={handlePlaceOrder}
           loading={isPlacing}
+          disabled={hasSoldOutItems || selectedCartItems.length === 0}
           size="lg"
           style={styles.placeOrderBtn}
         />

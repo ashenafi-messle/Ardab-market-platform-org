@@ -83,6 +83,10 @@ export default function ProductDetailScreen() {
 
   const isFavorite = product ? isInWishlist(product.id) : false;
 
+  const isSoldOut = Boolean(product?.isSoldOut || product?.availabilityStatus === 'SOLD_OUT');
+  const isOutOfStock = Boolean(product?.status === 'OUT_OF_STOCK' || product?.availabilityStatus === 'OUT_OF_STOCK');
+  const isUnavailable = isSoldOut || isOutOfStock;
+
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
@@ -101,14 +105,14 @@ export default function ProductDetailScreen() {
   }, [product?.id]);
 
   const handleAddToCart = () => {
-    if (!product) return;
+    if (!product || isUnavailable) return;
     addToCart(product, quantity, selectedAttributes);
     setAddedToast(true);
     setTimeout(() => setAddedToast(false), 2000);
   };
 
   const handleBuyNow = () => {
-    if (!product) return;
+    if (!product || isUnavailable) return;
     addToCart(product, quantity, selectedAttributes);
     router.push('/checkout' as any);
   };
@@ -304,11 +308,36 @@ export default function ProductDetailScreen() {
               ) : null}
             </View>
 
-            <View style={styles.stockBadge}>
-              <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-              <Text style={styles.stockText}>{t('product.inStock')}</Text>
+            <View style={[
+              styles.stockBadge,
+              isSoldOut ? styles.stockBadgeSoldOut : (isOutOfStock ? styles.stockBadgeOutOfStock : null)
+            ]}>
+              <Ionicons
+                name={isUnavailable ? "close-circle" : "checkmark-circle"}
+                size={14}
+                color={isSoldOut ? '#DC2626' : (isOutOfStock ? '#4B5563' : Colors.success)}
+              />
+              <Text style={[
+                styles.stockText,
+                isSoldOut ? styles.stockTextSoldOut : (isOutOfStock ? styles.stockTextOutOfStock : null)
+              ]}>
+                {isSoldOut ? t('product.soldOut') : (isOutOfStock ? t('product.outOfStock') : t('product.inStock'))}
+              </Text>
             </View>
           </View>
+
+          {isUnavailable ? (
+            <View style={[styles.unavailableAlertBanner, isSoldOut ? styles.soldOutAlertBanner : styles.outOfStockAlertBanner]}>
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color={isSoldOut ? '#DC2626' : '#4B5563'}
+              />
+              <Text style={[styles.unavailableAlertText, isSoldOut ? styles.soldOutAlertText : styles.outOfStockAlertText]}>
+                {isSoldOut ? t('product.soldOutNotice') : t('product.outOfStock')}
+              </Text>
+            </View>
+          ) : null}
 
           <Text style={styles.titleText}>{product.name}</Text>
 
@@ -375,8 +404,9 @@ export default function ProductDetailScreen() {
             <Text style={styles.quantityLabel}>{t('product.quantity')}</Text>
             <QuantitySelector
               quantity={quantity}
-              onIncrease={() => setQuantity((q) => q + 1)}
-              onDecrease={() => setQuantity((q) => (q > 1 ? q - 1 : 1))}
+              onIncrease={() => !isUnavailable && setQuantity((q) => q + 1)}
+              onDecrease={() => !isUnavailable && setQuantity((q) => (q > 1 ? q - 1 : 1))}
+              disabled={isUnavailable}
               size="md"
             />
           </View>
@@ -490,21 +520,32 @@ export default function ProductDetailScreen() {
           />
         </TouchableOpacity>
 
-        <AppButton
-          title={t('product.addToCart')}
-          variant="outline"
-          size="md"
-          onPress={handleAddToCart}
-          style={styles.barAddToCartBtn}
-        />
+        {isUnavailable ? (
+          <View style={styles.unavailableBarAction}>
+            <Ionicons name="ban-outline" size={18} color="#6B7280" />
+            <Text style={styles.unavailableBarActionText}>
+              {isSoldOut ? t('product.soldOut') : t('product.outOfStock')}
+            </Text>
+          </View>
+        ) : (
+          <>
+            <AppButton
+              title={t('product.addToCart')}
+              variant="outline"
+              size="md"
+              onPress={handleAddToCart}
+              style={styles.barAddToCartBtn}
+            />
 
-        <AppButton
-          title={t('product.buyNow')}
-          variant="primary"
-          size="md"
-          onPress={handleBuyNow}
-          style={styles.barBuyNowBtn}
-        />
+            <AppButton
+              title={t('product.buyNow')}
+              variant="primary"
+              size="md"
+              onPress={handleBuyNow}
+              style={styles.barBuyNowBtn}
+            />
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -921,5 +962,65 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  stockBadgeSoldOut: {
+    backgroundColor: '#FEE2E2',
+  },
+  stockBadgeOutOfStock: {
+    backgroundColor: '#F3F4F6',
+  },
+  stockTextSoldOut: {
+    color: '#DC2626',
+  },
+  stockTextOutOfStock: {
+    color: '#4B5563',
+  },
+  unavailableAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: Radius.md,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  soldOutAlertBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  outOfStockAlertBanner: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  unavailableAlertText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.semibold,
+    flex: 1,
+  },
+  soldOutAlertText: {
+    color: '#B91C1C',
+  },
+  outOfStockAlertText: {
+    color: '#4B5563',
+  },
+  unavailableBarAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+  },
+  unavailableBarActionText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: '#6B7280',
   },
 });

@@ -27,6 +27,16 @@ function formatCustomerProductCard(product) {
   const primaryImage = images.find((i) => i.isPrimary) || images[0] || null;
 
   const ratingSummary = product.rating || { average: null, count: 0 };
+  const isSoldOut = Boolean(product.isSoldOut);
+  const isAvailable = product.status === 'ACTIVE' && !isSoldOut;
+  let availabilityStatus = 'AVAILABLE';
+  if (isSoldOut) {
+    availabilityStatus = 'SOLD_OUT';
+  } else if (product.status === 'OUT_OF_STOCK') {
+    availabilityStatus = 'OUT_OF_STOCK';
+  } else if (product.status !== 'ACTIVE') {
+    availabilityStatus = 'INACTIVE';
+  }
 
   return {
     id: product.id,
@@ -35,6 +45,9 @@ function formatCustomerProductCard(product) {
     sellingPrice: Number(product.sellingPrice),
     unit: product.unit || 'pc',
     status: product.status,
+    isSoldOut,
+    isAvailable,
+    availabilityStatus,
     cityAvailability: product.cityAvailability || ['All Cities'],
     createdAt: product.createdAt,
     category: product.category || null,
@@ -172,6 +185,7 @@ export async function listCustomerProducts(query = {}) {
         unit: true,
         sellingPrice: true,
         status: true,
+        isSoldOut: true,
         cityAvailability: true,
         createdAt: true,
         category: {
@@ -256,6 +270,7 @@ export async function getCustomerProductDetails(productId) {
       weight: true,
       sellingPrice: true,
       status: true,
+      isSoldOut: true,
       cityAvailability: true,
       createdAt: true,
       category: {
@@ -358,8 +373,22 @@ export async function getCustomerProductDetails(productId) {
     }
   }
 
+  const isSoldOut = Boolean(product.isSoldOut);
+  const isAvailable = product.status === 'ACTIVE' && !isSoldOut;
+  let availabilityStatus = 'AVAILABLE';
+  if (isSoldOut) {
+    availabilityStatus = 'SOLD_OUT';
+  } else if (product.status === 'OUT_OF_STOCK') {
+    availabilityStatus = 'OUT_OF_STOCK';
+  } else if (product.status !== 'ACTIVE') {
+    availabilityStatus = 'INACTIVE';
+  }
+
   return {
     ...product,
+    isSoldOut,
+    isAvailable,
+    availabilityStatus,
     weight: product.weight !== null && product.weight !== undefined ? Number(product.weight) : null,
     sellingPrice: Number(product.sellingPrice),
     images,

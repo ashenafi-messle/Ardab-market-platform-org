@@ -10,6 +10,7 @@ export interface QuantitySelectorProps {
   min?: number;
   max?: number;
   size?: 'sm' | 'md';
+  disabled?: boolean;
 }
 
 export const QuantitySelector: React.FC<QuantitySelectorProps> = ({
@@ -19,12 +20,13 @@ export const QuantitySelector: React.FC<QuantitySelectorProps> = ({
   min = 1,
   max = 99,
   size = 'md',
+  disabled = false,
 }) => {
-  const isMin = quantity <= min;
-  const isMax = quantity >= max;
+  const isMin = disabled || quantity <= min;
+  const isMax = disabled || quantity >= max;
 
   return (
-    <View style={[styles.container, styles[`size_${size}`]]}>
+    <View style={[styles.container, styles[`size_${size}`], disabled && { opacity: 0.5 }]}>
       <TouchableOpacity
         onPress={onDecrease}
         activeOpacity={0.7}

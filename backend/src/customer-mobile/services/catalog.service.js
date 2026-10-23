@@ -56,6 +56,17 @@ function formatMobileProductCard(product) {
   const discountedPrice = rawSelling;
   const discount = hasDiscount ? (discountPercent > 0 ? discountPercent : Math.round(((originalPrice - rawSelling) / originalPrice) * 100)) : 0;
 
+  const isSoldOut = Boolean(product.isSoldOut);
+  const isAvailable = product.status === 'ACTIVE' && !isSoldOut;
+  let availabilityStatus = 'AVAILABLE';
+  if (isSoldOut) {
+    availabilityStatus = 'SOLD_OUT';
+  } else if (product.status === 'OUT_OF_STOCK') {
+    availabilityStatus = 'OUT_OF_STOCK';
+  } else if (product.status !== 'ACTIVE') {
+    availabilityStatus = 'INACTIVE';
+  }
+
   return {
     id: product.id,
     itemCode: product.itemCode,
@@ -70,6 +81,9 @@ function formatMobileProductCard(product) {
     hasDiscount,
     unit: product.unit || 'pc',
     status: product.status,
+    isSoldOut,
+    isAvailable,
+    availabilityStatus,
     cityAvailability: product.cityAvailability || ['All Cities'],
     createdAt: product.createdAt,
     category: product.category || null,
@@ -215,6 +229,7 @@ export class MobileCatalogService {
           originalPrice: true,
           discountPercent: true,
           status: true,
+          isSoldOut: true,
           cityAvailability: true,
           createdAt: true,
           category: {
@@ -303,6 +318,7 @@ export class MobileCatalogService {
         originalPrice: true,
         discountPercent: true,
         status: true,
+        isSoldOut: true,
         cityAvailability: true,
         createdAt: true,
         category: {
@@ -414,8 +430,22 @@ export class MobileCatalogService {
     const discountedPrice = rawSelling;
     const discount = hasDiscount ? (discountPercent > 0 ? discountPercent : Math.round(((originalPrice - rawSelling) / originalPrice) * 100)) : 0;
 
-    return {
+    const isSoldOut = Boolean(product.isSoldOut);
+  const isAvailable = product.status === 'ACTIVE' && !isSoldOut;
+  let availabilityStatus = 'AVAILABLE';
+  if (isSoldOut) {
+    availabilityStatus = 'SOLD_OUT';
+  } else if (product.status === 'OUT_OF_STOCK') {
+    availabilityStatus = 'OUT_OF_STOCK';
+  } else if (product.status !== 'ACTIVE') {
+    availabilityStatus = 'INACTIVE';
+  }
+
+  return {
       ...product,
+      isSoldOut,
+      isAvailable,
+      availabilityStatus,
       weight: product.weight !== null && product.weight !== undefined ? Number(product.weight) : null,
       price: hasDiscount ? originalPrice : rawSelling,
       sellingPrice: rawSelling,
@@ -480,6 +510,7 @@ export class MobileCatalogService {
           originalPrice: true,
           discountPercent: true,
           status: true,
+          isSoldOut: true,
           cityAvailability: true,
           createdAt: true,
           category: {

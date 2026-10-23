@@ -27,6 +27,14 @@ export default function CartPage() {
     );
   }
 
+  const hasSoldOut = cart.items.some(
+    (item: any) =>
+      item.product.isSoldOut ||
+      item.product.availabilityStatus === 'SOLD_OUT' ||
+      item.product.status === 'OUT_OF_STOCK' ||
+      item.product.availabilityStatus === 'OUT_OF_STOCK'
+  );
+
   // Group items by Seller for multi-seller marketplace clarity
   const itemsBySeller = cart.items.reduce((acc: Record<string, typeof cart.items>, item) => {
     const sellerKey = item.product.seller?.businessName || item.product.seller?.user?.fullName || 'Ardab Central Merchant';
@@ -79,21 +87,38 @@ export default function CartPage() {
                     const imgUrl = item.product.primaryImage?.url || (typeof item.product.images?.[0] === 'string' ? item.product.images[0] : item.product.images?.[0]?.url) || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=150&q=80';
                     const itemPrice = item.product.price ?? item.product.sellingPrice ?? 0;
                     const itemId = item.id || item.productId;
+                    const isItemSoldOut = Boolean(item.product.isSoldOut || item.product.availabilityStatus === 'SOLD_OUT');
+                    const isItemOutOfStock = Boolean(item.product.status === 'OUT_OF_STOCK' || item.product.availabilityStatus === 'OUT_OF_STOCK');
+                    const isItemUnavailable = isItemSoldOut || isItemOutOfStock;
+
                     return (
-                      <li key={itemId} className="list-group-item p-3 p-md-4">
+                      <li key={itemId} className={`list-group-item p-3 p-md-4 ${isItemUnavailable ? 'bg-danger-subtle bg-opacity-25' : ''}`}>
                         <div className="row align-items-center g-3">
                           <div className="col-3 col-md-2">
                             <img
                               src={imgUrl}
                               alt={item.product.name}
-                              className="img-fluid rounded-3 object-fit-cover shadow-sm"
+                              className={`img-fluid rounded-3 object-fit-cover shadow-sm ${isItemUnavailable ? 'opacity-50' : ''}`}
                               style={{ width: '80px', height: '80px' }}
                             />
                           </div>
                           <div className="col-9 col-md-4">
-                            <Link href={`/product/${item.product.id}`} className="text-dark text-decoration-none fw-bold">
-                              {item.product.name}
-                            </Link>
+                            <div className="d-flex align-items-center flex-wrap gap-1">
+                              <Link href={`/product/${item.product.id}`} className="text-dark text-decoration-none fw-bold">
+                                {item.product.name}
+                              </Link>
+                              {isItemSoldOut && (
+                                <span className="badge bg-danger shadow-sm text-uppercase fw-bold" style={{ fontSize: '0.65rem' }}>
+                                  <i className="bi bi-slash-circle me-1"></i>
+                                  {t('marketplace.card.soldOut', 'Sold Out')}
+                                </span>
+                              )}
+                              {!isItemSoldOut && isItemOutOfStock && (
+                                <span className="badge bg-secondary shadow-sm text-uppercase fw-bold" style={{ fontSize: '0.65rem' }}>
+                                  {t('out_of_stock')}
+                                </span>
+                              )}
+                            </div>
                             <div className="text-muted small">
                               {Number(itemPrice).toLocaleString()} ETB / {item.product.unit || 'unit'}
                             </div>
@@ -103,6 +128,7 @@ export default function CartPage() {
                               <button
                                 className="btn btn-outline-secondary"
                                 type="button"
+                                disabled={isItemUnavailable}
                                 onClick={() => updateQuantity(item.productId, item.quantity - 1)}
                               >
                                 <i className="bi bi-dash"></i>
@@ -113,6 +139,7 @@ export default function CartPage() {
                               <button
                                 className="btn btn-outline-secondary"
                                 type="button"
+                                disabled={isItemUnavailable}
                                 onClick={() => updateQuantity(item.productId, item.quantity + 1)}
                               >
                                 <i className="bi bi-plus"></i>
@@ -166,9 +193,29 @@ export default function CartPage() {
               <span className="fw-bold fs-5 text-success">{Number(cart.total).toLocaleString()} ETB</span>
             </div>
 
-            <Link href="/checkout" className="btn btn-fresh btn-lg w-100 rounded-pill fw-bold shadow-sm mb-3">
-              {t('proceed_to_checkout')} <i className="bi bi-arrow-right ms-1"></i>
-            </Link>
+            {hasSoldOut && (
+              <div className="alert alert-danger py-2 px-3 mb-3 rounded-3 small">
+                <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                {language === 'am'
+                  ? 'የተመረጡ አንዳንድ እቃዎች ተሽጠዋል፡፡ እባክዎ ትዕዛዝዎን ለማጠናቀቅ ያስወግዷቸው፡፡'
+                  : 'Some items in your cart are currently sold out. Please remove them to proceed with checkout.'}
+              </div>
+            )}
+
+            {hasSoldOut ? (
+              <button
+                type="button"
+                disabled
+                className="btn btn-secondary btn-lg w-100 rounded-pill fw-bold shadow-sm mb-3"
+              >
+                <i className="bi bi-slash-circle me-2"></i>
+                {language === 'am' ? 'የተሸጡ እቃዎችን ያስወግዱ' : 'Remove Sold Out Items to Checkout'}
+              </button>
+            ) : (
+              <Link href="/checkout" className="btn btn-fresh btn-lg w-100 rounded-pill fw-bold shadow-sm mb-3">
+                {t('proceed_to_checkout')} <i className="bi bi-arrow-right ms-1"></i>
+              </Link>
+            )}
 
             <Link href="/products" className="btn btn-outline-secondary w-100 rounded-pill">
               <i className="bi bi-arrow-left me-1"></i> {t('continue_shopping')}

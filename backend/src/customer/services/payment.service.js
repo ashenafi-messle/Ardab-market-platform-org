@@ -137,6 +137,63 @@ export class PaymentService {
       throw err;
     }
 
+    // 2.5 Real-time product availability revalidation
+    const orderItemsWithProducts = await prisma.orderItem.findMany({
+      where: { orderId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            isSoldOut: true,
+          },
+        },
+      },
+    });
+
+    for (const item of orderItemsWithProducts) {
+      if (item.product) {
+        if (item.product.isSoldOut) {
+          logger.warn('[PaymentService] Attempted payment initialization for sold out product', {
+            orderId,
+            productId: item.product.id,
+            productName: item.product.name,
+          });
+          const err = new Error(`Product "${item.product.name}" is sold out. Payment cannot proceed.`);
+          err.statusCode = 400;
+          err.code = 'PRODUCT_SOLD_OUT';
+          err.details = { productId: item.product.id, productName: item.product.name };
+          throw err;
+        }
+        if (item.product.status === 'OUT_OF_STOCK') {
+          logger.warn('[PaymentService] Attempted payment initialization for out of stock product', {
+            orderId,
+            productId: item.product.id,
+            productName: item.product.name,
+          });
+          const err = new Error(`Product "${item.product.name}" is out of stock. Payment cannot proceed.`);
+          err.statusCode = 400;
+          err.code = 'PRODUCT_OUT_OF_STOCK';
+          err.details = { productId: item.product.id, productName: item.product.name };
+          throw err;
+        }
+        if (item.product.status !== 'ACTIVE') {
+          logger.warn('[PaymentService] Attempted payment initialization for inactive product', {
+            orderId,
+            productId: item.product.id,
+            productName: item.product.name,
+            status: item.product.status,
+          });
+          const err = new Error(`Product "${item.product.name}" is no longer active. Payment cannot proceed.`);
+          err.statusCode = 400;
+          err.code = 'PRODUCT_UNAVAILABLE';
+          err.details = { productId: item.product.id, productName: item.product.name };
+          throw err;
+        }
+      }
+    }
+
     // 3. Authoritative financial validation (Subtotal + Delivery Fee - Discount)
     const subtotal = new Decimal(order.subtotal || 0);
     const deliveryFee = new Decimal(order.deliveryFee || 0);

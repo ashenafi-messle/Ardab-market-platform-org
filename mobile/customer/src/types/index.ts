@@ -81,6 +81,10 @@ export interface Product {
   isPopular?: boolean;
   isRecommended?: boolean;
   origin?: string; // e.g., 'Gondar', 'Yirgacheffe', 'Jimma', 'Addis Ababa'
+  status?: string;
+  isSoldOut?: boolean;
+  isAvailable?: boolean;
+  availabilityStatus?: string;
 }
 
 export interface Subcategory {

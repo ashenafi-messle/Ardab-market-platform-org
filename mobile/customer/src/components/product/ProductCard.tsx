@@ -36,8 +36,13 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
   const { isInWishlist, toggleWishlist, addToCart } = useApp();
   const isFavorite = isInWishlist(product.id);
 
+  const isSoldOut = Boolean(product.isSoldOut || product.availabilityStatus === 'SOLD_OUT');
+  const isOutOfStock = Boolean(product.status === 'OUT_OF_STOCK' || product.availabilityStatus === 'OUT_OF_STOCK');
+  const isUnavailable = isSoldOut || isOutOfStock;
+
   const handleAddToCart = (e: any) => {
     e.stopPropagation?.();
+    if (isUnavailable) return;
     addToCart(product, 1);
   };
 
@@ -52,12 +57,12 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
         scaleTo={0.97}
         onPress={onPress}
         accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
-        accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
+        accessibilityLabel={`${product.name}, ${formatPrice(product.price)}${isUnavailable ? `, ${isSoldOut ? t('product.soldOut') : t('product.outOfStock')}` : ''}`}
         style={[styles.horizontalCard, style]}>
         <View style={styles.horizontalImageContainer}>
           <ExpoImage
             source={{ uri: ImagePresets.miniThumbnail(product.images[0]) }}
-            style={styles.horizontalImage}
+            style={[styles.horizontalImage, isUnavailable && styles.unavailableImage]}
             contentFit="cover"
             cachePolicy="memory-disk"
             placeholder={{ blurhash: DEFAULT_BLURHASH }}
@@ -66,6 +71,13 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
           {product.discountPercentage ? (
             <View style={styles.discountTag}>
               <Text style={styles.discountText}>-{product.discountPercentage}%</Text>
+            </View>
+          ) : null}
+          {isUnavailable ? (
+            <View style={[styles.soldOutBadge, isSoldOut ? styles.soldOutBadgeRed : styles.outOfStockBadge]}>
+              <Text style={styles.soldOutBadgeText} numberOfLines={1}>
+                {isSoldOut ? t('product.soldOut') : t('product.outOfStock')}
+              </Text>
             </View>
           ) : null}
         </View>
@@ -110,11 +122,18 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleAddToCart}
+              disabled={isUnavailable}
               accessibilityRole="button"
-              accessibilityLabel={t('product.addToCart')}
-              style={styles.addToCartMini}>
-              <Ionicons name="cart-outline" size={16} color={Colors.textInverse} />
-              <Text style={styles.addToCartMiniText}>{t('product.addToCart')}</Text>
+              accessibilityLabel={isUnavailable ? (isSoldOut ? t('product.soldOut') : t('product.outOfStock')) : t('product.addToCart')}
+              style={[styles.addToCartMini, isUnavailable && styles.disabledAddToCartMini]}>
+              <Ionicons
+                name={isUnavailable ? "ban-outline" : "cart-outline"}
+                size={16}
+                color={Colors.textInverse}
+              />
+              <Text style={styles.addToCartMiniText}>
+                {isUnavailable ? (isSoldOut ? t('product.soldOut') : t('product.outOfStock')) : t('product.addToCart')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -127,7 +146,7 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
       scaleTo={0.96}
       onPress={onPress}
       accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
-      accessibilityLabel={`${product.name}, ${formatPrice(product.price)}`}
+      accessibilityLabel={`${product.name}, ${formatPrice(product.price)}${isUnavailable ? `, ${isSoldOut ? t('product.soldOut') : t('product.outOfStock')}` : ''}`}
       style={[
         styles.gridCard,
         cardWidth ? { width: cardWidth } : { flex: 1 },
@@ -137,7 +156,7 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
       <View style={styles.imageContainer}>
         <ExpoImage
           source={{ uri: ImagePresets.thumbnail(product.images[0]) }}
-          style={styles.image}
+          style={[styles.image, isUnavailable && styles.unavailableImage]}
           contentFit="cover"
           cachePolicy="memory-disk"
           placeholder={{ blurhash: DEFAULT_BLURHASH }}
@@ -147,6 +166,15 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
         {product.discountPercentage ? (
           <View style={styles.discountTag}>
             <Text style={styles.discountText}>-{product.discountPercentage}%</Text>
+          </View>
+        ) : null}
+
+        {isUnavailable ? (
+          <View style={[styles.soldOutBadge, isSoldOut ? styles.soldOutBadgeRed : styles.outOfStockBadge]}>
+            <Ionicons name="close-circle" size={10} color={Colors.textInverse} />
+            <Text style={styles.soldOutBadgeText} numberOfLines={1}>
+              {isSoldOut ? t('product.soldOut') : t('product.outOfStock')}
+            </Text>
           </View>
         ) : null}
 
@@ -200,11 +228,18 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={handleAddToCart}
+          disabled={isUnavailable}
           accessibilityRole="button"
-          accessibilityLabel={`${t('product.addToCart')} ${product.name}`}
-          style={styles.addToCartButton}>
-          <Ionicons name="cart-outline" size={15} color={Colors.textInverse} />
-          <Text style={styles.addToCartText}>+ {t('product.addToCart')}</Text>
+          accessibilityLabel={isUnavailable ? (isSoldOut ? t('product.soldOut') : t('product.outOfStock')) : `${t('product.addToCart')} ${product.name}`}
+          style={[styles.addToCartButton, isUnavailable && styles.disabledAddToCartButton]}>
+          <Ionicons
+            name={isUnavailable ? "ban-outline" : "cart-outline"}
+            size={15}
+            color={Colors.textInverse}
+          />
+          <Text style={styles.addToCartText}>
+            {isUnavailable ? (isSoldOut ? t('product.soldOut') : t('product.outOfStock')) : `+ ${t('product.addToCart')}`}
+          </Text>
         </TouchableOpacity>
       </View>
     </AnimatedPressable>
@@ -396,5 +431,40 @@ const styles = StyleSheet.create({
     color: Colors.textInverse,
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.semibold,
+  },
+  soldOutBadge: {
+    position: 'absolute',
+    top: Spacing.xs + 2,
+    left: Spacing.xs + 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: Radius.xs,
+    zIndex: 2,
+  },
+  soldOutBadgeRed: {
+    backgroundColor: '#DC2626',
+  },
+  outOfStockBadge: {
+    backgroundColor: '#4B5563',
+  },
+  soldOutBadgeText: {
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.tiny,
+    fontWeight: Typography.fontWeight.bold,
+    letterSpacing: 0.3,
+  },
+  unavailableImage: {
+    opacity: 0.65,
+  },
+  disabledAddToCartButton: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.85,
+  },
+  disabledAddToCartMini: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.85,
   },
 });

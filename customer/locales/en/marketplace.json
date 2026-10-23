@@ -31,6 +31,9 @@
     "delivery": "Delivery",
     "itemCode": "Item Code",
     "inStock": "In Stock",
+    "soldOut": "Sold Out",
+    "outOfStock": "Out of Stock",
+    "unavailableNotice": "This product is currently sold out and unavailable for order.",
     "allCities": "All Cities",
     "noRatings": "No ratings yet"
   },

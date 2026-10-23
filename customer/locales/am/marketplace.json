@@ -31,6 +31,9 @@
     "delivery": "ማድረሻ",
     "itemCode": "የእቃ ኮድ",
     "inStock": "ክምችት አለ",
+    "soldOut": "ተሽጦ አልቋል",
+    "outOfStock": "አልቋል",
+    "unavailableNotice": "ይህ ምርት በአሁኑ ጊዜ ተሽጦ ያለቀ በመሆኑ ሊታዘዝ አይችልም።",
     "allCities": "በሁሉም ከተሞች ይሰራል",
     "noRatings": "እስካሁን ደረጃ የለውም"
   },

@@ -452,4 +452,156 @@ test('Supplier & Payment Method Comprehensive Test Suite', async (suite) => {
       assert.ok(createLog, 'SUPPLIER_CREATE audit log must exist');
     });
   });
+
+  // ============================================================================
+  // 4. SUPPLIER DELETION: PERMISSIONS, INTEGRITY & AUDIT LOGGING
+  // ============================================================================
+  await suite.test('4. Supplier Deletion: Permissions, Integrity & Audit Logging', async (t) => {
+    let unreferencedSupplierId = null;
+    let referencedSupplierId = null;
+    let testCategoryId = null;
+    let testProductId = null;
+
+    // Helper: Create an unreferenced supplier with payment methods
+    const unrefSup = await prisma.supplier.create({
+      data: {
+        companyName: `Delete Unreferenced ${Date.now()}`,
+        name: 'Temporary Supplier',
+        phone: `+251911${Math.floor(100000 + Math.random() * 900000)}`,
+        city: 'Gondar',
+        address: 'Gondar Warehouse 1',
+        paymentMethods: {
+          create: [
+            { paymentMethod: 'CBE', accountNumber: '100011112222', isPrimary: true },
+          ],
+        },
+      },
+    });
+    unreferencedSupplierId = unrefSup.id;
+
+    // Helper: Create a supplier with a linked product
+    const refSup = await prisma.supplier.create({
+      data: {
+        companyName: `Delete Referenced ${Date.now()}`,
+        name: 'Referenced Supplier',
+        phone: `+251912${Math.floor(100000 + Math.random() * 900000)}`,
+        city: 'Bahir Dar',
+        address: 'Bahir Dar Station',
+      },
+    });
+    referencedSupplierId = refSup.id;
+
+    const cat = await prisma.marketplaceCategory.create({
+      data: {
+        name: `Test Cat For Sup ${Date.now()}`,
+        slug: `test-cat-sup-${Date.now()}`,
+        isActive: true,
+      },
+    });
+    testCategoryId = cat.id;
+
+    const prod = await prisma.product.create({
+      data: {
+        itemCode: `ITM-SUP-${Date.now()}`,
+        name: 'Teff 100kg Bag',
+        marketplaceCategoryId: cat.id,
+        sellerId: refSup.id,
+        sellingPrice: 8000,
+        status: 'ACTIVE',
+      },
+    });
+    testProductId = prod.id;
+
+    await t.test('DELETE /api/suppliers/:id requires Super Admin authorization', async () => {
+      // Unauthenticated -> 401
+      const resNoAuth = await request(app).delete(`/api/suppliers/${unreferencedSupplierId}`);
+      assert.equal(resNoAuth.status, 401);
+
+      // Sub Admin -> 403 Forbidden
+      const resSubAdmin = await request(app)
+        .delete(`/api/suppliers/${unreferencedSupplierId}`)
+        .set('Authorization', `Bearer ${subAdminToken}`);
+      assert.equal(resSubAdmin.status, 403);
+      assert.equal(resSubAdmin.body.success, false);
+      assert.equal(resSubAdmin.body.code, 'ROLE_FORBIDDEN');
+    });
+
+    await t.test('DELETE /api/suppliers/:id validates UUID parameter format', async () => {
+      const res = await request(app)
+        .delete('/api/suppliers/not-a-valid-uuid')
+        .set('Authorization', `Bearer ${superAdminToken}`);
+
+      assert.equal(res.status, 400);
+      assert.equal(res.body.success, false);
+    });
+
+    await t.test('DELETE /api/suppliers/:id returns 404 if supplier does not exist', async () => {
+      const nonExistentId = '00000000-0000-0000-0000-000000000000';
+      const res = await request(app)
+        .delete(`/api/suppliers/${nonExistentId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`);
+
+      assert.equal(res.status, 404);
+      assert.equal(res.body.success, false);
+      assert.equal(res.body.code, 'SUPPLIER_NOT_FOUND');
+    });
+
+    await t.test('DELETE /api/suppliers/:id blocks deletion with 409 Conflict when products are linked', async () => {
+      const res = await request(app)
+        .delete(`/api/suppliers/${referencedSupplierId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`);
+
+      assert.equal(res.status, 409);
+      assert.equal(res.body.success, false);
+      assert.equal(res.body.code, 'SUPPLIER_HAS_DEPENDENT_PRODUCTS');
+      assert.match(res.body.message, /product/i);
+
+      // Verify supplier was NOT deleted from DB
+      const stillExists = await prisma.supplier.findUnique({
+        where: { id: referencedSupplierId },
+      });
+      assert.ok(stillExists, 'Supplier with products must not be deleted');
+    });
+
+    await t.test('DELETE /api/suppliers/:id successfully deletes unreferenced supplier & cascades payment methods', async () => {
+      const res = await request(app)
+        .delete(`/api/suppliers/${unreferencedSupplierId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`);
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.deleted, true);
+      assert.equal(res.body.data.id, unreferencedSupplierId);
+
+      // Verify supplier is removed from DB
+      const deletedSup = await prisma.supplier.findUnique({
+        where: { id: unreferencedSupplierId },
+      });
+      assert.equal(deletedSup, null, 'Supplier should be permanently deleted');
+
+      // Verify cascaded payment methods are cleaned up
+      const pms = await prisma.supplierPaymentMethod.findMany({
+        where: { supplierId: unreferencedSupplierId },
+      });
+      assert.equal(pms.length, 0, 'Payment methods must cascade delete');
+    });
+
+    await t.test('Audit log is recorded with SUPPLIER_DELETE action', async () => {
+      const auditLog = await prisma.auditLog.findFirst({
+        where: {
+          entity: 'Supplier',
+          entityId: unreferencedSupplierId,
+          action: 'SUPPLIER_DELETE',
+        },
+      });
+
+      assert.ok(auditLog, 'SUPPLIER_DELETE audit log entry must be created');
+      assert.equal(auditLog.status, 'SUCCESS');
+    });
+
+    // Cleanup referenced test records
+    await prisma.product.deleteMany({ where: { id: testProductId } }).catch(() => {});
+    await prisma.marketplaceCategory.deleteMany({ where: { id: testCategoryId } }).catch(() => {});
+    await prisma.supplier.deleteMany({ where: { id: referencedSupplierId } }).catch(() => {});
+  });
 });

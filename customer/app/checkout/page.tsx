@@ -65,12 +65,29 @@ export default function CheckoutPage() {
     );
   }
 
+  const hasSoldOut = cart.items.some(
+    (item: any) =>
+      item.product.isSoldOut ||
+      item.product.availabilityStatus === 'SOLD_OUT' ||
+      item.product.status === 'OUT_OF_STOCK' ||
+      item.product.availabilityStatus === 'OUT_OF_STOCK'
+  );
+
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
 
     if (!isAuthenticated) {
       router.push('/login?redirect=/checkout');
+      return;
+    }
+
+    if (hasSoldOut) {
+      setError(
+        language === 'am'
+          ? 'የተመረጡ አንዳንድ እቃዎች ተሽጠዋል፡፡ እባክዎ ትዕዛዝዎን ለማጠናቀቅ ያስወግዷቸው፡፡'
+          : 'Some items in your cart are currently sold out. Please remove them to proceed with checkout.'
+      );
       return;
     }
 
@@ -348,10 +365,21 @@ export default function CheckoutPage() {
               <div className="mb-3 max-h-300 overflow-y-auto">
                 {cart.items.map((item: any) => {
                   const itemPrice = item.product.price ?? item.product.sellingPrice ?? 0;
+                  const isItemSoldOut = Boolean(item.product.isSoldOut || item.product.availabilityStatus === 'SOLD_OUT');
+                  const isItemOutOfStock = Boolean(item.product.status === 'OUT_OF_STOCK' || item.product.availabilityStatus === 'OUT_OF_STOCK');
+                  const isItemUnavailable = isItemSoldOut || isItemOutOfStock;
+
                   return (
-                    <div key={item.productId || item.id} className="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                    <div key={item.productId || item.id} className={`d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom ${isItemUnavailable ? 'text-danger' : ''}`}>
                       <div className="me-2">
-                        <div className="fw-semibold text-dark small">{item.product.name}</div>
+                        <div className="fw-semibold small d-flex align-items-center gap-1">
+                          <span className={isItemUnavailable ? 'text-danger' : 'text-dark'}>{item.product.name}</span>
+                          {isItemSoldOut && (
+                            <span className="badge bg-danger text-uppercase fw-bold" style={{ fontSize: '0.65rem' }}>
+                              {t('marketplace.card.soldOut', 'Sold Out')}
+                            </span>
+                          )}
+                        </div>
                         <small className="text-muted">{item.quantity} × {Number(itemPrice).toLocaleString()} ETB</small>
                       </div>
                       <span className="fw-bold small">
@@ -361,7 +389,6 @@ export default function CheckoutPage() {
                   );
                 })}
               </div>
-
 
               <div className="d-flex justify-content-between mb-2">
                 <span className="text-muted">{t('subtotal')}</span>
@@ -379,15 +406,29 @@ export default function CheckoutPage() {
                 <span className="fw-bold fs-5 text-success">{Number(cart.total).toLocaleString()} ETB</span>
               </div>
 
+              {hasSoldOut && (
+                <div className="alert alert-danger py-2 px-3 mb-3 rounded-3 small">
+                  <i className="bi bi-slash-circle me-1"></i>
+                  {language === 'am'
+                    ? 'በጋሪዎ ውስጥ ያለቁ እቃዎች አሉ። እባክዎን ለማዘዝ ያስወግዷቸው።'
+                    : 'Some items in your cart are currently sold out. Please remove them to place order.'}
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={submitting || cart.items.length === 0}
-                className="btn btn-fresh btn-lg w-100 rounded-pill fw-bold shadow-sm"
+                disabled={submitting || cart.items.length === 0 || hasSoldOut}
+                className={`btn btn-lg w-100 rounded-pill fw-bold shadow-sm ${hasSoldOut ? 'btn-secondary' : 'btn-fresh'}`}
               >
                 {submitting ? (
                   <>
                     <span className="spinner-border spinner-border-sm me-2" role="status"></span>
                     {t('placing_order')}
+                  </>
+                ) : hasSoldOut ? (
+                  <>
+                    <i className="bi bi-slash-circle me-2"></i>
+                    {language === 'am' ? 'የተሸጡ እቃዎች አሉ' : 'Sold Out Items in Cart'}
                   </>
                 ) : (
                   <>

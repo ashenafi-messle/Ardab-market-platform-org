@@ -72,6 +72,7 @@ export default function ProductsPage() {
     action: async () => {},
   });
   const [isConfirming, setIsConfirming] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   // Modal State for Add / Edit Product
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -296,6 +297,31 @@ export default function ProductsPage() {
       action: async () => {
         const updated = await productsApi.toggleStatus(product.id);
         setProducts((prev) => prev.map((p) => (p.id === product.id ? updated : p)));
+      },
+    });
+  };
+
+  const promptToggleAvailability = (product: Product) => {
+    const markingSoldOut = !product.isSoldOut;
+    setConfirmModal({
+      isOpen: true,
+      title: markingSoldOut ? 'Mark Product as Sold Out' : 'Restore Product Availability',
+      message: markingSoldOut
+        ? `Are you sure you want to mark "${product.name}" [${product.itemCode}] as Sold Out? Customers will no longer be able to purchase this product in the consumer web and mobile marketplace.`
+        : `Are you sure you want to restore availability for "${product.name}" [${product.itemCode}]? The product will become purchasable again if its status is Active.`,
+      variant: markingSoldOut ? 'warning' : 'success',
+      confirmLabel: markingSoldOut ? 'Mark Sold Out' : 'Restore Availability',
+      affectedCount: 1,
+      affectedNames: [`${product.name} [${product.itemCode}]`],
+      action: async () => {
+        setActionLoadingId(product.id);
+        try {
+          const updated = await productsApi.toggleAvailability(product.id, markingSoldOut);
+          setProducts((prev) => prev.map((p) => (p.id === product.id ? updated : p)));
+          setViewProduct((curr) => (curr && curr.id === product.id ? updated : curr));
+        } finally {
+          setActionLoadingId(null);
+        }
       },
     });
   };
@@ -853,18 +879,52 @@ export default function ProductsPage() {
     setSelectedStatus('ALL');
   };
 
-  const renderStatusBadge = (status: ProductStatus | string) => {
+  const renderStatusBadge = (status: ProductStatus | string, isSoldOut?: boolean) => {
+    if (isSoldOut) {
+      return (
+        <span className="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 rounded-pill fw-semibold d-inline-flex align-items-center gap-1">
+          <i className="bi bi-slash-circle"></i>
+          <span>SOLD OUT</span>
+        </span>
+      );
+    }
+
     switch (status) {
       case 'ACTIVE':
-        return <span className="ardab-badge badge-success-soft">ACTIVE</span>;
-      case 'DRAFT':
-        return <span className="ardab-badge badge-warning-soft">DRAFT</span>;
+        return (
+          <span className="ardab-badge badge-success-soft d-inline-flex align-items-center gap-1">
+            <i className="bi bi-check-circle-fill"></i>
+            <span>AVAILABLE</span>
+          </span>
+        );
       case 'OUT_OF_STOCK':
-        return <span className="ardab-badge badge-danger-soft">OUT OF STOCK</span>;
+        return (
+          <span className="ardab-badge badge-danger-soft d-inline-flex align-items-center gap-1">
+            <i className="bi bi-exclamation-octagon"></i>
+            <span>OUT OF STOCK</span>
+          </span>
+        );
+      case 'DRAFT':
+        return (
+          <span className="ardab-badge badge-warning-soft d-inline-flex align-items-center gap-1">
+            <i className="bi bi-file-earmark-text"></i>
+            <span>DRAFT</span>
+          </span>
+        );
       case 'ARCHIVED':
-        return <span className="ardab-badge bg-secondary text-white">ARCHIVED</span>;
+        return (
+          <span className="ardab-badge bg-secondary text-white d-inline-flex align-items-center gap-1">
+            <i className="bi bi-archive"></i>
+            <span>ARCHIVED</span>
+          </span>
+        );
       default:
-        return <span className="ardab-badge badge-neutral-soft">{status || 'INACTIVE'}</span>;
+        return (
+          <span className="ardab-badge badge-neutral-soft d-inline-flex align-items-center gap-1">
+            <i className="bi bi-dash-circle"></i>
+            <span>{status || 'INACTIVE'}</span>
+          </span>
+        );
     }
   };
 
@@ -1143,7 +1203,7 @@ export default function ProductsPage() {
                             ))}
                           </div>
                         </td>
-                        <td>{renderStatusBadge(p.status)}</td>
+                        <td>{renderStatusBadge(p.status, p.isSoldOut)}</td>
                         <td className="text-end">
                           <div className="d-inline-flex align-items-center gap-1">
                             <button
@@ -1164,6 +1224,23 @@ export default function ProductsPage() {
                                 >
                                   <i className="bi bi-pencil"></i>
                                 </button>
+                                {p.status !== 'ARCHIVED' && (
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm ${
+                                      p.isSoldOut ? 'btn-outline-success' : 'btn-outline-warning'
+                                    }`}
+                                    title={p.isSoldOut ? 'Restore Availability (Currently Sold Out)' : 'Mark Sold Out'}
+                                    onClick={() => promptToggleAvailability(p)}
+                                    disabled={actionLoadingId === p.id}
+                                  >
+                                    {actionLoadingId === p.id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status"></span>
+                                    ) : (
+                                      <i className={`bi ${p.isSoldOut ? 'bi-box-seam' : 'bi-slash-circle'}`}></i>
+                                    )}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   className={`btn btn-sm ${
@@ -1281,7 +1358,7 @@ export default function ProductsPage() {
                         </span>
                       </div>
                     </div>
-                    {renderStatusBadge(p.status)}
+                    {renderStatusBadge(p.status, p.isSoldOut)}
                   </div>
 
                   {/* Seller attribution */}
@@ -1326,6 +1403,23 @@ export default function ProductsPage() {
                         >
                           <i className="bi bi-pencil me-1"></i> Edit
                         </button>
+                        {p.status !== 'ARCHIVED' && (
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${
+                              p.isSoldOut ? 'btn-outline-success' : 'btn-outline-warning'
+                            }`}
+                            onClick={() => promptToggleAvailability(p)}
+                            disabled={actionLoadingId === p.id}
+                          >
+                            {actionLoadingId === p.id ? (
+                              <span className="spinner-border spinner-border-sm me-1" role="status"></span>
+                            ) : (
+                              <i className={`bi ${p.isSoldOut ? 'bi-box-seam' : 'bi-slash-circle'} me-1`}></i>
+                            )}
+                            {p.isSoldOut ? 'Restore' : 'Sold Out'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className={`btn btn-sm ${
@@ -2178,7 +2272,19 @@ export default function ProductsPage() {
                     </div>
                     <div className="col-6 col-md-4">
                       <div className="text-muted small">Status</div>
-                      {renderStatusBadge(viewProduct.status)}
+                      {renderStatusBadge(viewProduct.status, viewProduct.isSoldOut)}
+                    </div>
+                    <div className="col-6 col-md-4">
+                      <div className="text-muted small">Availability</div>
+                      {viewProduct.isSoldOut ? (
+                        <span className="badge bg-danger-subtle text-danger border border-danger-subtle fw-semibold">
+                          Manually Sold Out
+                        </span>
+                      ) : (
+                        <span className="badge bg-success-subtle text-success border border-success-subtle fw-semibold">
+                          Purchasable
+                        </span>
+                      )}
                     </div>
                     <div className="col-6 col-md-4">
                       <div className="text-muted small">Created Date</div>

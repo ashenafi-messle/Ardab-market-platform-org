@@ -21,7 +21,10 @@ export function ProductCard({ product }: ProductCardProps) {
   const primaryImage = getOptimizedImageUrl(product.primaryImage?.url || product.images?.[0]?.url, { width: 400 });
 
   const isWishlisted = isInWishlist(product.id);
-  const inStock = product.status === 'ACTIVE';
+  const isSoldOut = Boolean(product.isSoldOut || product.availabilityStatus === 'SOLD_OUT');
+  const isOutOfStock = Boolean(product.status === 'OUT_OF_STOCK' || product.availabilityStatus === 'OUT_OF_STOCK');
+  const isUnavailable = isSoldOut || isOutOfStock || product.status !== 'ACTIVE' || product.isAvailable === false;
+  const inStock = !isUnavailable;
 
   return (
     <div className="fresh-card h-100 d-flex flex-column">
@@ -33,6 +36,7 @@ export function ProductCard({ product }: ProductCardProps) {
             src={primaryImage}
             alt={product.name}
             loading="lazy"
+            className={isUnavailable ? 'opacity-75' : ''}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
               if (!target.dataset.fallback) {
@@ -45,13 +49,22 @@ export function ProductCard({ product }: ProductCardProps) {
 
         {/* Status Badge */}
         <div className="position-absolute top-0 start-0 m-2 pointer-events-none" style={{ zIndex: 2 }}>
-          {inStock ? (
+          {isSoldOut ? (
+            <span className="badge bg-danger shadow-sm text-uppercase fw-bold" style={{ fontSize: '0.7rem' }}>
+              <i className="bi bi-slash-circle me-1"></i>
+              {t('marketplace.card.soldOut', 'Sold Out')}
+            </span>
+          ) : isOutOfStock ? (
+            <span className="badge bg-secondary shadow-sm text-uppercase fw-bold" style={{ fontSize: '0.7rem' }}>
+              {t('marketplace.card.outOfStock', 'Out of Stock')}
+            </span>
+          ) : inStock ? (
             <span className="badge bg-success bg-opacity-90 shadow-sm" style={{ fontSize: '0.7rem' }}>
               {t('common.status.available', 'In Stock')}
             </span>
           ) : (
-            <span className="badge bg-secondary shadow-sm" style={{ fontSize: '0.7rem' }}>
-              {t('common.status.outOfStock', 'Out of Stock')}
+            <span className="badge bg-dark shadow-sm text-uppercase fw-bold" style={{ fontSize: '0.7rem' }}>
+              {t('common.status.unavailable', 'Unavailable')}
             </span>
           )}
         </div>
@@ -157,12 +170,18 @@ export function ProductCard({ product }: ProductCardProps) {
 
           <button
             type="button"
-            className="btn btn-sm btn-fresh-primary d-flex align-items-center gap-1"
+            className={`btn btn-sm d-flex align-items-center gap-1 ${inStock ? 'btn-fresh-primary' : 'btn-secondary text-white'}`}
             disabled={!inStock}
-            onClick={() => addToCart(product, 1)}
+            onClick={() => inStock && addToCart(product, 1)}
           >
-            <i className="bi bi-cart-plus"></i>
-            <span className="d-none d-sm-inline">{t('common.actions.addToCart', 'Add')}</span>
+            <i className={`bi ${inStock ? 'bi-cart-plus' : 'bi-slash-circle'}`}></i>
+            <span className="d-none d-sm-inline">
+              {isSoldOut
+                ? t('marketplace.card.soldOut', 'Sold Out')
+                : inStock
+                ? t('common.actions.addToCart', 'Add')
+                : t('marketplace.card.outOfStock', 'Out of Stock')}
+            </span>
           </button>
         </div>
       </div>

@@ -5,12 +5,14 @@ import Link from 'next/link';
 import AdminLayout from '@/components/layout/AdminLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import { useAuth } from '@/context/AuthContext';
+import { hasPermission } from '@/lib/permissions';
 import { suppliersApi, paymentMethodsApi } from '@/lib/api';
 import { Supplier, SupplierStatus, SupplierPaymentMethodItem } from '@/types/supplier';
 import { PaymentMethod } from '@/types/paymentMethod';
 
 export default function SuppliersPage() {
-  const { selectedCity } = useAuth();
+  const { selectedCity, user } = useAuth();
+  const canDelete = hasPermission(user?.role, 'suppliers:delete');
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'suppliers' | 'payment-methods'>('suppliers');
@@ -37,6 +39,14 @@ export default function SuppliersPage() {
   const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Delete Supplier State & Feedback
+  const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingSupplierId, setDeletingSupplierId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Payment Methods State (Super Admin Management)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -369,6 +379,62 @@ export default function SuppliersPage() {
     }
   };
 
+  // Auto-dismiss success toast
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
+
+  // Open Delete Confirmation Modal
+  const handleOpenDelete = (supplier: Supplier) => {
+    setDeleteTarget(supplier);
+    setDeleteError(null);
+    setIsDeleteModalOpen(true);
+  };
+
+  // Close Delete Modal without submitting
+  const handleCloseDelete = () => {
+    if (isDeleting) return; // Prevent closing while API request in flight
+    setIsDeleteModalOpen(false);
+    setDeleteTarget(null);
+    setDeleteError(null);
+  };
+
+  // Confirm and Execute Supplier Deletion
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || isDeleting) return;
+
+    setIsDeleting(true);
+    setDeletingSupplierId(deleteTarget.id);
+    setDeleteError(null);
+
+    try {
+      const res = await suppliersApi.delete(deleteTarget.id);
+      // Immediately remove supplier from local state without full page refresh
+      setSuppliers((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+      setPagination((prev) => ({
+        ...prev,
+        total: Math.max(0, prev.total - 1),
+      }));
+
+      // Show success toast
+      setSuccessToast(res.message || `Supplier "${deleteTarget.companyName}" was successfully deleted.`);
+
+      // Close modal on success
+      setIsDeleteModalOpen(false);
+      setDeleteTarget(null);
+    } catch (err: unknown) {
+      // Useful error message if deletion fails; keep row visible!
+      const message = err instanceof Error ? err.message : 'Failed to delete supplier.';
+      setDeleteError(message);
+    } finally {
+      setIsDeleting(false);
+      setDeletingSupplierId(null);
+    }
+  };
+
   // Payment Method Management Handlers
   const handleOpenCreatePm = () => {
     setEditingPm(null);
@@ -586,6 +652,17 @@ export default function SuppliersPage() {
               </div>
             </div>
 
+            {/* Success Toast */}
+            {successToast && (
+              <div className="alert alert-success d-flex align-items-center justify-content-between p-3 mb-4 rounded-3 border-0 shadow-sm" role="alert">
+                <div className="d-flex align-items-center gap-2">
+                  <i className="bi bi-check-circle-fill text-success fs-5"></i>
+                  <span className="fw-semibold">{successToast}</span>
+                </div>
+                <button type="button" className="btn-close" onClick={() => setSuccessToast(null)} aria-label="Close"></button>
+              </div>
+            )}
+
             {/* Error Banner */}
             {suppliersError && (
               <div className="alert alert-danger py-3 mb-4 d-flex justify-content-between align-items-center">
@@ -724,6 +801,25 @@ export default function SuppliersPage() {
                                 >
                                   {sup.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
                                 </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-danger"
+                                  title="Delete Supplier"
+                                  aria-label={`Delete ${sup.companyName}`}
+                                  disabled={isDeleting && deletingSupplierId === sup.id}
+                                  onClick={() => handleOpenDelete(sup)}
+                                >
+                                  {deletingSupplierId === sup.id ? (
+                                    <>
+                                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                      Deleting...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <i className="bi bi-trash"></i> Delete
+                                    </>
+                                  )}
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -787,7 +883,7 @@ export default function SuppliersPage() {
                         <span className="badge badge-info-soft">{sup.productCount || 0} Items</span>
                       </div>
 
-                      <div className="d-flex justify-content-end gap-2 pt-2 border-top">
+                      <div className="d-flex justify-content-end gap-2 pt-2 border-top flex-wrap">
                         <button
                           type="button"
                           className="btn btn-sm btn-light border"
@@ -810,6 +906,25 @@ export default function SuppliersPage() {
                           onClick={() => handleToggleStatus(sup.id)}
                         >
                           {sup.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger"
+                          title="Delete Supplier"
+                          aria-label={`Delete ${sup.companyName}`}
+                          disabled={isDeleting && deletingSupplierId === sup.id}
+                          onClick={() => handleOpenDelete(sup)}
+                        >
+                          {deletingSupplierId === sup.id ? (
+                            <>
+                              <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                              Deleting...
+                            </>
+                          ) : (
+                            <>
+                              <i className="bi bi-trash"></i> Delete
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>
@@ -1740,6 +1855,117 @@ export default function SuppliersPage() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DELETE SUPPLIER CONFIRMATION MODAL */}
+        {isDeleteModalOpen && deleteTarget && (
+          <div
+            className="modal show d-block"
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deleteSupplierModalTitle"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}
+          >
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content rounded-4 border-0 shadow">
+                <div className="modal-header border-bottom py-3">
+                  <div className="d-flex align-items-center gap-2">
+                    <div className="ardab-icon-box bg-danger-subtle text-danger" style={{ width: 36, height: 36 }}>
+                      <i className="bi bi-trash-fill"></i>
+                    </div>
+                    <h5 className="modal-title fw-bold text-dark mb-0" id="deleteSupplierModalTitle">
+                      Delete Supplier
+                    </h5>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={handleCloseDelete}
+                    disabled={isDeleting}
+                    aria-label="Close"
+                  ></button>
+                </div>
+
+                <div className="modal-body p-4">
+                  {deleteError && (
+                    <div className="alert alert-danger d-flex align-items-start gap-2 p-3 mb-3 rounded-3" role="alert">
+                      <i className="bi bi-exclamation-octagon-fill text-danger flex-shrink-0 mt-1"></i>
+                      <div>
+                        <strong className="d-block">Deletion Failed</strong>
+                        <span>{deleteError}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-dark mb-3">
+                    Are you sure you want to permanently delete <strong>{deleteTarget.companyName}</strong>?
+                  </p>
+
+                  <div className="p-3 bg-light rounded-3 border mb-3">
+                    <div className="d-flex justify-content-between mb-2 small">
+                      <span className="text-muted">Supplier Name:</span>
+                      <strong className="text-dark">{deleteTarget.companyName}</strong>
+                    </div>
+                    <div className="d-flex justify-content-between mb-2 small">
+                      <span className="text-muted">Contact Person:</span>
+                      <span className="text-dark">{deleteTarget.name}</span>
+                    </div>
+                    <div className="d-flex justify-content-between mb-2 small">
+                      <span className="text-muted">Unique Identifier:</span>
+                      <code className="text-secondary small">{deleteTarget.id}</code>
+                    </div>
+                    <div className="d-flex justify-content-between small">
+                      <span className="text-muted">Linked Products:</span>
+                      <span className={(deleteTarget.productCount || 0) > 0 ? 'badge bg-danger-subtle text-danger' : 'badge bg-secondary-subtle text-secondary'}>
+                        {deleteTarget.productCount || 0} product(s)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="alert alert-warning small d-flex align-items-start gap-2 mb-0">
+                    <i className="bi bi-exclamation-triangle-fill text-warning flex-shrink-0 mt-1"></i>
+                    <div>
+                      <strong>Warning:</strong> Deletion may affect related records. Permanent removal will erase the supplier profile, settlement accounts, and marketplace category associations.
+                      {(deleteTarget.productCount || 0) > 0 && (
+                        <div className="mt-2 text-danger fw-semibold">
+                          Notice: This supplier currently has {deleteTarget.productCount} associated product(s). To protect business and historical data, backend database integrity checks will block deletion until all products are removed or reassigned. Consider deactivating or suspending this supplier instead.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-footer border-top bg-light py-3">
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={handleCloseDelete}
+                    disabled={isDeleting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger px-4"
+                    onClick={handleConfirmDelete}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Deleting Supplier...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-trash me-1"></i> Delete Supplier
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

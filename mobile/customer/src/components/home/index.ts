@@ -1,5 +1,6 @@
 export * from './HomeHeader';
 export * from './HomeHero';
+export * from './HomeAdCarousel';
 export * from './CategoryCarousel';
 export * from './SpecialOffers';
 export * from './TrendingProducts';

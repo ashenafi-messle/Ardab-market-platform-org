@@ -9,6 +9,7 @@ import {
   createSupplierHandler,
   updateSupplierHandler,
   toggleSupplierStatusHandler,
+  deleteSupplierHandler,
 } from '../controllers/supplier.controller.js';
 import { adminAuthMiddleware } from '../middleware/adminAuth.middleware.js';
 import { requireRole } from '../middleware/adminPermission.middleware.js';
@@ -86,6 +87,19 @@ router.patch(
   requireRole(ADMIN_ROLES.SUPER_ADMIN),
   validate({ params: supplierParamsSchema, body: updateSupplierStatusSchema }),
   asyncHandler(toggleSupplierStatusHandler)
+);
+
+/**
+ * @route   DELETE /:id
+ * @desc    Delete a supplier by ID (Super Admin only, restricted if products/records attached)
+ * @access  Private (Super Admin)
+ */
+router.delete(
+  '/:id',
+  adminAuthMiddleware,
+  requireRole(ADMIN_ROLES.SUPER_ADMIN),
+  validate({ params: supplierParamsSchema }),
+  asyncHandler(deleteSupplierHandler)
 );
 
 export default router;

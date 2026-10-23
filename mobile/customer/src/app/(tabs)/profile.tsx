@@ -9,6 +9,8 @@ import { t } from '@/utils/i18n';
 import { ProfileHeader, ProfileMenuItem } from '@/components/profile';
 import { Modal, AppButton } from '@/components/common';
 import { ARDAB_LICENSE_URL } from '@/constants/branding';
+import { shareApp } from '@/services/shareService';
+import { openStoreRating, openOfficialWebsite } from '@/services/storeService';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -18,7 +20,26 @@ export default function ProfileScreen() {
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
   const [licenseModalVisible, setLicenseModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [rateModalVisible, setRateModalVisible] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+
+  const handleShareApp = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    try {
+      await shareApp({ language: language as 'en' | 'am' });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const handleRateUs = async () => {
+    const result = await openStoreRating();
+    if (result.action === 'preview_notice') {
+      setRateModalVisible(true);
+    }
+  };
 
   const performLogout = async () => {
     if (isLoggingOut) return;
@@ -122,6 +143,18 @@ export default function ProfileScreen() {
           title={t('profile.support')}
           subtitle={t('support.contactSupport')}
           onPress={() => router.push('/support' as any)}
+        />
+        <ProfileMenuItem
+          icon="share-social-outline"
+          title={t('profile.shareApp')}
+          subtitle={t('profile.shareAppSubtitle')}
+          onPress={handleShareApp}
+        />
+        <ProfileMenuItem
+          icon="star-outline"
+          title={t('profile.rateUs')}
+          subtitle={t('profile.rateUsSubtitle')}
+          onPress={handleRateUs}
         />
         <ProfileMenuItem
           icon="ribbon-outline"
@@ -241,6 +274,41 @@ export default function ProfileScreen() {
           onPress={() => setLicenseModalVisible(false)}
           style={{ marginTop: Spacing.md }}
         />
+      </Modal>
+
+      {/* Rate Us / Preview Store Review Notice Modal */}
+      <Modal
+        visible={rateModalVisible}
+        onClose={() => setRateModalVisible(false)}
+        title={t('profile.ratePreviewTitle')}>
+        <View style={styles.rateModalContent}>
+          <View style={styles.rateIconCircle}>
+            <Ionicons name="star" size={30} color="#FFD700" />
+          </View>
+          <Text style={styles.aboutTitle}>{t('common.appName')}</Text>
+          <Text style={styles.rateModalDesc}>
+            {t('profile.ratePreviewDesc')}
+          </Text>
+          <View style={styles.rateModalButtons}>
+            <AppButton
+              title={t('profile.visitWebsite')}
+              variant="outline"
+              size="sm"
+              onPress={() => {
+                setRateModalVisible(false);
+                openOfficialWebsite();
+              }}
+              style={{ flex: 1 }}
+            />
+            <AppButton
+              title={t('common.close') || 'Close'}
+              variant="primary"
+              size="sm"
+              onPress={() => setRateModalVisible(false)}
+              style={{ flex: 1 }}
+            />
+          </View>
+        </View>
       </Modal>
 
       {/* Sign Out Confirmation Modal */}
@@ -400,5 +468,34 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: Spacing.sm,
     textAlign: 'center',
+  },
+  rateModalContent: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xs,
+  },
+  rateIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 215, 0, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  rateModalDesc: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.text,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginVertical: Spacing.md,
+  },
+  rateModalButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    width: '100%',
+    marginTop: Spacing.xs,
   },
 });

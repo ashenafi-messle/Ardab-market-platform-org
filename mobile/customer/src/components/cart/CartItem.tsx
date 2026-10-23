@@ -3,7 +3,7 @@ import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Typography, Spacing, Shadows } from '@/theme';
 import { CartItem as CartItemType } from '@/types';
-import { formatPrice } from '@/utils/i18n';
+import { formatPrice, t } from '@/utils/i18n';
 import { QuantitySelector } from '../common/QuantitySelector';
 
 export interface CartItemProps {
@@ -23,6 +23,10 @@ export const CartItem: React.FC<CartItemProps> = ({
 }) => {
   const { product, quantity, selected, selectedAttributes } = item;
 
+  const isSoldOut = Boolean(product.isSoldOut || product.availabilityStatus === 'SOLD_OUT');
+  const isOutOfStock = Boolean(product.status === 'OUT_OF_STOCK' || product.availabilityStatus === 'OUT_OF_STOCK');
+  const isUnavailable = isSoldOut || isOutOfStock;
+
   const attrText = selectedAttributes
     ? Object.entries(selectedAttributes)
         .map(([k, v]) => `${k}: ${v}`)
@@ -30,7 +34,7 @@ export const CartItem: React.FC<CartItemProps> = ({
     : null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isUnavailable && styles.containerUnavailable]}>
       {/* Checkbox */}
       <TouchableOpacity
         onPress={onToggleSelect}
@@ -40,7 +44,7 @@ export const CartItem: React.FC<CartItemProps> = ({
         <Ionicons
           name={selected ? 'checkbox' : 'square-outline'}
           size={22}
-          color={selected ? Colors.primary : Colors.textMuted}
+          color={selected ? (isUnavailable ? '#DC2626' : Colors.primary) : Colors.textMuted}
         />
       </TouchableOpacity>
 
@@ -49,7 +53,11 @@ export const CartItem: React.FC<CartItemProps> = ({
         onPress={onPressProduct}
         activeOpacity={0.8}
         style={styles.imageWrapper}>
-        <Image source={{ uri: product.images[0] }} style={styles.image} resizeMode="cover" />
+        <Image
+          source={{ uri: product.images[0] }}
+          style={[styles.image, isUnavailable && styles.imageUnavailable]}
+          resizeMode="cover"
+        />
       </TouchableOpacity>
 
       {/* Product Info & Actions */}
@@ -68,6 +76,15 @@ export const CartItem: React.FC<CartItemProps> = ({
           </TouchableOpacity>
         </View>
 
+        {isUnavailable ? (
+          <View style={styles.soldOutBadge}>
+            <Ionicons name="alert-circle" size={12} color="#DC2626" />
+            <Text style={styles.soldOutBadgeText}>
+              {isSoldOut ? t('cart.soldOutBadge') : t('product.outOfStock')}
+            </Text>
+          </View>
+        ) : null}
+
         {attrText ? (
           <Text style={styles.attributes} numberOfLines={1}>
             {attrText}
@@ -78,8 +95,9 @@ export const CartItem: React.FC<CartItemProps> = ({
           <Text style={styles.price}>{formatPrice(product.price)}</Text>
           <QuantitySelector
             quantity={quantity}
-            onIncrease={() => onQuantityChange(quantity + 1)}
-            onDecrease={() => onQuantityChange(quantity - 1)}
+            onIncrease={() => !isUnavailable && onQuantityChange(quantity + 1)}
+            onDecrease={() => !isUnavailable && onQuantityChange(quantity - 1)}
+            disabled={isUnavailable}
             size="sm"
           />
         </View>
@@ -150,5 +168,28 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.heavy,
     color: Colors.primary,
+  },
+  containerUnavailable: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
+  },
+  imageUnavailable: {
+    opacity: 0.5,
+  },
+  soldOutBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.xs,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  soldOutBadgeText: {
+    fontSize: Typography.fontSize.tiny,
+    fontWeight: Typography.fontWeight.bold,
+    color: '#DC2626',
   },
 });

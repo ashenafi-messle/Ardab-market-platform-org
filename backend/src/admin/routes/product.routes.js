@@ -9,6 +9,7 @@ import {
   createProductHandler,
   updateProductHandler,
   toggleProductStatusHandler,
+  toggleProductAvailabilityHandler,
   deleteProductHandler,
   addProductImageHandler,
   deleteProductImageHandler,
@@ -26,6 +27,7 @@ import {
   createProductSchema,
   updateProductSchema,
   updateProductStatusSchema,
+  updateProductAvailabilitySchema,
   productParamsSchema,
   productImageParamsSchema,
   updateProductImageSchema,
@@ -99,6 +101,19 @@ router.patch(
   requireRole(ADMIN_ROLES.SUPER_ADMIN),
   validate({ params: productParamsSchema, body: updateProductStatusSchema }),
   asyncHandler(toggleProductStatusHandler)
+);
+
+/**
+ * @route   PATCH /:id/availability
+ * @desc    Toggle or update product availability (mark Sold Out or restore availability)
+ * @access  Private (Super Admin)
+ */
+router.patch(
+  '/:id/availability',
+  adminAuthMiddleware,
+  requireRole(ADMIN_ROLES.SUPER_ADMIN),
+  validate({ params: productParamsSchema, body: updateProductAvailabilitySchema }),
+  asyncHandler(toggleProductAvailabilityHandler)
 );
 
 /**

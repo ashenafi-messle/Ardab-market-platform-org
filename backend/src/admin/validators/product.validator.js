@@ -120,6 +120,7 @@ export const createProductSchema = z
       })
       .optional()
       .default('ACTIVE'),
+    isSoldOut: z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean().optional().default(false)),
     itemCode: z.any().optional(),
     packagingUnit: z.any().optional(),
   })
@@ -235,6 +236,7 @@ export const updateProductSchema = z
     status: z
       .enum(PRODUCT_STATUSES)
       .optional(),
+    isSoldOut: z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean().optional()),
     itemCode: z.any().optional(),
     packagingUnit: z.any().optional(),
   })
@@ -259,6 +261,13 @@ export const updateProductStatusSchema = z.object({
   status: z.enum(PRODUCT_STATUSES, {
     errorMap: () => ({ message: `Status must be one of: ${PRODUCT_STATUSES.join(', ')}` }),
   }),
+});
+
+export const updateProductAvailabilitySchema = z.object({
+  isSoldOut: z.preprocess(
+    (v) => (v === 'true' ? true : v === 'false' ? false : v),
+    z.boolean({ required_error: 'isSoldOut boolean is required', invalid_type_error: 'isSoldOut must be a boolean' })
+  ),
 });
 
 export const productParamsSchema = z.object({
@@ -287,6 +296,7 @@ export const productQuerySchema = z.object({
   sellerId: z.string().uuid('Invalid seller filter ID').optional(),
   categoryId: z.string().uuid('Invalid category filter ID').optional(),
   status: z.string().trim().optional(),
+  isSoldOut: z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean().optional()),
   city: z.string().trim().optional(),
   sortBy: z.enum(['createdAt', 'name', 'sellingPrice', 'itemCode']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),

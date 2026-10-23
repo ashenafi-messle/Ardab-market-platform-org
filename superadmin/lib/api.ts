@@ -439,6 +439,9 @@ function normalizeProduct(raw: unknown): Product {
     imageUrl: primaryUrl,
     cityAvailability: Array.isArray(r.cityAvailability) && r.cityAvailability.length > 0 ? (r.cityAvailability as string[]) : ['All Cities'],
     status: (r.status as ProductStatus) || 'ACTIVE',
+    isSoldOut: Boolean(r.isSoldOut),
+    isAvailable: r.status === 'ACTIVE' && !Boolean(r.isSoldOut),
+    availabilityStatus: ((r.availabilityStatus as any) || (Boolean(r.isSoldOut) ? 'SOLD_OUT' : r.status === 'OUT_OF_STOCK' ? 'OUT_OF_STOCK' : r.status !== 'ACTIVE' ? 'INACTIVE' : 'AVAILABLE')) as Product['availabilityStatus'],
     createdAt: String(r.createdAt || new Date().toISOString()),
     updatedAt: String(r.updatedAt || new Date().toISOString()),
   };
@@ -606,6 +609,15 @@ export const productsApi = {
       body: JSON.stringify(status ? { status } : {}),
     });
     if (!res.data) throw new Error('Failed to toggle product status');
+    return normalizeProduct(res.data);
+  },
+
+  toggleAvailability: async (id: string, isSoldOut: boolean): Promise<Product> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Product }>(`/api/products/${id}/availability`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isSoldOut }),
+    });
+    if (!res.data) throw new Error('Failed to update product availability');
     return normalizeProduct(res.data);
   },
 
@@ -1088,6 +1100,13 @@ export const suppliersApi = {
     });
     if (!res.data) throw new Error('Failed to update supplier status');
     return res.data;
+  },
+
+  delete: async (id: string): Promise<{ success: boolean; message?: string }> => {
+    const res = await fetchAuthApi<{ success: boolean; message?: string }>(`/api/suppliers/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
   },
 };
 

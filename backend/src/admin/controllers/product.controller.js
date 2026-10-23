@@ -8,6 +8,7 @@ import {
   createProduct,
   updateProduct,
   toggleProductStatus,
+  toggleProductAvailability,
   deleteProduct,
   addProductImage,
   deleteProductImage,
@@ -44,6 +45,13 @@ export async function toggleProductStatusHandler(req, res) {
   const targetStatus = req.body?.status || null;
   const product = await toggleProductStatus(req.params.id, targetStatus, req.user, ipAddress);
   return ApiResponse.success(res, product, 'Product status updated successfully');
+}
+
+export async function toggleProductAvailabilityHandler(req, res) {
+  const ipAddress = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+  const { isSoldOut } = req.body;
+  const product = await toggleProductAvailability(req.params.id, isSoldOut, req.user, ipAddress);
+  return ApiResponse.success(res, product, 'Product availability updated successfully');
 }
 
 export async function deleteProductHandler(req, res) {

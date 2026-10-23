@@ -8,6 +8,7 @@ import {
   createSupplier,
   updateSupplier,
   toggleSupplierStatus,
+  deleteSupplier,
 } from '../services/supplier.service.js';
 import { ApiResponse } from '../../shared/utils/apiResponse.js';
 
@@ -38,4 +39,10 @@ export async function toggleSupplierStatusHandler(req, res) {
   const targetStatus = req.body?.status || null;
   const supplier = await toggleSupplierStatus(req.params.id, targetStatus, req.user, ipAddress);
   return ApiResponse.success(res, supplier, 'Supplier status updated successfully');
+}
+
+export async function deleteSupplierHandler(req, res) {
+  const ipAddress = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+  const result = await deleteSupplier(req.params.id, req.user, ipAddress);
+  return ApiResponse.success(res, result, 'Supplier deleted successfully');
 }

@@ -33,6 +33,9 @@ export interface CustomerProduct {
   compareAtPrice?: number | null;
   stock?: number;
   status: string;
+  isSoldOut?: boolean;
+  isAvailable?: boolean;
+  availabilityStatus?: string;
   cityAvailability: string[];
   createdAt: string;
   rating?: {

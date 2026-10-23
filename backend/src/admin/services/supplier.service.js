@@ -400,3 +400,68 @@ export async function toggleSupplierStatus(id, targetStatus = null, adminUser = 
 
   return updatedSupplier;
 }
+
+/**
+ * Permanently delete a supplier (Super Admin only)
+ * Enforces database integrity: blocks deletion if supplier is linked to products or catalog records.
+ */
+export async function deleteSupplier(id, adminUser = null, ipAddress = null) {
+  // 1. Confirm supplier exists and check associated dependencies
+  const supplier = await prisma.supplier.findUnique({
+    where: { id },
+    include: {
+      _count: {
+        select: {
+          products: true,
+        },
+      },
+    },
+  });
+
+  if (!supplier) {
+    throw ApiError.notFound(`Supplier with ID '${id}' was not found.`, 'SUPPLIER_NOT_FOUND');
+  }
+
+  // 2. Validate foreign-key relations & dependent catalog records
+  if (supplier._count.products > 0) {
+    throw ApiError.conflict(
+      `Cannot delete supplier "${supplier.companyName}": This supplier has ${supplier._count.products} associated product(s) in the catalog. Reassign or remove the products first, or suspend/deactivate the supplier instead.`,
+      'SUPPLIER_HAS_DEPENDENT_PRODUCTS'
+    );
+  }
+
+  // 3. Perform database deletion within try/catch for foreign-key constraint protection
+  try {
+    await prisma.supplier.delete({
+      where: { id },
+    });
+  } catch (err) {
+    if (err.code === 'P2003') {
+      logger.warn('Supplier deletion blocked by foreign key constraint', {
+        supplierId: id,
+        error: err.message,
+      });
+      throw ApiError.conflict(
+        `Cannot delete supplier "${supplier.companyName}" because it is referenced by existing orders, deliveries, or transactions. Consider deactivating or suspending this supplier instead.`,
+        'SUPPLIER_DEPENDENCY_RESTRICTED'
+      );
+    }
+    throw err;
+  }
+
+  // 4. Record administrative audit log
+  await recordSupplierAuditLog({
+    adminUser,
+    action: 'SUPPLIER_DELETE',
+    supplierId: id,
+    ipAddress,
+    changesSummary: `Permanently deleted supplier "${supplier.companyName}" (ID: ${id})`,
+  });
+
+  // 5. Return safe summary without sensitive details
+  return {
+    id: supplier.id,
+    companyName: supplier.companyName,
+    deleted: true,
+  };
+}

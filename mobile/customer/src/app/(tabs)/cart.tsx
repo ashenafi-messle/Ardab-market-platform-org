@@ -24,7 +24,17 @@ export default function CartScreen() {
   const selectedCount = cartItems.filter((i) => i.selected).length;
   const isAllSelected = cartItems.length > 0 && selectedCount === cartItems.length;
 
+  const hasSoldOutSelected = cartItems.some(
+    (i) =>
+      i.selected &&
+      (i.product.isSoldOut ||
+        i.product.availabilityStatus === 'SOLD_OUT' ||
+        i.product.status === 'OUT_OF_STOCK' ||
+        i.product.availabilityStatus === 'OUT_OF_STOCK')
+  );
+
   const handleCheckout = () => {
+    if (hasSoldOutSelected) return;
     router.push('/checkout' as any);
   };
 
@@ -77,13 +87,20 @@ export default function CartScreen() {
             )}
           />
 
+          {hasSoldOutSelected ? (
+            <View style={styles.soldOutAlert}>
+              <Ionicons name="alert-circle" size={18} color="#DC2626" />
+              <Text style={styles.soldOutAlertText}>{t('cart.containsSoldOut')}</Text>
+            </View>
+          ) : null}
+
           {/* Sticky Bottom Summary */}
           <CartSummary
             subtotal={cartSubtotal}
             deliveryFee={selectedCount > 0 ? 150 : 0}
             total={cartTotal}
             itemCount={selectedCount}
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 || hasSoldOutSelected}
             onCheckout={handleCheckout}
           />
         </View>
@@ -133,5 +150,24 @@ const styles = StyleSheet.create({
   listContent: {
     padding: Spacing.lg,
     paddingBottom: Spacing.xl,
+  },
+  soldOutAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.xs,
+  },
+  soldOutAlertText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.semibold,
+    color: '#B91C1C',
   },
 });
