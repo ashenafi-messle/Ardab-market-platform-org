@@ -83,9 +83,18 @@ export default function ProductDetailScreen() {
 
   const isFavorite = product ? isInWishlist(product.id) : false;
 
-  const isSoldOut = Boolean(product?.isSoldOut || product?.availabilityStatus === 'SOLD_OUT');
-  const isOutOfStock = Boolean(product?.status === 'OUT_OF_STOCK' || product?.availabilityStatus === 'OUT_OF_STOCK');
-  const isUnavailable = isSoldOut || isOutOfStock;
+  const isSoldOut = Boolean(
+    product?.isSoldOut ||
+    (product as any)?.isSoldOut === 'true' ||
+    (product as any)?.isSoldOut === 1 ||
+    product?.availabilityStatus === 'SOLD_OUT' ||
+    product?.status === 'SOLD_OUT'
+  );
+  const isOutOfStock = Boolean(
+    product?.status === 'OUT_OF_STOCK' ||
+    product?.availabilityStatus === 'OUT_OF_STOCK'
+  );
+  const isUnavailable = isSoldOut || isOutOfStock || product?.isAvailable === false;
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);

@@ -101,9 +101,22 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = ({ products: initialP
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
         {offers.map((product) => {
-          const discountText = product.discountPercentage
-            ? `${product.discountPercentage}% OFF`
-            : 'DISCOUNT';
+          const isSoldOut = Boolean(
+            product.isSoldOut === true ||
+            (product as any).isSoldOut === 'true' ||
+            (product as any).isSoldOut === 1 ||
+            product.availabilityStatus === 'SOLD_OUT' ||
+            product.status === 'SOLD_OUT'
+          );
+          const isOutOfStock = Boolean(
+            product.status === 'OUT_OF_STOCK' ||
+            product.availabilityStatus === 'OUT_OF_STOCK'
+          );
+          const isUnavailable = isSoldOut || isOutOfStock || product.isAvailable === false;
+
+          const discountText = isUnavailable
+            ? (isSoldOut ? t('product.soldOut') : t('product.outOfStock'))
+            : (product.discountPercentage ? `${product.discountPercentage}% OFF` : 'DISCOUNT');
           const imageUrl = product.images?.[0] || product.primaryImage?.url || '';
 
           return (
@@ -120,7 +133,7 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = ({ products: initialP
                 {/* Left Content */}
                 <View style={styles.textContainer}>
                   <View style={styles.badgeRow}>
-                    <View style={styles.redBadge}>
+                    <View style={[styles.redBadge, isUnavailable && (isSoldOut ? styles.soldOutBadgeRed : styles.outOfStockBadge)]}>
                       <Text style={styles.redBadgeText}>{discountText}</Text>
                     </View>
                     <Text style={styles.badgeLabel}>
@@ -139,9 +152,11 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = ({ products: initialP
                     ) : null}
                   </View>
 
-                  <View style={styles.shopNowBtn}>
-                    <Text style={styles.shopNowText}>{t('home.shopNow')}</Text>
-                    <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
+                  <View style={[styles.shopNowBtn, isUnavailable && styles.disabledShopNowBtn]}>
+                    <Text style={styles.shopNowText}>
+                      {isUnavailable ? (isSoldOut ? t('product.soldOut') : t('product.outOfStock')) : t('home.shopNow')}
+                    </Text>
+                    {!isUnavailable && <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />}
                   </View>
                 </View>
 
@@ -150,7 +165,7 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = ({ products: initialP
                   {imageUrl ? (
                     <ExpoImage
                       source={{ uri: ImagePresets.thumbnail(imageUrl) }}
-                      style={styles.productImage}
+                      style={[styles.productImage, isUnavailable && { opacity: 0.65 }]}
                       contentFit="cover"
                       cachePolicy="memory-disk"
                       placeholder={{ blurhash: DEFAULT_BLURHASH }}
@@ -292,5 +307,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F3F6F4',
+  },
+  soldOutBadgeRed: {
+    backgroundColor: '#DC2626',
+  },
+  outOfStockBadge: {
+    backgroundColor: '#4B5563',
+  },
+  disabledShopNowBtn: {
+    backgroundColor: '#9CA3AF',
   },
 });

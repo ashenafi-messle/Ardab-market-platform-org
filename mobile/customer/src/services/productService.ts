@@ -57,6 +57,23 @@ export function mapBackendProductToMobile(item: any): Product {
     : (item.rating?.average !== undefined && item.rating?.average !== null ? Number(item.rating.average) : 0);
   const revCount = Number(item.reviewCount || item.ratingCount || item.rating?.count || 0);
 
+  const isSoldOut = Boolean(
+    item.isSoldOut === true ||
+    item.isSoldOut === 'true' ||
+    item.isSoldOut === 1 ||
+    item.availabilityStatus === 'SOLD_OUT' ||
+    item.status === 'SOLD_OUT'
+  );
+  const isOutOfStock = Boolean(
+    item.status === 'OUT_OF_STOCK' ||
+    item.availabilityStatus === 'OUT_OF_STOCK'
+  );
+  const status = item.status || (isSoldOut ? 'SOLD_OUT' : (isOutOfStock ? 'OUT_OF_STOCK' : 'ACTIVE'));
+  const isAvailable = item.isAvailable !== undefined
+    ? Boolean(item.isAvailable)
+    : (status === 'ACTIVE' && !isSoldOut && !isOutOfStock);
+  const availabilityStatus = item.availabilityStatus || (isSoldOut ? 'SOLD_OUT' : (isOutOfStock ? 'OUT_OF_STOCK' : (status === 'ACTIVE' ? 'AVAILABLE' : 'INACTIVE')));
+
   return {
     id: item.id,
     itemCode: item.itemCode,
@@ -102,6 +119,10 @@ export function mapBackendProductToMobile(item: any): Product {
     isPopular: Boolean(item.isPopular),
     isRecommended: Boolean(item.isRecommended),
     origin: item.seller?.city || 'Ethiopia',
+    status,
+    isSoldOut,
+    isAvailable,
+    availabilityStatus,
   };
 }
 

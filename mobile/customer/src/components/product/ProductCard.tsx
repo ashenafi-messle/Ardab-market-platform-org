@@ -36,9 +36,18 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
   const { isInWishlist, toggleWishlist, addToCart } = useApp();
   const isFavorite = isInWishlist(product.id);
 
-  const isSoldOut = Boolean(product.isSoldOut || product.availabilityStatus === 'SOLD_OUT');
-  const isOutOfStock = Boolean(product.status === 'OUT_OF_STOCK' || product.availabilityStatus === 'OUT_OF_STOCK');
-  const isUnavailable = isSoldOut || isOutOfStock;
+  const isSoldOut = Boolean(
+    product.isSoldOut === true ||
+    (product as any).isSoldOut === 'true' ||
+    (product as any).isSoldOut === 1 ||
+    product.availabilityStatus === 'SOLD_OUT' ||
+    product.status === 'SOLD_OUT'
+  );
+  const isOutOfStock = Boolean(
+    product.status === 'OUT_OF_STOCK' ||
+    product.availabilityStatus === 'OUT_OF_STOCK'
+  );
+  const isUnavailable = isSoldOut || isOutOfStock || product.isAvailable === false;
 
   const handleAddToCart = (e: any) => {
     e.stopPropagation?.();
@@ -68,13 +77,14 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
             placeholder={{ blurhash: DEFAULT_BLURHASH }}
             transition={150}
           />
-          {product.discountPercentage ? (
+          {product.discountPercentage && !isUnavailable ? (
             <View style={styles.discountTag}>
               <Text style={styles.discountText}>-{product.discountPercentage}%</Text>
             </View>
           ) : null}
           {isUnavailable ? (
             <View style={[styles.soldOutBadge, isSoldOut ? styles.soldOutBadgeRed : styles.outOfStockBadge]}>
+              <Ionicons name="close-circle" size={10} color={Colors.textInverse} />
               <Text style={styles.soldOutBadgeText} numberOfLines={1}>
                 {isSoldOut ? t('product.soldOut') : t('product.outOfStock')}
               </Text>
@@ -163,7 +173,7 @@ export const ProductCardComponent: React.FC<ProductCardProps> = ({
           transition={150}
         />
 
-        {product.discountPercentage ? (
+        {product.discountPercentage && !isUnavailable ? (
           <View style={styles.discountTag}>
             <Text style={styles.discountText}>-{product.discountPercentage}%</Text>
           </View>
@@ -439,10 +449,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2.5,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: Radius.xs,
-    zIndex: 2,
+    zIndex: 10,
+    elevation: 4,
   },
   soldOutBadgeRed: {
     backgroundColor: '#DC2626',
