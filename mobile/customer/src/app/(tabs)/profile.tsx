@@ -120,6 +120,12 @@ export default function ProfileScreen() {
           subtitle="Transactions & verified receipts"
           onPress={() => router.push('/profile/payments' as any)}
         />
+        <ProfileMenuItem
+          icon="people-outline"
+          title={t('profile.myAgent') || 'My Agent'}
+          subtitle={t('profile.myAgentSubtitle') || 'Connect with an Ardab Market agent'}
+          onPress={() => router.push('/profile/agent' as any)}
+        />
 
         {/* Section: Settings & Preferences */}
         <Text style={styles.sectionHeading}>{t('profile.sectionPreferences')}</Text>

@@ -126,6 +126,12 @@ export async function listOrders(queryOptions = {}) {
           orderBy: { createdAt: 'asc' },
         },
         deliveryAddressSnapshot: true,
+        attributedAgent: {
+          select: { id: true, name: true, phone: true, email: true, status: true },
+        },
+        commissions: {
+          select: { id: true, commissionAmount: true, rateSnapshot: true, status: true },
+        },
       },
     }),
   ]);
@@ -173,6 +179,12 @@ export async function getOrderById(id) {
         orderBy: { createdAt: 'asc' },
       },
       deliveryAddressSnapshot: true,
+      attributedAgent: {
+        select: { id: true, name: true, phone: true, email: true, status: true },
+      },
+      commissions: {
+        select: { id: true, commissionAmount: true, rateSnapshot: true, status: true },
+      },
       activities: {
         orderBy: { createdAt: 'asc' },
       },
@@ -238,6 +250,7 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
       status: true,
       city: true,
       customerId: true,
+      attributedAgentId: true,
     },
   });
 
@@ -307,7 +320,7 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
     });
 
     return updated;
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 
   // Emit Operational Alert asynchronously on failure/cancellation
   if (newStatus === 'CANCELLED' || newStatus === 'FAILED') {
@@ -323,6 +336,56 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
       entityId: id,
       actionUrl: '/orders',
     }, adminUser).catch(() => { });
+  }
+
+  // Handle agent notifications and commission transitions
+  if (existingOrder.attributedAgentId) {
+    if (newStatus === 'CONFIRMED') {
+      try {
+        // 1. Create agent notification idempotently
+        const existingNotif = await prisma.agentNotification.findFirst({
+          where: {
+            agentId: existingOrder.attributedAgentId,
+            orderId: id,
+            type: 'ORDER_ACCEPTED',
+          },
+        });
+        if (!existingNotif) {
+          await prisma.agentNotification.create({
+            data: {
+              agentId: existingOrder.attributedAgentId,
+              orderId: id,
+              type: 'ORDER_ACCEPTED',
+              title: `Customer Order Accepted: #${existingOrder.orderNumber}`,
+              message: `Order #${existingOrder.orderNumber} placed by your integrated customer has been confirmed by Ardab Market.`,
+              metadata: JSON.stringify({
+                orderId: id,
+                orderNumber: existingOrder.orderNumber,
+                confirmedAt: new Date().toISOString(),
+              }),
+            },
+          });
+        }
+
+        // 2. Transition commission status to PAYABLE
+        await prisma.agentCommission.updateMany({
+          where: { orderId: id, status: 'PENDING' },
+          data: { status: 'PAYABLE', payableAt: new Date() },
+        });
+      } catch (err) {
+        logger.warn('[AgentNotification/Commission] Error updating on CONFIRMED:', err);
+      }
+    } else if (newStatus === 'CANCELLED' || newStatus === 'REJECTED') {
+      try {
+        // Reversal/Cancellation of commission
+        await prisma.agentCommission.updateMany({
+          where: { orderId: id, status: { in: ['PENDING', 'PAYABLE'] } },
+          data: { status: 'CANCELLED', notes: reason ? `Order cancelled: ${reason}` : 'Order cancelled' },
+        });
+      } catch (err) {
+        logger.warn('[AgentCommission] Failed to update commission to CANCELLED:', err);
+      }
+    }
   }
 
   // Dispatch customer-specific order notification (non-blocking)
@@ -553,12 +616,32 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
   const rawMethod = (payload.paymentMethod || 'CASH_ON_DELIVERY').toUpperCase();
   const paymentMethod = rawMethod === 'ONLINE' ? 'ONLINE' : 'CASH_ON_DELIVERY';
 
+  // Check if customer has an approved active integrated agent for order attribution
+  const activeAgentRel = await prisma.customerAgentRelationship.findUnique({
+    where: { customerId: targetCustomerId },
+    include: {
+      agent: {
+        select: {
+          id: true,
+          status: true,
+          commissionRate: true,
+          commissionType: true,
+        },
+      },
+    },
+  });
+
+  const attributedAgentId = (activeAgentRel && activeAgentRel.agent) ? activeAgentRel.agent.id : null;
+  const attributedAt = attributedAgentId ? new Date() : null;
+
   // 6. Execute atomic transaction
   const createdOrder = await prisma.$transaction(async (tx) => {
     const order = await tx.order.create({
       data: {
         orderNumber,
         customerId: targetCustomerId,
+        attributedAgentId,
+        attributedAt,
         city: payload.deliveryAddress.city,
         deliveryZone: payload.deliveryAddress.deliveryZone || null,
         deliveryAddress: payload.deliveryAddress.addressLine,
@@ -618,6 +701,29 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
         },
       },
     });
+
+    // If an eligible agent is attributed, create an immutable commission record
+    if (attributedAgentId && activeAgentRel?.agent) {
+      const agent = activeAgentRel.agent;
+      const eligibleBase = orderSubtotal.sub(discountAmount);
+      const commissionRate = agent.commissionRate;
+      const commissionAmount = agent.commissionType === 'FIXED'
+        ? commissionRate
+        : eligibleBase.mul(commissionRate).div(new Decimal(100));
+
+      await tx.agentCommission.create({
+        data: {
+          agentId: attributedAgentId,
+          orderId: order.id,
+          baseAmount: eligibleBase,
+          rateSnapshot: commissionRate,
+          policyType: agent.commissionType,
+          commissionAmount: commissionAmount.toDecimalPlaces(2),
+          currency: 'ETB',
+          status: 'PENDING',
+        },
+      });
+    }
 
     // If Cash on Delivery, record Payment entity in PENDING state (NO CHAPA)
     if (paymentMethod === 'CASH_ON_DELIVERY') {
@@ -761,6 +867,26 @@ function formatOrderResponse(o) {
     currency: o.currency || 'ETB',
     customerNote: o.customerNote || null,
     internalNote: o.internalNote || null,
+    attributedAgentId: o.attributedAgentId || null,
+    attributedAt: o.attributedAt ? o.attributedAt.toISOString() : null,
+    attributedAgent: o.attributedAgent
+      ? {
+        id: o.attributedAgent.id,
+        name: o.attributedAgent.name,
+        phone: o.attributedAgent.phone,
+        email: o.attributedAgent.email,
+        status: o.attributedAgent.status,
+      }
+      : null,
+    commission: (o.commissions && o.commissions.length > 0)
+      ? {
+        id: o.commissions[0].id,
+        amount: Number(o.commissions[0].commissionAmount),
+        commissionAmount: Number(o.commissions[0].commissionAmount),
+        rateSnapshot: Number(o.commissions[0].rateSnapshot),
+        status: o.commissions[0].status,
+      }
+      : null,
     placedAt: o.placedAt ? o.placedAt.toISOString() : o.createdAt.toISOString(),
     confirmedAt: o.confirmedAt ? o.confirmedAt.toISOString() : null,
     processingAt: o.processingAt ? o.processingAt.toISOString() : null,

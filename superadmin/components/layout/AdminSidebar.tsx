@@ -39,6 +39,7 @@ export const SUPER_ADMIN_NAV_GROUPS: NavGroup[] = [
       { label: 'Customers', href: '/customers', icon: 'bi-people' },
       { label: 'Incoming Orders', href: '/orders', icon: 'bi-receipt', badge: 'Incoming' },
       { label: 'Deliveries', href: '/deliveries', icon: 'bi-truck-front' },
+      { label: 'Agents', href: '/agents', icon: 'bi-person-badge', badge: 'Active' },
     ],
   },
 ];

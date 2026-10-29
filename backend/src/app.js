@@ -40,6 +40,8 @@ import customerRouter from './customer/routes/index.js';
 import customerMobileRouter from './customer-mobile/routes/index.js';
 import paymentWebhookRoutes from './shared/routes/webhook.routes.js';
 import adminPaymentRoutes from './admin/routes/payment.routes.js';
+import agentRoutes from './admin/routes/agent.routes.js';
+import agentIntegrationRoutes from './admin/routes/agentIntegration.routes.js';
 import { getHealth, getLive, getReady } from './admin/controllers/health.controller.js';
 
 export function createApp() {
@@ -149,6 +151,12 @@ export function createApp() {
   app.use('/api/v1/deliveries', deliveryRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/v1/notifications', notificationRoutes);
+
+  // Commercial Marketplace: Verified Agents & Customer Referral Management
+  app.use('/api/agents', agentRoutes);
+  app.use('/api/v1/agents', agentRoutes);
+  app.use('/api/agent-integration-requests', agentIntegrationRoutes);
+  app.use('/api/v1/agent-integration-requests', agentIntegrationRoutes);
 
   // Customer Support Management Aliases
   app.use('/api/subadmin/support', supportRoutes);

@@ -16,8 +16,12 @@ import customerProfileRoutes from '../../customer/routes/profile.routes.js';
 import customerSecurityRoutes from '../../customer/routes/security.routes.js';
 import customerSupportRoutes from '../../customer/routes/support.routes.js';
 import customerPaymentRoutes from '../../customer/routes/payment.routes.js';
+import customerAgentRoutes from '../../customer/routes/agent.routes.js';
 
 const customerMobileRouter = Router();
+
+// Mount Customer Mobile Agent Referral & Integration routes (/api/customer-mobile/agent/*)
+customerMobileRouter.use('/agent', customerAgentRoutes);
 
 // Mount Consolidated Customer Mobile Home route (/api/customer-mobile/home)
 customerMobileRouter.get('/home', optionalCustomerAuthMiddleware, asyncHandler(getHomeDataHandler));

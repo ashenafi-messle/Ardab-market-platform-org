@@ -93,6 +93,21 @@ export interface Order {
   assignedTripId?: string;
   assignedVehicleId?: string;
   assignedDriverName?: string;
+  attributedAgentId?: string | null;
+  attributedAt?: string | null;
+  attributedAgent?: {
+    id: string;
+    name: string;
+    phone: string;
+    email: string;
+    status: string;
+  } | null;
+  commission?: {
+    id: string;
+    amount: number;
+    rateSnapshot: number;
+    status: string;
+  } | null;
   timeline: OrderTimelineEvent[];
   createdAt: string;
   updatedAt: string;

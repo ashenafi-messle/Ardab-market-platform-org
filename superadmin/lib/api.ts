@@ -82,6 +82,18 @@ import { CityConfig, PlatformSettings } from '@/types/settings';
 import { SupportTicket, TicketStatus, SupportCategory, SupportStatistics } from '@/types/support';
 import { SystemService, MaintenanceWindow, MaintenanceTask, EquipmentServiceLog } from '@/types/maintenance';
 import {
+  Agent,
+  AgentListParams,
+  AgentListResult,
+  AgentDashboardStats,
+  AgentIntegrationRequest,
+  IntegrationRequestListParams,
+  IntegrationRequestListResult,
+  AgentCustomerItem,
+  AgentOrderItem,
+  AgentCommissionItem,
+} from '@/types/agent';
+import {
   FeedbackItem,
   FeedbackMetrics,
   FeedbackStatus,
@@ -2749,3 +2761,169 @@ export const searchApi = {
     }
   },
 };
+
+// ==============================================================================
+// Agent Management & Customer Integration APIs
+// ==============================================================================
+
+export const agentsApi = {
+  getStats: async (): Promise<AgentDashboardStats> => {
+    const res = await fetchAuthApi<{ success: boolean; data: AgentDashboardStats }>(
+      '/api/admin/agents/stats',
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
+  list: async (params: AgentListParams = {}): Promise<AgentListResult> => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.set('page', String(params.page));
+    if (params.limit) sp.set('limit', String(params.limit));
+    if (params.search) sp.set('search', params.search);
+    if (params.status && params.status !== 'ALL') sp.set('status', params.status);
+    if (params.sortBy) sp.set('sortBy', params.sortBy);
+    if (params.sortOrder) sp.set('sortOrder', params.sortOrder);
+
+    const res = await fetchAuthApi<{ success: boolean; data: Agent[]; pagination: any }>(
+      `/api/admin/agents?${sp.toString()}`,
+      { method: 'GET' }
+    );
+    return {
+      agents: res.data || [],
+      pagination: res.pagination || { total: 0, page: 1, limit: 20, totalPages: 1 },
+    };
+  },
+
+  getById: async (id: string): Promise<Agent> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Agent }>(
+      `/api/admin/agents/${id}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  },
+
+  create: async (formData: FormData): Promise<Agent> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Agent }>(
+      '/api/admin/agents',
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+    return res.data;
+  },
+
+  update: async (id: string, formData: FormData): Promise<Agent> => {
+    const res = await fetchAuthApi<{ success: boolean; data: Agent }>(
+      `/api/admin/agents/${id}`,
+      {
+        method: 'PATCH',
+        body: formData,
+      }
+    );
+    return res.data;
+  },
+
+  getCustomers: async (id: string, params: { page?: number; limit?: number } = {}): Promise<{ customers: AgentCustomerItem[]; pagination: any }> => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.set('page', String(params.page));
+    if (params.limit) sp.set('limit', String(params.limit));
+
+    const res = await fetchAuthApi<{ success: boolean; data: AgentCustomerItem[]; pagination: any }>(
+      `/api/admin/agents/${id}/customers?${sp.toString()}`,
+      { method: 'GET' }
+    );
+    return {
+      customers: res.data || [],
+      pagination: res.pagination || { total: 0, page: 1, limit: 20, totalPages: 1 },
+    };
+  },
+
+  getOrders: async (id: string, params: { page?: number; limit?: number } = {}): Promise<{ orders: AgentOrderItem[]; pagination: any }> => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.set('page', String(params.page));
+    if (params.limit) sp.set('limit', String(params.limit));
+
+    const res = await fetchAuthApi<{ success: boolean; data: AgentOrderItem[]; pagination: any }>(
+      `/api/admin/agents/${id}/orders?${sp.toString()}`,
+      { method: 'GET' }
+    );
+    return {
+      orders: res.data || [],
+      pagination: res.pagination || { total: 0, page: 1, limit: 20, totalPages: 1 },
+    };
+  },
+
+  getCommissions: async (id: string, params: { page?: number; limit?: number; status?: string } = {}): Promise<{ commissions: AgentCommissionItem[]; pagination: any }> => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.set('page', String(params.page));
+    if (params.limit) sp.set('limit', String(params.limit));
+    if (params.status) sp.set('status', params.status);
+
+    const res = await fetchAuthApi<{ success: boolean; data: AgentCommissionItem[]; pagination: any }>(
+      `/api/admin/agents/${id}/commissions?${sp.toString()}`,
+      { method: 'GET' }
+    );
+    return {
+      commissions: res.data || [],
+      pagination: res.pagination || { total: 0, page: 1, limit: 20, totalPages: 1 },
+    };
+  },
+
+  viewNationalIdBlob: async (id: string): Promise<string> => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/api/admin/agents/${id}/national-id`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) {
+      throw new Error('Failed to retrieve national ID document.');
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  },
+};
+
+export const agentIntegrationRequestsApi = {
+  list: async (params: IntegrationRequestListParams = {}): Promise<IntegrationRequestListResult> => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.set('page', String(params.page));
+    if (params.limit) sp.set('limit', String(params.limit));
+    if (params.status && params.status !== 'ALL') sp.set('status', params.status);
+    if (params.agentId) sp.set('agentId', params.agentId);
+    if (params.search) sp.set('search', params.search);
+
+    const res = await fetchAuthApi<{ success: boolean; data: AgentIntegrationRequest[]; pagination: any; meta?: { pendingTotal: number } }>(
+      `/api/admin/agent-integration-requests?${sp.toString()}`,
+      { method: 'GET' }
+    );
+    return {
+      requests: res.data || [],
+      pendingTotal: res.meta?.pendingTotal || 0,
+      pagination: res.pagination || { total: 0, page: 1, limit: 20, totalPages: 1 },
+    };
+  },
+
+  approve: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const res = await fetchAuthApi<{ success: boolean; message: string }>(
+      `/api/admin/agent-integration-requests/${id}/approve`,
+      { method: 'POST' }
+    );
+    return res;
+  },
+
+  reject: async (id: string, rejectionReason?: string): Promise<{ success: boolean; message: string }> => {
+    const res = await fetchAuthApi<{ success: boolean; message: string }>(
+      `/api/admin/agent-integration-requests/${id}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ rejectionReason }),
+      }
+    );
+    return res;
+  },
+};
+

@@ -15,6 +15,7 @@ import { customerTelemetryMiddleware } from '../../shared/middleware/customerTel
 import customerNotificationRoutes from './notification.routes.js';
 import customerSupportRoutes from './support.routes.js';
 import customerPaymentRoutes from './payment.routes.js';
+import customerAgentRoutes from './agent.routes.js';
 import customerReviewRoutes, { productReviewSubRouter, productLevelReviewRouter } from './review.routes.js';
 import { getHomeDataHandler } from '../controllers/home.controller.js';
 import { optionalCustomerAuthMiddleware } from '../middleware/customerAuth.middleware.js';
@@ -24,6 +25,9 @@ const customerRouter = Router();
 
 // Apply unified customer web app telemetry recorder
 customerRouter.use(customerTelemetryMiddleware);
+
+// Mount Customer Agent Referral & Integration routes (/api/customer/agent/*)
+customerRouter.use('/agent', customerAgentRoutes);
 
 // Mount Consolidated Customer Home route (/api/customer/home)
 customerRouter.get('/home', optionalCustomerAuthMiddleware, asyncHandler(getHomeDataHandler));

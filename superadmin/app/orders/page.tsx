@@ -1179,6 +1179,46 @@ export default function OrdersPage() {
                     </div>
                   )}
 
+                  {/* Integrated Agent & Referral Commission Section */}
+                  <div className="p-3 border rounded-3 bg-light mb-4">
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="fw-bold text-dark small">
+                        <i className="bi bi-person-badge me-1 text-primary"></i> Integrated Ardab Agent
+                      </span>
+                      {selectedOrder.attributedAgent ? (
+                        <span className="badge bg-success-subtle text-success border border-success-subtle small">
+                          <i className="bi bi-check-circle-fill me-1"></i> Agent Attributed
+                        </span>
+                      ) : (
+                        <span className="badge bg-secondary-subtle text-secondary small">
+                          No integrated agent
+                        </span>
+                      )}
+                    </div>
+                    {selectedOrder.attributedAgent ? (
+                      <div className="row g-2 text-dark small">
+                        <div className="col-12 col-md-4">
+                          <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Agent Name:</span>
+                          <span className="fw-semibold">{selectedOrder.attributedAgent.name}</span>
+                        </div>
+                        <div className="col-12 col-md-4">
+                          <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Contact Phone:</span>
+                          <span>{selectedOrder.attributedAgent.phone}</span>
+                        </div>
+                        <div className="col-12 col-md-4">
+                          <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Commission:</span>
+                          <span className="fw-bold text-success">
+                            {selectedOrder.commission ? `ETB ${selectedOrder.commission.amount.toFixed(2)} (${selectedOrder.commission.status})` : 'Pending calculation'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mb-0 text-muted small" style={{ fontSize: '0.8rem' }}>
+                        This order was placed directly by the customer with no active agent attribution at checkout.
+                      </p>
+                    )}
+                  </div>
+
                   {/* Historical Order Items Table with Snapshots */}
                   <div className="mb-4">
                     <h6 className="fw-bold text-dark mb-2">

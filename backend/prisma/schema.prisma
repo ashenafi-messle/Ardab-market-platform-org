@@ -178,6 +178,31 @@ enum NotificationDeliveryStatus {
   INVALID_TOKEN
 }
 
+enum AgentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AgentRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+enum CommissionStatus {
+  PENDING
+  PAYABLE
+  PAID
+  CANCELLED
+  REVERSED
+}
+
+enum CommissionPolicyType {
+  PERCENTAGE
+  FIXED
+}
+
 
 enum NotificationCategory {
   ORDER
@@ -387,6 +412,9 @@ model AdminUser {
   incidentsCreated           SystemIncident[]                 @relation("IncidentCreatedBy")
   incidentsAssigned          SystemIncident[]                 @relation("IncidentAssignedTo")
   incidentsResolved          SystemIncident[]                 @relation("IncidentResolvedBy")
+  registeredAgents           Agent[]                          @relation("AgentRegisteredBy")
+  reviewedAgentRequests      AgentIntegrationRequest[]        @relation("AgentRequestReviewedBy")
+  approvedAgentRelationships CustomerAgentRelationship[]     @relation("AgentApprovedBy")
 
   @@index([email])
   @@index([role])
@@ -843,6 +871,8 @@ model Customer {
   pushTokens             CustomerPushToken[]
   notificationPreference CustomerNotificationPreference?
   payments               Payment[]
+  activeAgentRelationship CustomerAgentRelationship?
+  agentIntegrationRequests AgentIntegrationRequest[]
 
   @@index([customerCode])
   @@index([phone])
@@ -1013,6 +1043,8 @@ model Order {
   customerNote            String?
   internalNote            String?
   idempotencyKey          String?               @unique
+  attributedAgentId       String?
+  attributedAt            DateTime?
   placedAt                DateTime              @default(now())
   confirmedAt             DateTime?
   processingAt            DateTime?
@@ -1027,6 +1059,7 @@ model Order {
   updatedAt               DateTime              @updatedAt
 
   customer                Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  attributedAgent         Agent?                @relation(fields: [attributedAgentId], references: [id], onDelete: SetNull)
   items                   OrderItem[]
   deliveryAddressSnapshot OrderDeliveryAddress?
   activities              OrderActivity[]
@@ -1035,6 +1068,8 @@ model Order {
   feedbacks               Feedback[]
   notifications           Notification[]
   payments                Payment[]
+  commissions             AgentCommission[]
+  agentNotifications      AgentNotification[]
 
   @@index([customerId])
   @@index([customerId, status])
@@ -1043,6 +1078,7 @@ model Order {
   @@index([orderNumber])
   @@index([status])
   @@index([paymentStatus])
+  @@index([attributedAgentId])
   @@index([city])
   @@index([placedAt])
   @@index([createdAt])
@@ -2467,6 +2503,135 @@ model PaymentRefund {
   @@index([status])
   @@index([createdAt])
   @@map("payment_refunds")
+}
+
+// ------------------------------------------------------------------------------
+// Agent Management, Customer Referral & Commission Ledger
+// ------------------------------------------------------------------------------
+
+model Agent {
+  id                     String                    @id @default(uuid())
+  name                   String
+  phone                  String
+  email                  String                    @unique
+  nationalIdKey          String
+  nationalIdOriginalName String?
+  nationalIdMimeType     String?
+  status                 AgentStatus               @default(ACTIVE)
+  commissionRate         Decimal                   @default(5.00) @db.Decimal(5, 2)
+  commissionType         CommissionPolicyType      @default(PERCENTAGE)
+  registeredById         String?
+  notes                  String?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+
+  registeredBy           AdminUser?                @relation("AgentRegisteredBy", fields: [registeredById], references: [id], onDelete: SetNull)
+  integrationRequests    AgentIntegrationRequest[]
+  customerRelationships  CustomerAgentRelationship[]
+  attributedOrders       Order[]
+  commissions            AgentCommission[]
+  notifications          AgentNotification[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([status])
+  @@index([createdAt])
+  @@map("agents")
+}
+
+model AgentIntegrationRequest {
+  id                   String                     @id @default(uuid())
+  customerId           String
+  agentId              String
+  status               AgentRequestStatus         @default(PENDING)
+  rejectionReason      String?
+  reviewedById         String?
+  reviewedAt           DateTime?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  customer             Customer                   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  agent                Agent                      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  reviewedBy           AdminUser?                 @relation("AgentRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  approvedRelationship CustomerAgentRelationship?
+
+  @@index([customerId])
+  @@index([agentId])
+  @@index([status])
+  @@index([customerId, status])
+  @@index([createdAt])
+  @@map("agent_integration_requests")
+}
+
+model CustomerAgentRelationship {
+  id           String                   @id @default(uuid())
+  customerId   String                   @unique
+  agentId      String
+  requestId    String?                  @unique
+  approvedById String?
+  approvedAt   DateTime                 @default(now())
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  customer     Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  agent        Agent                    @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  request      AgentIntegrationRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  approvedBy   AdminUser?               @relation("AgentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([agentId])
+  @@index([approvedAt])
+  @@map("customer_agent_relationships")
+}
+
+model AgentCommission {
+  id               String               @id @default(uuid())
+  agentId          String
+  orderId          String
+  baseAmount       Decimal              @db.Decimal(12, 2)
+  rateSnapshot     Decimal              @db.Decimal(5, 2)
+  policyType       CommissionPolicyType @default(PERCENTAGE)
+  commissionAmount Decimal              @db.Decimal(12, 2)
+  currency         String               @default("ETB")
+  status           CommissionStatus     @default(PENDING)
+  payableAt        DateTime?
+  paidAt           DateTime?
+  paymentReference String?
+  notes            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  agent            Agent                @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  order            Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, orderId])
+  @@index([agentId])
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("agent_commissions")
+}
+
+model AgentNotification {
+  id        String    @id @default(uuid())
+  agentId   String
+  orderId   String?
+  type      String    @default("ORDER_ACCEPTED")
+  title     String
+  message   String
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  metadata  String?
+  createdAt DateTime  @default(now())
+
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  order     Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([agentId])
+  @@index([orderId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("agent_notifications")
 }
 
 

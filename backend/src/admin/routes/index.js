@@ -23,8 +23,14 @@ import securityRoutes from './security.routes.js';
 import maintenanceRoutes from './maintenance.routes.js';
 import citiesRoutes from './cities.routes.js';
 import searchRoutes from './search.routes.js';
+import agentRoutes from './agent.routes.js';
+import agentIntegrationRoutes from './agentIntegration.routes.js';
 
 const adminRouter = Router();
+
+// Commercial Marketplace: Verified Agents & Network Management
+adminRouter.use('/agents', agentRoutes);
+adminRouter.use('/agent-integration-requests', agentIntegrationRoutes);
 
 // Health check endpoint for admin services
 adminRouter.use('/health', healthRoutes);
