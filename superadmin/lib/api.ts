@@ -1408,6 +1408,25 @@ function normalizeOrder(raw: any): Order {
     assignedTripId: raw.assignedTripId,
     assignedVehicleId: raw.assignedVehicleId,
     assignedDriverName: raw.assignedDriverName,
+    attributedAgentId: raw.attributedAgentId || null,
+    attributedAt: raw.attributedAt || null,
+    attributedAgent: raw.attributedAgent
+      ? {
+          id: raw.attributedAgent.id,
+          name: raw.attributedAgent.name,
+          phone: raw.attributedAgent.phone,
+          email: raw.attributedAgent.email,
+          status: raw.attributedAgent.status,
+        }
+      : null,
+    commission: raw.commission
+      ? {
+          id: raw.commission.id,
+          amount: Number(raw.commission.amount ?? raw.commission.commissionAmount ?? 0),
+          rateSnapshot: Number(raw.commission.rateSnapshot ?? 0),
+          status: raw.commission.status || 'PENDING',
+        }
+      : null,
     timeline: (raw.timeline || []).map((ev: any) => ({
       id: ev.id,
       status: (ev.status || 'PENDING') as OrderStatus,

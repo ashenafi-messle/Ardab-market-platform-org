@@ -222,6 +222,19 @@ export default function OrdersPage() {
     }
   };
 
+  // Open details modal and fetch full fresh order details
+  const handleOpenOrderDetails = async (order: Order) => {
+    setSelectedOrder(order);
+    try {
+      const freshOrder = await ordersApi.getById(order.id);
+      if (freshOrder) {
+        setSelectedOrder(freshOrder);
+      }
+    } catch (err) {
+      console.warn('Failed to load fresh order details:', err);
+    }
+  };
+
   // Open reason modal for destructive actions
   const openReasonModal = (order: Order, actionType: 'CANCEL' | 'REJECT') => {
     setReasonModal({
@@ -840,7 +853,7 @@ export default function OrdersPage() {
                               type="button"
                               className="btn btn-sm btn-light border shadow-sm"
                               title="Inspect full order, sellers, and timeline"
-                              onClick={() => setSelectedOrder(order)}
+                              onClick={() => handleOpenOrderDetails(order)}
                             >
                               <i className="bi bi-eye"></i> Details
                             </button>
@@ -984,7 +997,7 @@ export default function OrdersPage() {
                     <button
                       type="button"
                       className="btn btn-sm btn-light border flex-grow-1"
-                      onClick={() => setSelectedOrder(order)}
+                      onClick={() => handleOpenOrderDetails(order)}
                     >
                       Details &rarr;
                     </button>
@@ -1202,8 +1215,22 @@ export default function OrdersPage() {
                           <span className="fw-semibold">{selectedOrder.attributedAgent.name}</span>
                         </div>
                         <div className="col-12 col-md-4">
+                          <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Agent Email:</span>
+                          <span>{selectedOrder.attributedAgent.email || 'N/A'}</span>
+                        </div>
+                        <div className="col-12 col-md-4">
                           <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Contact Phone:</span>
-                          <span>{selectedOrder.attributedAgent.phone}</span>
+                          <span>{selectedOrder.attributedAgent.phone || 'N/A'}</span>
+                        </div>
+                        <div className="col-12 col-md-4">
+                          <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Attribution:</span>
+                          <span className="text-primary fw-medium">Approved customer-agent integration</span>
+                        </div>
+                        <div className="col-12 col-md-4">
+                          <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Agent ID:</span>
+                          <span className="font-monospace text-muted" style={{ fontSize: '0.75rem' }}>
+                            {selectedOrder.attributedAgent.id}
+                          </span>
                         </div>
                         <div className="col-12 col-md-4">
                           <span className="text-muted d-block" style={{ fontSize: '0.75rem' }}>Commission:</span>

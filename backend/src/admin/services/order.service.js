@@ -33,6 +33,7 @@ export async function listOrders(queryOptions = {}) {
     paymentMethod,
     startDate,
     endDate,
+    agentId,
     sortBy = 'placedAt',
     sortOrder = 'desc',
   } = queryOptions;
@@ -41,6 +42,11 @@ export async function listOrders(queryOptions = {}) {
   const skip = (Math.max(Number(page), 1) - 1) * take;
 
   const where = {};
+
+  // Agent filtering
+  if (agentId) {
+    where.attributedAgentId = agentId;
+  }
 
   // City filtering
   if (city && city !== 'All Cities') {
@@ -82,6 +88,9 @@ export async function listOrders(queryOptions = {}) {
       { customer: { fullName: { contains: term, mode: 'insensitive' } } },
       { customer: { customerCode: { contains: term, mode: 'insensitive' } } },
       { customer: { phone: { contains: term } } },
+      { attributedAgent: { name: { contains: term, mode: 'insensitive' } } },
+      { attributedAgent: { email: { contains: term, mode: 'insensitive' } } },
+      { attributedAgent: { phone: { contains: term } } },
       { deliveryZone: { contains: term, mode: 'insensitive' } },
       { deliveryAddress: { contains: term, mode: 'insensitive' } },
       {
@@ -617,12 +626,15 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
   const paymentMethod = rawMethod === 'ONLINE' ? 'ONLINE' : 'CASH_ON_DELIVERY';
 
   // Check if customer has an approved active integrated agent for order attribution
-  const activeAgentRel = await prisma.customerAgentRelationship.findUnique({
+  let activeAgentRel = await prisma.customerAgentRelationship.findUnique({
     where: { customerId: targetCustomerId },
     include: {
       agent: {
         select: {
           id: true,
+          name: true,
+          phone: true,
+          email: true,
           status: true,
           commissionRate: true,
           commissionType: true,
@@ -631,7 +643,67 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
     },
   });
 
-  const attributedAgentId = (activeAgentRel && activeAgentRel.agent) ? activeAgentRel.agent.id : null;
+  // Fallback: If relationship record is missing, check latest approved integration request
+  if (!activeAgentRel || !activeAgentRel.agent) {
+    const latestApprovedRequest = await prisma.agentIntegrationRequest.findFirst({
+      where: {
+        customerId: targetCustomerId,
+        status: 'APPROVED',
+      },
+      orderBy: { reviewedAt: 'desc' },
+      include: {
+        agent: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            email: true,
+            status: true,
+            commissionRate: true,
+            commissionType: true,
+          },
+        },
+      },
+    });
+
+    if (latestApprovedRequest && latestApprovedRequest.agent && latestApprovedRequest.agent.status === 'ACTIVE') {
+      activeAgentRel = await prisma.customerAgentRelationship
+        .upsert({
+          where: { customerId: targetCustomerId },
+          update: {
+            agentId: latestApprovedRequest.agent.id,
+            requestId: latestApprovedRequest.id,
+            approvedAt: latestApprovedRequest.reviewedAt || new Date(),
+          },
+          create: {
+            customerId: targetCustomerId,
+            agentId: latestApprovedRequest.agent.id,
+            requestId: latestApprovedRequest.id,
+            approvedAt: latestApprovedRequest.reviewedAt || new Date(),
+          },
+          include: {
+            agent: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                status: true,
+                commissionRate: true,
+                commissionType: true,
+              },
+            },
+          },
+        })
+        .catch((e) => {
+          logger.warn(`Failed to auto-heal CustomerAgentRelationship: ${e.message}`);
+          return { agent: latestApprovedRequest.agent };
+        });
+    }
+  }
+
+  const isAgentActive = activeAgentRel?.agent?.status === 'ACTIVE';
+  const attributedAgentId = isAgentActive ? activeAgentRel.agent.id : null;
   const attributedAt = attributedAgentId ? new Date() : null;
 
   // 6. Execute atomic transaction
@@ -683,23 +755,6 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
           },
         },
       },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            customerCode: true,
-            fullName: true,
-            phone: true,
-            email: true,
-            city: true,
-          },
-        },
-        items: true,
-        deliveryAddressSnapshot: true,
-        activities: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
     });
 
     // If an eligible agent is attributed, create an immutable commission record
@@ -724,6 +779,36 @@ export async function checkoutCustomerOrder(payload, customerId = null, ipAddres
         },
       });
     }
+
+    // Return complete order with attributedAgent and commissions included
+    const completeOrder = await tx.order.findUnique({
+      where: { id: order.id },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            customerCode: true,
+            fullName: true,
+            phone: true,
+            email: true,
+            city: true,
+          },
+        },
+        items: true,
+        deliveryAddressSnapshot: true,
+        attributedAgent: {
+          select: { id: true, name: true, phone: true, email: true, status: true },
+        },
+        commissions: {
+          select: { id: true, commissionAmount: true, rateSnapshot: true, status: true },
+        },
+        activities: {
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    return completeOrder;
 
     // If Cash on Delivery, record Payment entity in PENDING state (NO CHAPA)
     if (paymentMethod === 'CASH_ON_DELIVERY') {
