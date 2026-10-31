@@ -10,6 +10,7 @@ import {
   getOtpTemplate,
   getEmailVerificationLinkTemplate,
   getPasswordChangedNotificationTemplate,
+  getAgentIntegrationApprovedTemplate,
 } from './email.templates.js';
 import { getSupportReplyTemplate } from './templates/support-reply.template.js';
 import {
@@ -175,6 +176,26 @@ export class EmailService {
       toEmail,
       toName: name,
       subject: 'Security Alert: Ardab Market Password Changed',
+      htmlContent,
+      textContent,
+    });
+  }
+
+  /**
+   * Dispatches Customer Integration Approved notification to Agent's registered email
+   */
+  static async sendAgentIntegrationApprovedEmail({ toEmail, agentName, customerName, customerCode, approvedAt }) {
+    const { htmlContent, textContent } = getAgentIntegrationApprovedTemplate({
+      agentName,
+      customerName,
+      customerCode,
+      approvedAt,
+    });
+
+    return sendBrevoEmail({
+      toEmail,
+      toName: agentName,
+      subject: 'Ardab Market — Customer Integration Request Approved',
       htmlContent,
       textContent,
     });

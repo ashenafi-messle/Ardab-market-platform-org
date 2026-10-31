@@ -2907,8 +2907,8 @@ export const agentIntegrationRequestsApi = {
     };
   },
 
-  approve: async (id: string): Promise<{ success: boolean; message: string }> => {
-    const res = await fetchAuthApi<{ success: boolean; message: string }>(
+  approve: async (id: string): Promise<{ success: boolean; message: string; data?: any; notificationStatus?: string }> => {
+    const res = await fetchAuthApi<{ success: boolean; message: string; data?: any; notificationStatus?: string }>(
       `/api/admin/agent-integration-requests/${id}/approve`,
       { method: 'POST' }
     );

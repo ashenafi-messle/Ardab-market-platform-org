@@ -11,6 +11,7 @@
 import { prisma } from '../../shared/config/database.js';
 import { ApiError } from '../../shared/utils/apiResponse.js';
 import { logger } from '../../shared/utils/logger.js';
+import { EmailService } from '../../shared/services/email/email.service.js';
 import { normalizeEmail } from './agent.service.js';
 
 /**
@@ -331,6 +332,10 @@ export async function approveIntegrationRequest(requestId, adminUser) {
           );
         }
 
+        if (!req.agent) {
+          throw ApiError.badRequest('The requested agent record no longer exists.', 'AGENT_NOT_FOUND');
+        }
+
         const now = new Date();
 
         // 2. Ensure customer has at most ONE active approved relationship
@@ -359,12 +364,31 @@ export async function approveIntegrationRequest(requestId, adminUser) {
             reviewedAt: now,
           },
           include: {
-            agent: { select: { id: true, name: true, email: true } },
+            agent: { select: { id: true, name: true, email: true, phone: true } },
             customer: { select: { id: true, fullName: true, customerCode: true } },
           },
         });
 
-        // 5. Audit Log
+        // 5. Create in-app AgentNotification record (also serves as notification tracking / outbox)
+        const notification = await tx.agentNotification.create({
+          data: {
+            agentId: req.agentId,
+            type: 'CUSTOMER_INTEGRATION_APPROVED',
+            title: 'Customer Integration Approved',
+            message: `Customer ${req.customer?.fullName || 'A customer'} (${req.customer?.customerCode || 'N/A'}) has been connected to your agent profile.`,
+            metadata: JSON.stringify({
+              requestId: req.id,
+              customerId: req.customerId,
+              customerName: req.customer?.fullName || 'Valued Customer',
+              customerCode: req.customer?.customerCode,
+              approvedAt: now.toISOString(),
+              emailDeliveryStatus: 'PENDING',
+              attempts: 0,
+            }),
+          },
+        });
+
+        // 6. Audit Log
         await tx.auditLog.create({
           data: {
             adminId: adminUser.id,
@@ -372,7 +396,7 @@ export async function approveIntegrationRequest(requestId, adminUser) {
             action: 'AGENT_REQUEST_APPROVED',
             entity: 'AgentIntegrationRequest',
             entityId: requestId,
-            changesSummary: `Approved integration between Customer "${req.customer.fullName}" and Agent "${req.agent.name}".`,
+            changesSummary: `Approved integration between Customer "${req.customer?.fullName || req.customerId}" and Agent "${req.agent.name}".`,
             status: 'SUCCESS',
           },
         });
@@ -380,15 +404,182 @@ export async function approveIntegrationRequest(requestId, adminUser) {
         return {
           request: updatedRequest,
           relationship,
+          notification,
+          agentEmail: req.agent.email,
+          agentName: req.agent.name,
+          customerName: req.customer?.fullName || 'Valued Customer',
+          customerCode: req.customer?.customerCode,
+          approvedAt: now,
         };
       },
       { maxWait: 15000, timeout: 25000 }
     )
     .then(async (res) => {
-      // 6. Reconcile aggregate notification for this agent
-      await syncAggregateAgentNotification(res.request.agent.id, res.request.agent.name);
-      return res;
+      // 7. Reconcile aggregate notification for this agent
+      await syncAggregateAgentNotification(res.request.agent.id, res.request.agent.name).catch((err) => {
+        logger.warn(`Failed to sync aggregate notification for agent ${res.request.agent.id}: ${err.message}`);
+      });
+
+      // 8. Reliable post-commit email notification
+      let emailResult = { success: false, status: 'PENDING' };
+      try {
+        emailResult = await sendAgentApprovalEmailSafely({
+          notificationId: res.notification?.id,
+          agentEmail: res.agentEmail,
+          agentName: res.agentName,
+          customerName: res.customerName,
+          customerCode: res.customerCode,
+          approvedAt: res.approvedAt,
+        });
+      } catch (emailErr) {
+        logger.error(`[AgentApprovalEmail] Post-commit email dispatch failed: ${emailErr.message}`, {
+          requestId,
+          agentEmail: res.agentEmail,
+        });
+        emailResult = { success: false, status: 'FAILED', error: emailErr.message };
+      }
+
+      return {
+        request: res.request,
+        relationship: res.relationship,
+        notification: res.notification,
+        notificationStatus: emailResult.status,
+      };
     });
+}
+
+/**
+ * Safely dispatches the approval notification email to the agent's registered email.
+ * This runs AFTER the database transaction has committed, ensuring the integration
+ * state is never dependent on external email network status.
+ */
+export async function sendAgentApprovalEmailSafely({
+  notificationId,
+  agentEmail,
+  agentName,
+  customerName,
+  customerCode,
+  approvedAt,
+}) {
+  if (!agentEmail) {
+    logger.warn(`[AgentApprovalEmail] No authoritative email found for agent in notification ${notificationId}`);
+    return { success: false, status: 'SKIPPED_NO_EMAIL' };
+  }
+
+  try {
+    const result = await EmailService.sendAgentIntegrationApprovedEmail({
+      toEmail: agentEmail,
+      agentName,
+      customerName,
+      customerCode,
+      approvedAt,
+    });
+
+    const isSuccess = !!result?.success;
+    const deliveryStatus = isSuccess ? 'DELIVERED' : 'FAILED';
+
+    if (notificationId) {
+      await prisma.agentNotification
+        .update({
+          where: { id: notificationId },
+          data: {
+            metadata: JSON.stringify({
+              emailDeliveryStatus: deliveryStatus,
+              messageId: result?.messageId || null,
+              attempts: 1,
+              deliveredAt: isSuccess ? new Date().toISOString() : null,
+              lastAttemptAt: new Date().toISOString(),
+              error: result?.error || null,
+            }),
+          },
+        })
+        .catch((updateErr) => {
+          logger.warn(`[AgentApprovalEmail] Failed to update AgentNotification delivery status: ${updateErr.message}`);
+        });
+    }
+
+    if (!isSuccess) {
+      logger.warn(
+        `[AgentApprovalEmail] Email provider did not accept message for ${agentEmail}: ${result?.error || 'Provider rejected'}`
+      );
+    } else {
+      logger.info(`[AgentApprovalEmail] Approval email delivered successfully to ${agentEmail}`);
+    }
+
+    return {
+      success: isSuccess,
+      status: deliveryStatus,
+      messageId: result?.messageId,
+      error: result?.error,
+    };
+  } catch (err) {
+    logger.error(`[AgentApprovalEmail] Error dispatching email to ${agentEmail}: ${err.message}`);
+
+    if (notificationId) {
+      await prisma.agentNotification
+        .update({
+          where: { id: notificationId },
+          data: {
+            metadata: JSON.stringify({
+              emailDeliveryStatus: 'FAILED',
+              attempts: 1,
+              lastAttemptAt: new Date().toISOString(),
+              error: err.message,
+            }),
+          },
+        })
+        .catch(() => {});
+    }
+
+    return {
+      success: false,
+      status: 'FAILED',
+      error: err.message,
+    };
+  }
+}
+
+/**
+ * Retries failed agent approval email notifications safely with backoff
+ */
+export async function retryPendingAgentApprovalEmails(maxRetries = 3) {
+  const pendingNotifications = await prisma.agentNotification.findMany({
+    where: {
+      type: 'CUSTOMER_INTEGRATION_APPROVED',
+      metadata: { contains: '"emailDeliveryStatus":"FAILED"' },
+    },
+    include: {
+      agent: { select: { id: true, name: true, email: true } },
+    },
+    take: 10,
+  });
+
+  const results = [];
+  for (const notif of pendingNotifications) {
+    try {
+      let meta = {};
+      try {
+        meta = JSON.parse(notif.metadata || '{}');
+      } catch {}
+      const attempts = meta.attempts || 0;
+      if (attempts >= maxRetries) {
+        continue;
+      }
+
+      const res = await sendAgentApprovalEmailSafely({
+        notificationId: notif.id,
+        agentEmail: notif.agent.email,
+        agentName: notif.agent.name,
+        customerName: meta.customerName || 'Valued Customer',
+        customerCode: meta.customerCode,
+        approvedAt: meta.approvedAt,
+      });
+      results.push({ notificationId: notif.id, result: res });
+    } catch (e) {
+      logger.error(`Error retrying email for notification ${notif.id}: ${e.message}`);
+    }
+  }
+  return results;
 }
 
 /**

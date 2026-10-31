@@ -55,7 +55,7 @@ export default function AgentsManagementPage() {
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
 
   // Toast / feedback alert
-  const [alert, setAlert] = useState<{ type: 'success' | 'danger'; message: string } | null>(null);
+  const [alert, setAlert] = useState<{ type: 'success' | 'danger' | 'warning'; message: string } | null>(null);
 
   // Modal: Register New Agent
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -379,11 +379,19 @@ export default function AgentsManagementPage() {
       message: `Approve integration request connecting Customer "${request.customer?.fullName || request.customerId}" with Agent "${request.agent?.name}"?`,
       variant: 'success',
       action: async () => {
-        await agentIntegrationRequestsApi.approve(request.id);
-        setAlert({
-          type: 'success',
-          message: `Customer "${request.customer?.fullName}" successfully integrated with Agent "${request.agent?.name}".`,
-        });
+        const res = await agentIntegrationRequestsApi.approve(request.id);
+        const notificationStatus = (res as any)?.data?.notificationStatus || (res as any)?.notificationStatus;
+        if (notificationStatus === 'FAILED') {
+          setAlert({
+            type: 'warning',
+            message: `Customer "${request.customer?.fullName || 'Customer'}" integrated with Agent "${request.agent?.name}". Note: Agent email notification delivery failed and will be retried automatically.`,
+          });
+        } else {
+          setAlert({
+            type: 'success',
+            message: `Customer "${request.customer?.fullName || 'Customer'}" successfully integrated with Agent "${request.agent?.name}". Approval notification sent to agent.`,
+          });
+        }
         loadStats();
         loadRequests();
       },
@@ -458,7 +466,7 @@ export default function AgentsManagementPage() {
         >
           <div className="d-flex align-items-center gap-2">
             <i
-              className={`bi ${alert.type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'}`}
+              className={`bi ${alert.type === 'success' ? 'bi-check-circle-fill' : alert.type === 'warning' ? 'bi-exclamation-circle-fill' : 'bi-exclamation-triangle-fill'}`}
             ></i>
             <span>{alert.message}</span>
           </div>

@@ -51,6 +51,7 @@ export async function listIntegrationRequestsHandler(req, res) {
     result.requests,
     result.pagination,
     'Integration requests retrieved.',
+    200,
     { pendingTotal: result.pendingTotal }
   );
 }
@@ -63,7 +64,12 @@ export async function approveIntegrationRequestHandler(req, res) {
   const result = await approveIntegrationRequest(req.params.id, req.user);
   return ApiResponse.success(
     res,
-    { ...result.request, relationship: result.relationship },
+    {
+      ...result.request,
+      relationship: result.relationship,
+      notification: result.notification,
+      notificationStatus: result.notificationStatus,
+    },
     'Customer agent integration approved successfully.'
   );
 }

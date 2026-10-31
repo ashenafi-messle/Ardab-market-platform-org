@@ -277,3 +277,130 @@ If you did not make this change, contact support immediately.
 
   return { htmlContent, textContent };
 }
+
+/**
+ * Returns Agent Integration Approved notification template (HTML & Plain text)
+ */
+export function getAgentIntegrationApprovedTemplate({
+  agentName,
+  customerName = 'Valued Customer',
+  customerCode,
+  approvedAt,
+}) {
+  const formattedDate = approvedAt
+    ? new Date(approvedAt).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Customer Integration Approved - Ardab Market</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f8; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+        .content { padding: 32px; color: #334155; line-height: 1.6; }
+        .status-badge { display: inline-block; background-color: #ecfdf5; color: #065f46; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 9999px; border: 1px solid #a7f3d0; margin-bottom: 16px; }
+        .info-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0; }
+        .policy-note { background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 16px; margin: 20px 0; border-radius: 0 6px 6px 0; font-size: 13px; color: #1e40af; line-height: 1.5; }
+        .slogan-box { text-align: center; margin: 28px 0 12px 0; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+        .slogan { font-size: 15px; font-weight: 700; color: #047857; font-style: italic; }
+        .footer { background-color: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        ${renderBrandHeader()}
+        <div class="content">
+          <div class="status-badge">&#10004; Customer Integration Approved</div>
+          <h2 style="color: #0f172a; margin-top: 0; font-size: 20px;">Customer Integration Approved</h2>
+          <p>Hello <strong>${agentName}</strong>,</p>
+          <p>Good news! A customer's request to connect their Ardab Market account with you has been approved.</p>
+
+          <div class="info-card">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 14px;"><strong>Customer:</strong></td>
+                <td align="right" style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 14px;">${customerName}</td>
+              </tr>
+              ${
+                customerCode
+                  ? `<tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 14px;"><strong>Customer Code:</strong></td>
+                <td align="right" style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 14px;">${customerCode}</td>
+              </tr>`
+                  : ''
+              }
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 14px;"><strong>Integration Status:</strong></td>
+                <td align="right" style="padding: 6px 0; color: #059669; font-weight: 700; font-size: 14px;">Approved</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 14px;"><strong>Approval Date:</strong></td>
+                <td align="right" style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 14px;">${formattedDate}</td>
+              </tr>
+            </table>
+          </div>
+
+          <p>The customer is now connected to your agent profile in Ardab Market.</p>
+
+          <div class="policy-note">
+            <strong>Referral Policy & Commission Attribution:</strong><br>
+            When this customer places eligible orders through Ardab Market, those orders may be attributed to your agent profile according to the platform's commission policy.
+          </div>
+
+          <p>You can continue promoting Ardab Market and helping customers discover products on our platform.</p>
+          <p>Thank you for being part of Ardab Market.</p>
+
+          <div class="slogan-box">
+            <div class="slogan">Quality and Trust, Delivered to Your Door!</div>
+            <div style="font-size: 13px; color: #475569; margin-top: 6px; font-weight: 600;">
+              Ardab Market &mdash; Powered by Ardab Tech Solutions S.C.
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          &copy; ${new Date().getFullYear()} Ardab Market Platform &bull; Ardab Tech Solutions S.C. All rights reserved.
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const textContent = `
+Ardab Market — Customer Integration Request Approved
+
+Hello ${agentName},
+
+Good news! A customer's request to connect their Ardab Market account with you has been approved.
+
+Customer: ${customerName}
+${customerCode ? `Customer Code: ${customerCode}\n` : ''}Integration Status: Approved
+Approval Date: ${formattedDate}
+
+The customer is now connected to your agent profile in Ardab Market.
+
+When this customer places eligible orders through Ardab Market, those orders may be attributed to your agent profile according to the platform's commission policy.
+
+You can continue promoting Ardab Market and helping customers discover products on our platform.
+
+Thank you for being part of Ardab Market.
+
+Quality and Trust, Delivered to Your Door!
+
+Ardab Market
+Powered by Ardab Tech Solutions S.C.
+  `.trim();
+
+  return { htmlContent, textContent };
+}

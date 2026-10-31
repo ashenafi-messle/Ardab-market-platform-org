@@ -68,7 +68,16 @@ export class ApiResponse {
     return res.status(statusCode).json(payload);
   }
 
-  static paginated(res, data = [], pagination = {}, message = null, statusCode = 200) {
+  static paginated(res, data = [], pagination = {}, message = null, statusCode = 200, meta = null) {
+    let resolvedStatusCode = statusCode;
+    let resolvedMeta = meta;
+
+    // Defensively handle when caller passes a meta object as the 5th parameter instead of an integer status code
+    if (typeof statusCode === 'object' && statusCode !== null) {
+      resolvedMeta = statusCode;
+      resolvedStatusCode = 200;
+    }
+
     const payload = {
       success: true,
       data,
@@ -77,7 +86,17 @@ export class ApiResponse {
     if (message) {
       payload.message = message;
     }
-    return res.status(statusCode).json(payload);
+    if (resolvedMeta && typeof resolvedMeta === 'object') {
+      Object.assign(payload, resolvedMeta);
+      payload.meta = resolvedMeta;
+    }
+
+    const finalStatusCode =
+      typeof resolvedStatusCode === 'number' && resolvedStatusCode >= 100 && resolvedStatusCode <= 599
+        ? resolvedStatusCode
+        : 200;
+
+    return res.status(finalStatusCode).json(payload);
   }
 
   static error(res, code = 'INTERNAL_ERROR', message = 'An error occurred', statusCode = 500, details = null) {
