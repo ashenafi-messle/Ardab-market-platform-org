@@ -151,6 +151,41 @@ export function CustomerFooter() {
 
         <hr className="my-4 border-secondary opacity-25" />
 
+        {/* Developer Attribution Section */}
+        <div
+          className="p-3 mb-3 rounded-3 border border-secondary border-opacity-25"
+          style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)' }}
+          aria-label="Developer Credits"
+        >
+          <div className="row align-items-center g-3">
+            <div className="col-12 col-md-5 text-center text-md-start">
+              <span
+                className="text-white-50 text-uppercase fw-semibold d-block mb-1"
+                style={{ fontSize: '0.72rem', letterSpacing: '0.08em' }}
+              >
+                {language === 'am' ? 'የስርዓቱ አልሚ ድርጅት' : 'Platform Architecture & Engineering'}
+              </span>
+              <span className="text-white fw-bold fs-6">
+                Developed By Ardab Tech Solutions S.C
+              </span>
+            </div>
+            <div className="col-12 col-md-7">
+              <div className="d-flex flex-column flex-sm-row justify-content-center justify-content-md-end align-items-center gap-2 gap-sm-4 small">
+                <div className="d-flex align-items-center gap-2 text-white">
+                  <i className="bi bi-person-badge-fill text-success fs-6"></i>
+                  <span className="fw-semibold">Ambelu Endalew</span>
+                  <span className="text-white-50">(Phd Researcher)</span>
+                </div>
+                <div className="d-flex align-items-center gap-2 text-white">
+                  <i className="bi bi-code-slash text-success fs-6"></i>
+                  <span className="fw-semibold">Ashenafi Messle</span>
+                  <span className="text-white-50">(Software Engineer)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Bottom Bar */}
         <div className="row align-items-center g-2 small text-white-50">
           <div className="col-12 col-md-6 text-center text-md-start">

@@ -8,7 +8,7 @@ import { useApp } from '@/store';
 import { t } from '@/utils/i18n';
 import { ProfileHeader, ProfileMenuItem } from '@/components/profile';
 import { Modal, AppButton } from '@/components/common';
-import { ARDAB_LICENSE_URL } from '@/constants/branding';
+import { ARDAB_LOGO_URL, ARDAB_LICENSE_URL } from '@/constants/branding';
 import { shareApp } from '@/services/shareService';
 import { openStoreRating, openOfficialWebsite } from '@/services/storeService';
 
@@ -172,7 +172,7 @@ export default function ProfileScreen() {
           icon="information-circle-outline"
           title={t('profile.about')}
           subtitle={t('home.verifiedMarketplace')}
-          onPress={() => setAboutModalVisible(true)}
+          onPress={() => router.push('/profile/about' as any)}
         />
 
         {/* Sign Out Action */}
@@ -224,29 +224,72 @@ export default function ProfileScreen() {
         visible={aboutModalVisible}
         onClose={() => setAboutModalVisible(false)}
         title={t('profile.about')}>
-        <Text style={styles.aboutTitle}>{t('common.appName')}</Text>
+        <View style={styles.aboutHeaderRow}>
+          <Image
+            source={{ uri: ARDAB_LOGO_URL }}
+            style={styles.aboutLogoSmall}
+            resizeMode="contain"
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.aboutTitle}>{t('common.appName')}</Text>
+            <Text style={styles.aboutVersion}>{t('profile.version')}</Text>
+          </View>
+        </View>
+
         <View style={styles.aboutSloganBadge}>
           <Text style={styles.aboutSloganText}>
             {language === 'am' ? '“ጥራትና ታማኝነት፣ እስከ ቤትዎ ድረስ!”' : '“Quality and Trust, Delivered to Your Door!”'}
           </Text>
         </View>
+
+        {/* Developer Attribution Box */}
+        <View style={styles.aboutDevBox}>
+          <Text style={styles.aboutDevCompany}>
+            Developed By Ardab Tech Solutions S.C
+          </Text>
+          <View style={styles.aboutDevMemberRow}>
+            <Ionicons name="school-outline" size={15} color={Colors.primary} />
+            <Text style={styles.aboutDevMemberText}>
+              Ambelu Endalew (Phd Researcher)
+            </Text>
+          </View>
+          <View style={styles.aboutDevMemberRow}>
+            <Ionicons name="terminal-outline" size={15} color={Colors.primary} />
+            <Text style={styles.aboutDevMemberText}>
+              Ashenafi Messle (Software Engineer)
+            </Text>
+          </View>
+        </View>
+
         <Text style={styles.aboutText}>
           {t('profile.aboutDesc1')}
         </Text>
         <Text style={styles.aboutText}>
           {t('profile.aboutDesc2')}
         </Text>
-        <Text style={styles.aboutVersion}>{t('profile.version')}</Text>
-        <AppButton
-          title={language === 'am' ? 'ህጋዊ የንግድ ፈቃድ ይመልከቱ' : 'View Commercial License'}
-          variant="outline"
-          size="sm"
-          onPress={() => {
-            setAboutModalVisible(false);
-            setLicenseModalVisible(true);
-          }}
-          style={{ marginTop: Spacing.sm }}
-        />
+
+        <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs }}>
+          <AppButton
+            title={language === 'am' ? 'ሙሉ ዝርዝር' : 'Full About Page'}
+            variant="primary"
+            size="sm"
+            onPress={() => {
+              setAboutModalVisible(false);
+              router.push('/profile/about' as any);
+            }}
+            style={{ flex: 1 }}
+          />
+          <AppButton
+            title={language === 'am' ? 'ህጋዊ የንግድ ፈቃድ' : 'License'}
+            variant="outline"
+            size="sm"
+            onPress={() => {
+              setAboutModalVisible(false);
+              setLicenseModalVisible(true);
+            }}
+            style={{ flex: 1 }}
+          />
+        </View>
       </Modal>
 
       {/* Official Business License Modal */}
@@ -399,11 +442,49 @@ const styles = StyleSheet.create({
   langBtn: {
     marginBottom: Spacing.xs,
   },
+  aboutHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  aboutLogoSmall: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.round,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
   aboutTitle: {
     fontSize: Typography.fontSize.lg,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.primaryDark,
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  aboutDevBox: {
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: Radius.md,
+    padding: Spacing.sm + 2,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  aboutDevCompany: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  aboutDevMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 3,
+  },
+  aboutDevMemberText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
   },
   aboutSloganBadge: {
     backgroundColor: Colors.primaryLight,
