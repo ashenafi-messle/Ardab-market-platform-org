@@ -42,6 +42,7 @@ import paymentWebhookRoutes from './shared/routes/webhook.routes.js';
 import adminPaymentRoutes from './admin/routes/payment.routes.js';
 import agentRoutes from './admin/routes/agent.routes.js';
 import agentIntegrationRoutes from './admin/routes/agentIntegration.routes.js';
+import agentRouter from './agent/index.js';
 import { getHealth, getLive, getReady } from './admin/controllers/health.controller.js';
 
 export function createApp() {
@@ -183,6 +184,10 @@ export function createApp() {
   // Customer Mobile App Routes (Isolated customer-mobile domain)
   app.use('/api/customer-mobile', customerMobileRouter);
   app.use('/api/v1/customer-mobile', customerMobileRouter);
+
+  // Agent Mobile App Routes (Dedicated agent domain)
+  app.use('/api/agent', agentRouter);
+  app.use('/api/v1/agent', agentRouter);
 
   // Payment Gateway Webhooks (Chapa)
   app.use('/api/payments/chapa', paymentWebhookRoutes);

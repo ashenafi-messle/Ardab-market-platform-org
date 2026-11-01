@@ -1,0 +1,16 @@
+{
+  "extends": "../customer/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "react": ["../customer/node_modules/@types/react"],
+      "react/*": ["../customer/node_modules/@types/react/*"],
+      "react-native": ["../customer/node_modules/@types/react-native", "../customer/node_modules/react-native"],
+      "*": ["../customer/node_modules/*", "../customer/node_modules/@types/*"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ]
+}

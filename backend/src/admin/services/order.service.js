@@ -9,6 +9,7 @@ import { generateNextOrderNumber } from './orderCode.service.js';
 import { validateStatusTransition, getStatusTimestampUpdates } from './order.status.service.js';
 import { createNotification } from './notification.service.js';
 import { createCustomerOrderNotification } from '../../customer/services/notification.service.js';
+import { AgentNotificationService } from '../../agent/agent.notification.service.js';
 import { logger } from '../../shared/utils/logger.js';
 import { paymentService } from '../../customer/services/payment.service.js';
 
@@ -380,6 +381,11 @@ export async function transitionOrderStatus(id, newStatus, reason = null, adminU
         await prisma.agentCommission.updateMany({
           where: { orderId: id, status: 'PENDING' },
           data: { status: 'PAYABLE', payableAt: new Date() },
+        });
+
+        // 3. Dispatch Push Notification asynchronously to Agent's registered devices
+        AgentNotificationService.dispatchOrderAcceptedNotification(updatedOrder, { id: existingOrder.attributedAgentId }).catch((err) => {
+          logger.warn('[AgentNotification] Push dispatch error:', err.message);
         });
       } catch (err) {
         logger.warn('[AgentNotification/Commission] Error updating on CONFIRMED:', err);

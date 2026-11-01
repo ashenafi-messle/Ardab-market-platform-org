@@ -2526,6 +2526,10 @@ model Agent {
   updatedAt              DateTime                  @updatedAt
 
   registeredBy           AdminUser?                @relation("AgentRegisteredBy", fields: [registeredById], references: [id], onDelete: SetNull)
+  credentials            AgentCredential?
+  emailOtps              AgentEmailOTP[]
+  sessions               AgentSession[]
+  pushTokens             AgentPushToken[]
   integrationRequests    AgentIntegrationRequest[]
   customerRelationships  CustomerAgentRelationship[]
   attributedOrders       Order[]
@@ -2632,6 +2636,84 @@ model AgentNotification {
   @@index([isRead])
   @@index([createdAt])
   @@map("agent_notifications")
+}
+
+// ------------------------------------------------------------------------------
+// Dedicated Agent Mobile Authentication, OTPs, Sessions & Push Tokens
+// ------------------------------------------------------------------------------
+
+model AgentCredential {
+  id           String    @id @default(uuid())
+  agentId      String    @unique
+  passwordHash String?
+  isActivated  Boolean   @default(false)
+  activatedAt  DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  agent        Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@map("agent_credentials")
+}
+
+model AgentEmailOTP {
+  id          String    @id @default(uuid())
+  agentId     String
+  email       String
+  codeHash    String
+  purpose     String    // 'ACTIVATION' | 'PASSWORD_RESET'
+  expiresAt   DateTime
+  verifiedAt  DateTime?
+  consumedAt  DateTime?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  agent       Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, purpose, createdAt])
+  @@index([email, purpose])
+  @@index([expiresAt])
+  @@map("agent_email_otps")
+}
+
+model AgentSession {
+  id               String        @id @default(uuid())
+  agentId          String
+  refreshTokenHash String        @unique
+  deviceInfo       String?
+  status           SessionStatus @default(ACTIVE)
+  expiresAt        DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  agent            Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("agent_sessions")
+}
+
+model AgentPushToken {
+  id            String    @id @default(uuid())
+  agentId       String
+  expoPushToken String
+  platform      String?   // 'android' | 'ios'
+  deviceId      String?
+  isActive      Boolean   @default(true)
+  lastUsedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  agent         Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, expoPushToken])
+  @@index([agentId, isActive])
+  @@index([expoPushToken])
+  @@map("agent_push_tokens")
 }
 
 

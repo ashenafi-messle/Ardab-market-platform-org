@@ -1,4 +1,5 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,19 +10,26 @@ import { t } from '@/utils/i18n';
 export default function TabsLayout() {
   const { cartCount, language } = useApp();
   const insets = useSafeAreaInsets();
+  const isAndroid = Platform.OS === 'android';
 
-  // Dynamic safe-area calculation for Android & iOS:
-  // Base content height (icons, labels, and spacing) without system insets.
-  const BASE_TAB_BAR_HEIGHT = 60;
+  // Dynamic safe-area calculation for Android & iOS across all screen types:
+  const BASE_CONTENT_HEIGHT = 56;
   const bottomInset = insets.bottom;
-  const tabBarHeight = BASE_TAB_BAR_HEIGHT + bottomInset;
-  const paddingBottom = bottomInset > 0 ? bottomInset + 4 : 8;
+  const safeBottomPadding =
+    bottomInset > 0
+      ? bottomInset + (isAndroid ? 6 : 4)
+      : isAndroid
+      ? 16
+      : 8;
+
+  const tabBarHeight = BASE_CONTENT_HEIGHT + safeBottomPadding;
 
   return (
     <Tabs
       key={language}
       screenOptions={{
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textMuted,
         tabBarStyle: {
@@ -29,19 +37,20 @@ export default function TabsLayout() {
           borderTopColor: Colors.borderLight,
           borderTopWidth: 1,
           height: tabBarHeight,
-          paddingBottom,
-          paddingTop: 6,
-          paddingLeft: Math.max(insets.left, 0),
-          paddingRight: Math.max(insets.right, 0),
-          elevation: 8,
+          paddingBottom: safeBottomPadding,
+          paddingTop: 8,
+          paddingLeft: Math.max(insets.left, 8),
+          paddingRight: Math.max(insets.right, 8),
+          elevation: 10,
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 6,
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
         },
         tabBarItemStyle: {
           justifyContent: 'center',
           alignItems: 'center',
+          paddingVertical: 2,
         },
         tabBarLabelStyle: {
           fontSize: Typography.fontSize.tiny,

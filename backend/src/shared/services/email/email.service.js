@@ -146,6 +146,8 @@ export class EmailService {
       PASSWORD_RESET: 'Password Reset Verification',
       EMAIL_VERIFICATION: 'Email Verification',
       SECURITY_VERIFICATION: 'Security Verification',
+      AGENT_ACTIVATION: 'Agent Account Activation',
+      AGENT_PASSWORD_RESET: 'Agent Password Reset',
     };
 
     const purposeLabel = purposeMap[purpose] || 'Security Verification';
